@@ -1,2 +1,2 @@
-# Sequential-Attention-Learning-for-End-to-end-Driving
-This is a repository for paper Sequential Attention Learning for End-to-end Driving
+# Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning
+This is a repository for paper "Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning"
