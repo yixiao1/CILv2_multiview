@@ -7,7 +7,7 @@
 ### Publications
 This is the official code release of the paper:
 
-Yi Xiao, Felipe Codevilla, Diego Porres, Ziyang Hong and Antonio M. Lopez. [Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning]()
+Yi Xiao, Felipe Codevilla, Diego Porres, Ziyang Hong and Antonio M. Lopez. [Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning]().
 
 Please cite our paper if you find this work useful:
 
@@ -20,12 +20,12 @@ Please check our online [video]()
 -------------------------------------------------------------
 ### Summary
 
-    In this repository, you could :
+    In this repository, you could find materials for:
 
-     * Benchmark the trained CIL++ model proposed in our paper on CARLA
-     * Collecting datasets with Roach RL expert
-     * Perform training and offline evaluation on new CIL++ models
-     * Perform online driving test on CIL++ models on CARLA
+     * Benchmarking the trained CIL++ model proposed in our paper
+     * Collecting datasets using Roach RL expert
+     * Training/evaluating (offline) new CIL++ models
+     * Performing online driving test on CIL++ models on CARLA
 
 -------------------------------------------------------------
 ### Environment Setup
