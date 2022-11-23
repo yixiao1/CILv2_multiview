@@ -1,7 +1,7 @@
 # CIL++ with Multi-View Attention Learning
 -------------------------------------------------------------
 
- <img src="Driving_T2_T5.gif" height="350">
+ <img src="Driving_T5.gif" height="350">
 
 ### Publications
 This is the official code release of the paper:
