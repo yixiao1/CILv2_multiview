@@ -21,6 +21,7 @@ IMG_NORMALIZATION:     # ImageNet normalization
 IMAGE_SHAPE: [3, 300, 300]  # Input image shape
 DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right']  # Multi-view cameras, it needs to be set in this order
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
+DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
 # Data normalization: might be changed depending on datasets
 DATA_NORMALIZATION:
   steer: [-1.0, 1.0]

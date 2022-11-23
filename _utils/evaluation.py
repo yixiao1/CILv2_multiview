@@ -65,31 +65,28 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
                 """
 
                 if idx in list(range(0, min(g_conf.EVAL_IMAGE_WRITING_NUMBER, len(data_loader)))):
+                    # saving only one per batch to save time
                     eval_images = [[x['current'][i][camera_type][:1].cuda() for camera_type in g_conf.DATA_USED] for i
-                                   in
-                                   range(len(x['current']))]
+                                   in range(len(x['current']))]
                     eval_directions = [extract_commands(x['current'][i]['can_bus']['direction'])[:1].cuda() for i in
                                        range(len(x['current']))]
                     eval_speeds = [extract_other_inputs(x['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
                                                         ignore=['direction'])[:1].cuda() for i in
                                    range(len(x['current']))]
-                    # norm_input_rgb = torch.stack([torch.stack(src_images[i], dim=1) for i in range(g_conf.ENCODER_INPUT_FRAMES_NUM)], dim=1)  # [B, S, cam, 3, H, W]
-                    # input_frames = []
-                    # for frame in src_images:
-                    #     cams = []
-                    #     for i in range(len(g_conf.DATA_USED)):
-                    #         cams.append(inverse_normalize(frame[i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']))
-                    #     all_cam = torch.cat(cams, 3)
-                    #     input_frames.append(all_cam)
-                    # source_frames_cat = torch.cat(input_frames, 3)
+                    input_frames = []
+                    for frame in eval_images:
+                        cams = []
+                        for i in range(len(g_conf.DATA_USED)):
+                            cams.append(inverse_normalize(frame[i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze())
+                        input_frames.append(cams)
 
                     # we save only the first of the batch
                     if g_conf.EVAL_SAVE_LAST_Conv_ACTIVATIONS:
                         _logger.add_gradCAM_attentions_to_disk('Valid', model, [eval_images, eval_directions, eval_speeds],
-                                                                epoch=eval_epoch,
-                                                                save_path=os.path.join(g_conf.EXP_SAVE_PATH,
-                                                                                       'Eval', 'Valid_gradCAM' + '_' + dataset_name),
-                                                                batch_id=idx)
+                                                               input_rgb_frames= input_frames,
+                                                               epoch=eval_epoch,
+                                                               save_path=os.path.join(g_conf.EXP_SAVE_PATH, 'Eval', 'Valid_gradCAM' + '_' + dataset_name),
+                                                               batch_id=idx)
 
 
                 if (idx + 1) % logging_interval == 0:

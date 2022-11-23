@@ -40,9 +40,9 @@ def add_scalar(tag, value, iteration=None):
         if iteration % TRAIN_LOG_FREQUENCY == 0:
             tl.scalar_summary(tag, value, iteration)
     else:
-        raise ValueError('Iteration is not supposed to be None')
+        raise ValueError('iteration is not supposed to be None')
 
-def add_gradCAM_attentions_to_disk(process_type, model, source_input,
+def add_gradCAM_attentions_to_disk(process_type, model, source_input, input_rgb_frames,
                                             epoch, save_path=None, batch_id=None):
 
     global TRAIN_IMAGE_LOG_FREQUENCY
@@ -73,8 +73,8 @@ def add_gradCAM_attentions_to_disk(process_type, model, source_input,
                 att = grayscale_cam[s, cam_id, :]
                 cmap_att = np.delete(cmap(att), 3, 2)
                 cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-                cams.append(cmap_att)
-                # cams.append(Image.blend(rgb[cam_id], cmap_att, 0.5))
+                # cams.append(cmap_att)
+                cams.append(Image.blend(Image.fromarray(((input_rgb_frames[s][cam_id]).transpose(1, 2, 0) * 255).astype(np.uint8)), cmap_att, 0.5))
             Seq.append(np.concatenate(cams, 1))
         current_att = np.concatenate(Seq, 0)
 
@@ -88,5 +88,4 @@ def add_gradCAM_attentions_to_disk(process_type, model, source_input,
                              str(batch_id) +'.jpg'))
 
         else:
-            raise RuntimeError(
-                'You need to set the save_path')
+            raise RuntimeError('You need to set the save_path')

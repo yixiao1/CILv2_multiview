@@ -50,7 +50,7 @@ class carlaImages(data.Dataset):
         block_num_end = (g_conf.DECODER_OUTPUT_FRAMES_NUM - g_conf.ENCODER_INPUT_FRAMES_NUM + g_conf.ENCODER_OUTPUT_STEP_DELAY) * g_conf.ENCODER_STEP_INTERVAL
 
         print(split)
-        print('  - number of chunk:', len(index_chunks))
+        print('  - number of chunks:', len(index_chunks))
         print('  - block number of data per chunk:', 'begining:', block_num_start, 'end:', block_num_end)
         if block_num_start > 0:
             for chunk in index_chunks:
