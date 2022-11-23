@@ -176,7 +176,7 @@ def execute(gpus_list, exp_batch, exp_name):
         print('    Training from scratch')
         print('    Initial learning rate -> ', g_conf.LEARNING_RATE)
         if g_conf.LEARNING_RATE_DECAY:
-            print('      - learning rate decay at epoch', g_conf.LEARNING_RATE_DECAY_EPOCHES, 'minimum lr:', g_conf.LEARNING_RATE_MINIMUM)
+            print('      - learning rate decay at epoch', g_conf.LEARNING_RATE_DECAY_EPOCHES, ', minimum lr:', g_conf.LEARNING_RATE_MINIMUM)
         print('')
         print('=======================================================================================')
         print('')
