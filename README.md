@@ -53,7 +53,7 @@ To obtain datasets for training and offline evaluation, ...
 
 * Run the main.py file with "train_encoder" process:
 
-    python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3cam_smalltest
+        python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3cam_smalltest
 
 where `--process-type` defines the process type (could be either train_val or val_only), `--gpus` defines the gpus to be used,
 `--folder` is the experiment folder defined inside [configs folder](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/tree/main/configs/CILv2),
