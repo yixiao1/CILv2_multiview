@@ -168,6 +168,8 @@ def execute(gpus_list, exp_batch, exp_name):
             if g_conf.LEARNING_RATE_DECAY:
                 print('      - learning rate decay at epoch', g_conf.LEARNING_RATE_DECAY_EPOCHES, ', minimum lr:', g_conf.LEARNING_RATE_MINIMUM)
             print('')
+            print('=======================================================================================')
+            print('')
 
         model._current_iteration = checkpoint['iteration'] + 1
         model._done_epoch = checkpoint['epoch']
