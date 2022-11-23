@@ -1,13 +1,16 @@
 # CIL++ with Multi-View Attention Learning
 -------------------------------------------------------------
 
-This is the official code release of the paper: Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning
+
  <img src="Driving_T2_T5.gif" height="350">
 
 ### Publications
+This is the official code release of the paper:
+
+[Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning]()
+by Yi Xiao, Felipe Codevilla, Diego Porres, Ziyang Hong, Antonio M. Lopez
 
 Please cite our paper if you find this work useful:
- * Yi Xiao, Felipe Codevilla, Diego Porres, Ziyang Hong, Antonio M. Lopez, [Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning]().
 
          @article{TBA
          }
