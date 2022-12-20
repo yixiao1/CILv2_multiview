@@ -19,12 +19,12 @@ Please check our online [video]()
 -------------------------------------------------------------
 ### Summary
 
-In this repository, you could find materials for:
+In this repository, you could find materials in order to:
 
- * Benchmarking the trained CIL++ model proposed in our paper
- * Collecting datasets using Roach RL expert
- * Training/evaluating (offline) new CIL++ models
- * Performing online driving test on CIL++ models on CARLA
+ * Benchmark the trained CIL++ model proposed in our paper
+ * Collect datasets using Roach RL expert
+ * Train/evaluata (offline) on new CIL++ models
+ * Test CIL++ models on CARLA simulator
 
 -------------------------------------------------------------
 ### Environment Setup
@@ -32,9 +32,8 @@ In this repository, you could find materials for:
 * Download CARLA 0.9.13
 * TBA
 
-
 -------------------------------------------------------------
-### Benchmark trained CIL++
+### Benchmark our trained CIL++
 * TBA
 
 -------------------------------------------------------------
@@ -43,7 +42,9 @@ In this repository, you could find materials for:
 To obtain datasets for training and offline evaluation, ...
 
 -------------------------------------------------------------
-### Training & offline evaluation on new CIL++ models
+### Training & performing offline evaluation on new CIL++ models
+
+* export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
 
 * export TRAINING_RESULTS_ROOT=/data/yixiao/VisionTFM/
 
@@ -51,7 +52,7 @@ To obtain datasets for training and offline evaluation, ...
 
 * Define a configuration file for training. Please refer to [this file](https://https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
 
-* Run the main.py file with "train_encoder" process:
+* Run the main.py file:
 
         python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3cam_smalltest
 
@@ -60,8 +61,17 @@ where `--process-type` defines the process type (could be either train_val or va
 and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) defined for training.
 
 -------------------------------------------------------------
-### Online driving test on CIL++ models on CARLA
-* TBA
+### Online driving test on CIL++ models in CARLA simulator
+
+* export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
+
+* export SENSOR_SAVE_PATH=/datatmp/Datasets/yixiao/CARLA/driving_record/
+
+* export DRIVING_TEST_ROOT=/home/yxiao/CILv2_multiview/run_CARLA_driving/
+
+* cd $DRIVING_TEST_ROOT
+
+* run ./scripts/run_evaluation/CILv2/leaderboard_Town05_test.sh
 
 -------------------------------------------------------------
 ### Acknowledgements
