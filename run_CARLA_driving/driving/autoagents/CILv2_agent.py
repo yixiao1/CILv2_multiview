@@ -548,4 +548,5 @@ class CILv2_agent(object):
             if not os.path.exists(self.vision_save_path):
                 os.makedirs(self.vision_save_path)
             if self.datapoint_count % self.save_frequence == 0:
+                mat = mat.resize((int(mat.size[0] / 2), int(mat.size[1] / 2)))   # comment this if you don't want to resize
                 mat.save(os.path.join(self.vision_save_path, str(self.datapoint_count).zfill(6) + '.jpg'))
