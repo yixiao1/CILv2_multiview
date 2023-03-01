@@ -44,17 +44,21 @@ To obtain datasets for training and offline evaluation, ...
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new CIL++ models
 
-* export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
+In a command line, run the following whilst
 
-* export TRAINING_RESULTS_ROOT=/data/yixiao/VisionTFM/
-
-* export DATASET_PATH=/datatmp/Datasets/yixiao/CARLA
+```bash
+export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/data/yixiao/VisionTFM/
+export DATASET_PATH=/datatmp/Datasets/yixiao/CARLA
+```
 
 * Define a configuration file for training. Please refer to [this file](https://https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
 
 * Run the main.py file:
-
-        python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3cam_smalltest
+  
+```bash
+python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3cam_smalltest
+```
 
 where `--process-type` defines the process type (could be either train_val or val_only), `--gpus` defines the gpus to be used,
 `--folder` is the experiment folder defined inside [configs folder](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/tree/main/configs/CILv2),
@@ -63,15 +67,13 @@ and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator
 
-* export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
-
-* export SENSOR_SAVE_PATH=/datatmp/Datasets/yixiao/CARLA/driving_record/
-
-* export DRIVING_TEST_ROOT=/home/yxiao/CILv2_multiview/run_CARLA_driving/
-
-* cd $DRIVING_TEST_ROOT
-
-* run ./scripts/run_evaluation/CILv2/leaderboard_Town05_test.sh
+```bash
+export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
+export SENSOR_SAVE_PATH=/datatmp/Datasets/yixiao/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/home/yxiao/CILv2_multiview/run_CARLA_driving/
+cd $DRIVING_TEST_ROOT
+run ./scripts/run_evaluation/CILv2/leaderboard_Town05_test.sh
+```
 
 -------------------------------------------------------------
 ### Acknowledgements
