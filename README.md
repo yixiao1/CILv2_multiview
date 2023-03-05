@@ -47,14 +47,14 @@ To obtain datasets for training and offline evaluation, ...
 In a command line, run the following whilst
 
 ```bash
-export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/dporres/CILv2_multiview/run_CARLA_driving:/home/dporres/CILv2_multiview/scenario_runner:/home/dporres/CILv2_multiview
 export TRAINING_RESULTS_ROOT=/data/yixiao/VisionTFM/
 export DATASET_PATH=/datatmp/Datasets/yixiao/CARLA
 ```
 
-* Define a configuration file for training. Please refer to [this file](https://https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
+* Define a configuration file for training. Please refer to [the `CILv2_3cam_smalltest.yaml` file](./configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
 
-* Run the main.py file:
+* Run the `main.py` file (here, we use 2 gpus for training and validation)
   
 ```bash
 python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3cam_smalltest
