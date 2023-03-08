@@ -697,11 +697,14 @@ model_urls = {
 
 
 # ========================== Models =================================
+# This all works only for torchvision == 0.12 (0.11 doesn't have vit models!)
 
 def vit_b_16(pretrained=False, **kwargs):
-    """Constructs a ResNet-18 model.
+    """Constructs a ViT Base (16x16 patches) model.
     Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        pretrained (bool): If True, returns a model pretrained on ImageNet
+    Note:
+        Input resolution: 224x224
     """
     model = torchvision.models.vit_b_16(pretrained=pretrained, **kwargs)
     if pretrained:
@@ -715,12 +718,13 @@ def vit_b_16(pretrained=False, **kwargs):
 
 
 def vit_b_32(pretrained=False, **kwargs: Any):
-    """Constructs a ViT-B/32 model.
+    """Constructs a ViT Base (32x32 patches) model.
     Args:
         pretrained (bool): If True, returns a model pretrained on ImageNet-1k
+    Note:
+        Input resolution: 224x224
     """
-    model = _vision_transformer(patch_size=32, num_layers=12, num_heads=12, hidden_dim=768,
-                                mlp_dim=3072, weights=None, progress=False, **kwargs)
+    model = torchvision.models.vit_b_32(pretrained=pretrained, **kwargs)
     if pretrained:
         model_dict = model_zoo.load_url(model_urls['vit_b_32'])
         # remove the fc layers
@@ -734,11 +738,13 @@ def vit_b_32(pretrained=False, **kwargs: Any):
 
 
 def vit_l_16(pretrained=False, **kwargs):
-    """Constructs a ResNet-50 model.
+    """Constructs a ViT Large (16x16 patches) model.
     Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        pretrained (bool): If True, returns a model pretrained on ImageNet
+    Note:
+        Input resolution: 224x224
     """
-    model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
+    model = torchvision.models.vit_l_16(pretrained=pretrained, **kwargs)
     if pretrained:
         model_dict = model_zoo.load_url(model_urls['resnet50'])
         # remove the fc layers
@@ -752,11 +758,13 @@ def vit_l_16(pretrained=False, **kwargs):
 
 
 def vit_l_32(pretrained=False, **kwargs):
-    """Constructs a ResNet-101 model.
+    """Constructs a ViT Large (32x32 patches) model.
     Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        pretrained (bool): If True, returns a model pretrained on ImageNet
+    Note:
+        Input resolution: 224x224
     """
-    model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
+    model = torchvision.models.vit_l_32(pretrained=pretrained, **kwargs)
     if pretrained:
         # model.load_state_dict(model_zoo.load_url(model_urls['resnet101']))
         model_dict = model_zoo.load_url(model_urls['resnet101'])
@@ -767,15 +775,4 @@ def vit_l_32(pretrained=False, **kwargs):
         state.update(model_dict)
         model.load_state_dict(state)
 
-    return model
-
-
-def vit_h_14(pretrained=False, **kwargs):
-    """Constructs a ResNet-152 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet152']))
     return model

@@ -18,15 +18,15 @@ DECODER_OUTPUT_FRAMES_NUM: 1
 IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
-IMAGE_SHAPE: [3, 300, 300]  # Input image shape
+IMAGE_SHAPE: [3, 224, 224]  # Input image shape; we have lowered this for vanilla ViT deployment (300 => 224)
 DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right']  # Multi-view cameras, it needs to be set in this order
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
-DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
+DATA_COMMAND_CLASS_NUM: 4    # Number of commands: 4 for single-lane towns, 6 for multi-lane towns (lane change)
 # Data normalization: might be changed depending on datasets
 DATA_NORMALIZATION:
-  steer: [-1.0, 1.0]
-  acceleration: [-1.0, 1.0]
-  speed: [-1.0, 11.0]     # m/s
+  steer: [-1.0, 1.0]  # [left, right]
+  acceleration: [-1.0, 1.0]  # [full brake, full throttle]
+  speed: [-1.0, 11.0]     # in m/s; [reverse, max speed]
 
 # Loss Parameters #
 LOSS: 'Action_nospeed_L1'  # no speed L1 loss
@@ -38,7 +38,7 @@ LOSS_WEIGHT:
 # Optimizer Parameters #
 LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [10, 20]
+LEARNING_RATE_DECAY_EPOCHES: [10, 20]   # Remove this and do a warmpu/cooldown schedule (TODO later)
 LEARNING_RATE_POLICY:
   name: 'normal'
   level: 0.5
@@ -60,7 +60,7 @@ MODEL_CONFIGURATION:
   encoder_embedding:
     perception:
       res:
-        name: 'resnet34'
+        name: 'vit_b_32'
         layer_id: 4
 
   TxEncoder:

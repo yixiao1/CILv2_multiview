@@ -1,4 +1,3 @@
-
 import torch.nn as nn
 
 
@@ -29,15 +28,11 @@ class FC_Bottleneck(nn.Module):
             return self.layers(x)
 
 
-
 class FC(nn.Module):
 
     def __init__(self, params=None, norm=False, activate=True, module_name='Default'):
         # TODO: Make an auto naming function for this.
-
         super(FC, self).__init__()
-
-
         """" ---------------------- FC ----------------------- """
         if params is None:
             raise ValueError("Creating a NULL fully connected block")
@@ -50,16 +45,11 @@ class FC(nn.Module):
 
         if len(params['dropouts']) != len(params['neurons'])-1:
             raise ValueError("Dropouts should be from the len of kernels minus 1")
-
-
         self.layers = []
-
-
         for i in range(0, len(params['neurons']) -1):
-
             fc = nn.Linear(params['neurons'][i], params['neurons'][i+1])
             dropout = nn.Dropout(p=params['dropouts'][i])
-            #norm = nn.BatchNorm1d(params['neurons'][i+1])
+            # norm = nn.BatchNorm1d(params['neurons'][i+1])
             layernorm = nn.LayerNorm(params['neurons'][i+1], eps=1e-5)
             relu = nn.ReLU(inplace=True)
 
@@ -68,7 +58,7 @@ class FC(nn.Module):
             else:
                 if norm:
                     if activate:
-                        #self.layers.append(nn.Sequential(*[fc, dropout, norm, relu]))
+                        # self.layers.append(nn.Sequential(*[fc, dropout, norm, relu]))
                         self.layers.append(nn.Sequential(*[fc, dropout, layernorm, relu]))
                     else:
                         self.layers.append(nn.Sequential(*[fc, dropout, layernorm]))
@@ -78,20 +68,14 @@ class FC(nn.Module):
                     else:
                         self.layers.append(nn.Sequential(*[fc, dropout]))
 
-
         self.layers = nn.Sequential(*self.layers)
 
-
-
-    def forward(self, x):# return_intermediate=None):
+    def forward(self, x):  # return_intermediate=None):
         # if X is a tuple, just return the other elements, the idea is to re pass
         # the intermediate layers for future attention plotting
         if type(x) is tuple:
             return self.layers(x[0]), x[1]
         else:
-            #if return_intermediate is not None:
-
-            #else:
+            # if return_intermediate is not None:
+            # else:
             return self.layers(x)
-
-

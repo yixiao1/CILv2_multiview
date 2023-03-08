@@ -41,6 +41,7 @@ class CIL_multiview(nn.Module):
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
                                  'end_layer': True})
 
+        # Careful here, we don't want to undo the pretrained weights of the ViT!
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
@@ -49,8 +50,14 @@ class CIL_multiview(nn.Module):
         self.train()
 
     def forward(self, s, s_d, s_s):
-        S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
-        B = s_d[0].shape[0]
+        """
+        Arguments:
+            s: speed in m/s
+            s_d: command (one-hot)
+
+        """
+        S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
+        B = s_d[0].shape[0]     # Batch size
 
         x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1) # [B, S, cam, 3, H, W]
         x = x.view(B*S*len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[0], g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2])  # [B*S*cam, 3, H, W]
