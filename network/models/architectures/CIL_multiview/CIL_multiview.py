@@ -14,6 +14,7 @@ class CIL_multiview(nn.Module):
         super(CIL_multiview, self).__init__()
         self.params = params
 
+        # Perception encoder
         resnet_module = importlib.import_module('network.models.building_blocks.resnet_FM')
         resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
         self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
@@ -41,11 +42,12 @@ class CIL_multiview(nn.Module):
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
                                  'end_layer': True})
 
-        # Careful here, we don't want to undo the pretrained weights of the ViT!
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                nn.init.constant_(m.bias, 0.1)
+        # TODO: Careful here, we don't want to undo the pretrained weights of the ViT!
+        for name, module in self.named_modules():
+            if 'encoder' not in name or 'head' not in name:
+                if isinstance(module, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight)
+                    nn.init.constant_(m.bias, 0.1)
 
         self.train()
 
@@ -68,6 +70,8 @@ class CIL_multiview(nn.Module):
         e_p, _ = self.encoder_embedding_perception(x)    # [B*S*cam, dim, h, w]
         encoded_obs = e_p.view(B, S*len(g_conf.DATA_USED), self.res_out_dim, self.res_out_h*self.res_out_w)  # [B, S*cam, dim, h*w]
         encoded_obs = encoded_obs.transpose(2, 3).reshape(B, -1, self.res_out_dim)  # [B, S*cam*h*w, 512]
+
+        # Embedding of command and speed
         e_d = self.command(d).unsqueeze(1)     # [B, 1, 512]
         e_s = self.speed(s).unsqueeze(1)       # [B, 1, 512]
 

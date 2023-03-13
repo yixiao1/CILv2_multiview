@@ -706,14 +706,17 @@ def vit_b_16(pretrained=False, **kwargs):
     Note:
         Input resolution: 224x224
     """
-    model = torchvision.models.vit_b_16(pretrained=pretrained, **kwargs)
+    model = torchvision.models.vit_b_16(pretrained=False, **kwargs)
     if pretrained:
+        print(f"Loading pretrained weights from: {model_urls['vit_b_16']}...")
+        model_dict = model_zoo.load_url(model_urls['vit_b_16'])
         # remove the fc layers
-        del model_dict['fc.weight']
-        del model_dict['fc.bias']
+        del model_dict['heads.head.weight']
+        del model_dict['heads.head.bias']
         state = model.state_dict()
         state.update(model_dict)
         model.load_state_dict(state)
+
     return model
 
 
@@ -724,8 +727,9 @@ def vit_b_32(pretrained=False, **kwargs: Any):
     Note:
         Input resolution: 224x224
     """
-    model = torchvision.models.vit_b_32(pretrained=pretrained, **kwargs)
+    model = torchvision.models.vit_b_32(pretrained=False, **kwargs)
     if pretrained:
+        print(f"Loading pretrained weights from: {model_urls['vit_b_32']}...")
         model_dict = model_zoo.load_url(model_urls['vit_b_32'])
         # remove the fc layers
         del model_dict['heads.head.weight']
@@ -744,12 +748,13 @@ def vit_l_16(pretrained=False, **kwargs):
     Note:
         Input resolution: 224x224
     """
-    model = torchvision.models.vit_l_16(pretrained=pretrained, **kwargs)
+    model = torchvision.models.vit_l_16(pretrained=False, **kwargs)
     if pretrained:
-        model_dict = model_zoo.load_url(model_urls['resnet50'])
+        print(f"Loading pretrained weights from: {model_urls['vit_l_16']}...")
+        model_dict = model_zoo.load_url(model_urls['vit_l_16'])
         # remove the fc layers
-        del model_dict['fc.weight']
-        del model_dict['fc.bias']
+        del model_dict['heads.head.weight']
+        del model_dict['heads.head.bias']
         state = model.state_dict()
         state.update(model_dict)
         model.load_state_dict(state)
@@ -764,13 +769,13 @@ def vit_l_32(pretrained=False, **kwargs):
     Note:
         Input resolution: 224x224
     """
-    model = torchvision.models.vit_l_32(pretrained=pretrained, **kwargs)
+    model = torchvision.models.vit_l_32(pretrained=False, **kwargs)
     if pretrained:
-        # model.load_state_dict(model_zoo.load_url(model_urls['resnet101']))
-        model_dict = model_zoo.load_url(model_urls['resnet101'])
-        # remove the fc layers to adapt to our own classes, avoiding size mismatch
-        del model_dict['fc.weight']
-        del model_dict['fc.bias']
+        print(f"Loading pretrained weights from: {model_urls['vit_l_32']}...")
+        model_dict = model_zoo.load_url(model_urls['vit_l_32'])
+        # remove the fc layers
+        del model_dict['heads.head.weight']
+        del model_dict['heads.head.bias']
         state = model.state_dict()
         state.update(model_dict)
         model.load_state_dict(state)
