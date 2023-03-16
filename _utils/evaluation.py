@@ -54,7 +54,7 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
 
                 
 
-                action_outputs, src_layers, tx_en_attn_weights = model.forward_eval(src_images, src_directions, src_speeds)
+                action_outputs = model.forward_eval(src_images, src_directions, src_speeds)
                 torch.cuda.synchronize()
                 evaluator.process(action_outputs, tgt_a)
 
@@ -100,8 +100,6 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
                 del src_directions
                 del tgt_a
                 del action_outputs
-                del src_layers
-                del tx_en_attn_weights
 
         results = evaluator.evaluate(eval_epoch, dataset_name)
         if results is None:

@@ -107,27 +107,35 @@ class CIL_multiview(nn.Module):
         s = s_s[-1]  # [B, 1]
 
         # image embedding
-        e_p, resnet_inter = self.encoder_embedding_perception(x)  # [B*S*cam, dim, h, w]
-        encoded_obs = e_p.view(B, S * len(g_conf.DATA_USED), self.res_out_dim,  self.res_out_h * self.res_out_w)  # [B, S*cam, dim, h*w]
-        encoded_obs = encoded_obs.transpose(2, 3).reshape(B, -1, self.res_out_dim)  # [B, S*cam*h*w, 512]
+        # First, patch and embed the input images
+        e_p = self.tfx_conv_projection(x)  # [B*S*cam, D, H//P, W//P]
+        e_p = e_p.reshape(-1, self.tfx_hidden_dim, self.tfx_seq_length - 1)  # [B*S*cam, D, (H//P)^2]
+        e_p = e_p.permute(0, 2, 1)  # [B*S*cam, (H//P)^2, D]
+
+        # Now the rest of forward
+        n = e_p.shape[0]
+        e_p = torch.cat([self.tfx_class_token.expand(n, -1, -1), e_p], dim=1)  # [B*S*cam, (H//P)^2 + 1, D]])
+        e_p = e_p.reshape(B, -1, self.tfx_hidden_dim)  # [B, S*cam*((H//P)^2 + 1), D]
+
         e_d = self.command(d).unsqueeze(1)  # [B, 1, 512]
         e_s = self.speed(s).unsqueeze(1)  # [B, 1, 512]
 
         encoded_obs = encoded_obs + e_d + e_s   # [B, S*cam*h*w, 512]
 
-        if self.params['TxEncoder']['learnable_pe']:
-            # positional encoding
-            pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w, 512]
-        else:
-            pe = self.positional_encoding(encoded_obs)
+        # Add the embeddings to the image embeddings (TODO: try different ways to do this)
+        encoded_obs = e_p + e_d + e_s  # [B, S*cam*((H//P)^2 + 1), D]
+        encoded_obs = encoded_obs.reshape(-1, self.tfx_seq_length, self.tfx_hidden_dim)  # [B*S*cam, (H//P)^2 + 1, D]
 
-        # Transformer encoder multi-head self-attention layers
-        in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
-        in_memory = torch.mean(in_memory, dim=1)  # [B, 512]
+        # Pass on to the Transformer encoder
+        in_memory = self.tfx_encoder(encoded_obs)  # [B*S*cam, (H//P)^2+1, D]
+        # Use only the [CLS] token for the action prediction
+        in_memory = in_memory[:, 0].reshape(B, -1, self.tfx_hidden_dim)  # [B*S*cam, (H//P)^2+1, D] => [B*S*cam, D] => [B, S*cam, D]
+        in_memory = torch.mean(in_memory, dim=1)  # [B, D]
 
-        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        # Action prediction
+        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, D) -> (B, 1, len(TARGETS))
 
-        return action_output, resnet_inter, attn_weights
+        return action_output  # TODO: return attn_weights?
 
     def generate_square_subsequent_mask(self, sz):
         r"""Generate a square mask for the sequence. The masked positions are filled with float('-inf').
