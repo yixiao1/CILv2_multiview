@@ -14,27 +14,27 @@ class CIL_multiview(nn.Module):
         super(CIL_multiview, self).__init__()
         self.params = params
 
-        # Perception encoder
-        resnet_module = importlib.import_module('network.models.building_blocks.resnet_FM')
-        resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
-        self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
-                                                          layer_id = params['encoder_embedding']['perception']['res'][ 'layer_id'])
-        _, self.res_out_dim, self.res_out_h, self.res_out_w = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] + g_conf.IMAGE_SHAPE)[params['encoder_embedding']['perception']['res'][ 'layer_id']]
+        # Get ViT model characteristics (our new perception module)
+        vit_module = importlib.import_module('network.models.building_blocks.vit')
+        vit_module = getattr(vit_module, params['encoder_embedding']['perception']['res']['name'])
+        self.encoder_embedding_perception = vit_module(pretrained=g_conf.IMAGENET_PRE_TRAINED)
 
-        if params['TxEncoder']['learnable_pe']:
-            self.positional_encoding = nn.Parameter(torch.zeros(1, len(g_conf.DATA_USED)*g_conf.ENCODER_INPUT_FRAMES_NUM*self.res_out_h*self.res_out_w, params['TxEncoder']['d_model']))
-        else:
-            self.positional_encoding = PositionalEncoding(d_model=params['TxEncoder']['d_model'], dropout=0.0, max_len=len(g_conf.DATA_USED)*g_conf.ENCODER_INPUT_FRAMES_NUM*self.res_out_h*self.res_out_w)
+        # Get the vision transformer characteristics
+        self.tfx_hidden_dim = self.encoder_embedding_perception.hidden_dim  # D
+        self.tfx_seq_length = self.encoder_embedding_perception.seq_length  # (H//P)^2 + 
+        self.tfx_patch_size = self.encoder_embedding_perception.patch_size  # P
+        self.tfx_image_size = self.encoder_embedding_perception.image_size  # H, W
+        # Network pieces
+        self.tfx_class_token = self.encoder_embedding_perception.class_token
+        self.tfx_conv_projection = self.encoder_embedding_perception.conv_proj
+        self.tfx_encoder = self.encoder_embedding_perception.encoder
+        self.tfx_pos_embedding = self.tfx_encoder.pos_embedding  # Used implicitly by the encoder above
 
-        join_dim = params['TxEncoder']['d_model']
-        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, params['TxEncoder']['d_model'])
-        self.speed = nn.Linear(1, params['TxEncoder']['d_model'])
 
-        tx_encoder_layer = TransformerEncoderLayer(d_model=params['TxEncoder']['d_model'],
-                                                   nhead=params['TxEncoder']['n_head'],
-                                                   norm_first=params['TxEncoder']['norm_first'], batch_first=True)
-        self.tx_encoder = TransformerEncoder(tx_encoder_layer, num_layers=params['TxEncoder']['num_layers'],
-                                             norm=nn.LayerNorm(params['TxEncoder']['d_model']))
+        join_dim = self.tfx_hidden_dim  # params['TxEncoder']['d_model']
+
+        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)#  params['TxEncoder']['d_model'])
+        self.speed = nn.Linear(1, self.tfx_hidden_dim)  # params['TxEncoder']['d_model'])
 
         self.action_output = FC(params={'neurons': [join_dim] +
                                             params['action_output']['fc']['neurons'] +
@@ -46,16 +46,17 @@ class CIL_multiview(nn.Module):
         for name, module in self.named_modules():
             if 'encoder' not in name or 'head' not in name:
                 if isinstance(module, nn.Linear):
-                    nn.init.xavier_uniform_(m.weight)
-                    nn.init.constant_(m.bias, 0.1)
+                    nn.init.xavier_uniform_(module.weight)
+                    nn.init.constant_(module.bias, 0.1)
 
         self.train()
 
     def forward(self, s, s_d, s_s):
         """
         Arguments:
-            s: speed in m/s
-            s_d: command (one-hot)
+            s: images
+            s_d: directions/commands (one-hot)
+            s_s: speed (in m/s)
 
         """
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
@@ -67,30 +68,34 @@ class CIL_multiview(nn.Module):
         s = s_s[-1]  # [B, 1]
 
         # image embedding
-        e_p, _ = self.encoder_embedding_perception(x)    # [B*S*cam, dim, h, w]
-        encoded_obs = e_p.view(B, S*len(g_conf.DATA_USED), self.res_out_dim, self.res_out_h*self.res_out_w)  # [B, S*cam, dim, h*w]
-        encoded_obs = encoded_obs.transpose(2, 3).reshape(B, -1, self.res_out_dim)  # [B, S*cam*h*w, 512]
+        # First, patch and embed the input images
+        e_p = self.tfx_conv_projection(x)  # [B*S*cam, D, H//P, W//P]
+        e_p = e_p.reshape(-1, self.tfx_hidden_dim, self.tfx_seq_length - 1)  # [B*S*cam, D, (H//P)^2]
+        e_p = e_p.permute(0, 2, 1)  # [B*S*cam, (H//P)^2, D]
+
+        # Now the rest of forward
+        n = e_p.shape[0]
+        e_p = torch.cat([self.tfx_class_token.expand(n, -1, -1), e_p], dim=1)  # [B*S*cam, (H//P)^2 + 1, D]])
+        e_p = e_p.reshape(B, -1, self.tfx_hidden_dim)  # [B, S*cam*((H//P)^2 + 1), D]
 
         # Embedding of command and speed
-        e_d = self.command(d).unsqueeze(1)     # [B, 1, 512]
-        e_s = self.speed(s).unsqueeze(1)       # [B, 1, 512]
+        e_d = self.command(d).unsqueeze(1)     # [B, 1, D]
+        e_s = self.speed(s).unsqueeze(1)       # [B, 1, D]
 
-        encoded_obs = encoded_obs + e_d + e_s
+        # Add the embeddings to the image embeddings (TODO: try different ways to do this)
+        encoded_obs = e_p + e_d + e_s  # [B, S*cam*((H//P)^2 + 1), D]
+        encoded_obs = encoded_obs.reshape(-1, self.tfx_seq_length, self.tfx_hidden_dim)  # [B*S*cam, (H//P)^2 + 1, D]
 
-        if self.params['TxEncoder']['learnable_pe']:
-            # positional encoding
-            pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w, 512]
-        else:
-            pe = self.positional_encoding(encoded_obs)
+        # Pass on to the Transformer encoder
+        in_memory = self.tfx_encoder(encoded_obs)  # [B*S*cam, (H//P)^2+1, D]
+        # Use only the [CLS] token for the action prediction
+        in_memory = in_memory[:, 0].reshape(B, -1, self.tfx_hidden_dim)  # [B*S*cam, (H//P)^2+1, D] => [B*S*cam, D] => [B, S*cam, D]
+        in_memory = torch.mean(in_memory, dim=1)  # [B, D]
 
-        # Transformer encoder multi-head self-attention layers
-        in_memory, _ = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
+        # Action prediction
+        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, D) -> (B, 1, len(TARGETS))
 
-        in_memory = torch.mean(in_memory, dim=1)  # [B, 512]
-
-        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
-
-        return action_output         # (B, 1, 1), (B, 1, len(TARGETS))
+        return action_output
 
     def foward_eval(self, s, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)

@@ -61,9 +61,9 @@ MODEL_CONFIGURATION:
     perception:
       res:
         name: 'vit_b_32'
-        layer_id: 4
+        layer_id: 4  # Remove
 
-  TxEncoder:
+  TxEncoder:  # This won't be used anymore
     d_model: 512
     n_head: 4
     num_layers: 4

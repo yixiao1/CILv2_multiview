@@ -30,7 +30,13 @@ In this repository, you could find materials in order to:
 ### Environment Setup
 
 * Download CARLA 0.9.13
-* TBA
+* Run the following command to install the required packages
+
+```bash
+conda create -n cilv2 python=3.7
+conda activate cilv2
+pip3 install -r requirements.txt
+```
 
 -------------------------------------------------------------
 ### Benchmark our trained CIL++
