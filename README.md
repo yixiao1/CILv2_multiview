@@ -53,8 +53,8 @@ To obtain datasets for training and offline evaluation, ...
 In a command line, run the following whilst
 
 ```bash
-export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/dporres/CILv2_multiview/run_CARLA_driving:/home/dporres/CILv2_multiview/scenario_runner:/home/dporres/CILv2_multiview
-export TRAINING_RESULTS_ROOT=/data/yixiao/VisionTFM/
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/experiments/dporres/CILv2_multiview/scenario_runner:/datafast/experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/data/dporres/VisionTFM/
 export DATASET_PATH=/datatmp/Datasets/yixiao/CARLA
 ```
 
@@ -69,6 +69,13 @@ python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3
 where `--process-type` defines the process type (could be either train_val or val_only), `--gpus` defines the gpus to be used,
 `--folder` is the experiment folder defined inside [configs folder](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/tree/main/configs/CILv2),
 and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) defined for training.
+
+#### TODO:
+* Log the attention maps during training (gradcam has now been removed)
+* Return (?) the attention maps during validation
+* Try adding the `[CMD]` and `[SPD]` tokens to the model instead of just adding the output of the FC
+  * Note that this will require us to interpolate the positional embedding to accomodate for this longer sequence length
+* Make sure the network initializations is not undoing the pre-trained weights!
 
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator

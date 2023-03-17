@@ -50,9 +50,9 @@ def train_transform(data, image_shape, augmentation=False):
         for camera_type in g_conf.DATA_USED:
             image = data[camera_type]
             ## WE ALREADY PRE-PROCESSED IMAGES TO DESIRED SIZE
-            # height = image_shape[1]
-            # width = image_shape[2]
-            # image = image.resize((width, height))
+            height = image_shape[1]
+            width = image_shape[2]
+            image = image.resize((width, height))
             image = TF.to_tensor(image)
             image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
             data[camera_type] = image
@@ -63,9 +63,9 @@ def val_transform(data, image_shape):
     for camera_type in g_conf.DATA_USED:
         image = data[camera_type]
         ## WE ALREADY PRE-PROCESSED IMAGES TO DESIRED SIZE
-        # height = image_shape[1]
-        # width = image_shape[2]
-        # image = image.resize((width, height))
+        height = image_shape[1]
+        width = image_shape[2]
+        image = image.resize((width, height))
         image = TF.to_tensor(image)
         image = TF.normalize(image,  mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
         data[camera_type] = image

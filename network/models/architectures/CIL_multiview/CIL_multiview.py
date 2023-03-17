@@ -120,6 +120,7 @@ class CIL_multiview(nn.Module):
         e_d = self.command(d).unsqueeze(1)  # [B, 1, 512]
         e_s = self.speed(s).unsqueeze(1)  # [B, 1, 512]
 
+        encoded_obs = e_p + e_d + e_s  # [B, S*cam*((H//P)^2 + 1), D]
         encoded_obs = encoded_obs + e_d + e_s   # [B, S*cam*h*w, 512]
 
         # Add the embeddings to the image embeddings (TODO: try different ways to do this)
