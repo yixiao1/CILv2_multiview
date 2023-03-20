@@ -71,11 +71,11 @@ where `--process-type` defines the process type (could be either train_val or va
 and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) defined for training.
 
 #### TODO:
-* Log the attention maps during training (gradcam has now been removed)
-* Return (?) the attention maps during validation
-* Try adding the `[CMD]` and `[SPD]` tokens to the model instead of just adding the output of the FC
+* [ ] Log the attention maps during training (gradcam has now been removed)
+* [ ] Return (?) the attention maps during validation
+* [ ] Try adding the `[CMD]` and `[SPD]` tokens to the model instead of just adding the output of the FC
   * Note that this will require us to interpolate the positional embedding to accomodate for this longer sequence length
-* Make sure the network initializations is not undoing the pre-trained weights!
+* [x] Make sure the network initializations is not undoing the pre-trained weights!
 
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator

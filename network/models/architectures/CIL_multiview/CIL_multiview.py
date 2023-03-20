@@ -42,9 +42,9 @@ class CIL_multiview(nn.Module):
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
                                  'end_layer': True})
 
-        # TODO: Careful here, we don't want to undo the pretrained weights of the ViT!
+        # We don't want to undo the pretrained weights of the ViT!
         for name, module in self.named_modules():
-            if 'encoder' not in name or 'head' not in name:
+            if 'encoder' not in name:
                 if isinstance(module, nn.Linear):
                     nn.init.xavier_uniform_(module.weight)
                     nn.init.constant_(module.bias, 0.1)
