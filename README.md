@@ -54,7 +54,7 @@ In a command line, run the following whilst
 
 ```bash
 export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/experiments/dporres/CILv2_multiview/scenario_runner:/datafast/experiments/dporres/CILv2_multiview
-export TRAINING_RESULTS_ROOT=/data/dporres/VisionTFM/
+export TRAINING_RESULTS_ROOT=/datafast/experiments/dporres/VisionTFM/
 export DATASET_PATH=/datatmp/Datasets/yixiao/CARLA
 ```
 
