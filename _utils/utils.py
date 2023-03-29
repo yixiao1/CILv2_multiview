@@ -74,17 +74,23 @@ def print_train_info(log_frequency, batch_size, model,
 
     epoch = model._current_iteration*batch_size / len(model)
 
+    # Number of digits to print for the iteration and epoch counters
+    digits_total_iters = int(np.log10(len(model))) + 1
+    digits_total_epochs = int(np.log10(len(model) / batch_size)) + 1
+
     time_end = time.time()
     batch_time = time_end - time_start
     acc_time += batch_time
     if model._current_iteration % log_frequency == 0:
 
         if brake_loss_data is not None:
-            print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Throttle Loss {:.3f}, , Brake Loss {:.3f}, {:.2f} steps/s".format(
+            print ("Training epoch {:3.2f}, iteration {:6d}, Loss {:.3f}, Steer Loss {:.3f}, Throttle Loss {:.3f}, , Brake Loss {:.3f}, {:.2f} steps/s".format(
                 epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, brake_loss_data, (log_frequency / acc_time)))
         else:
-            print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, {:.2f} steps/s".format(
-                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data,(log_frequency / acc_time)))
+            print(f'Epoch {epoch:3.2f}, Iteration {model._current_iteration:{digits_total_iters}d}, ' \
+                  f'Loss {loss_data:.4f}, Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f}, {(log_frequency / acc_time):.2f} steps/s')
+            # print ("Training epoch {:3.2f}, iteration {:6d}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, {:.2f} steps/s".format(
+            #     epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data,(log_frequency / acc_time)))
         acc_time = 0.0
 
     return acc_time
