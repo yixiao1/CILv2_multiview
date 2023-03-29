@@ -32,6 +32,7 @@ idna==3.3
 idna-ssl==1.1.0
 importlib-metadata==4.8.3
 importlib-resources==5.4.0
+ipywidgets
 kaleido==0.2.1
 Keras-Applications==1.0.8
 Keras-Preprocessing==1.1.2
