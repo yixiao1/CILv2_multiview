@@ -12,6 +12,11 @@ Provisional code to evaluate Autonomous Agents for the CARLA Autonomous Driving 
 """
 from __future__ import print_function
 
+# Shut off DeprecationWarning and FutureWarning
+import warnings
+warnings.simplefilter("ignore", DeprecationWarning)
+warnings.simplefilter("ignore", FutureWarning)
+
 import traceback
 import argparse
 from argparse import RawTextHelpFormatter
