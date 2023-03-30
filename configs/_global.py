@@ -78,7 +78,7 @@ def merge_with_yaml(yaml_filename, process_type='train_val'):
     global _g_conf
     with open(yaml_filename, 'r') as f:
 
-        yaml_file = yaml.load(f)
+        yaml_file = yaml.safe_load(f)
 
         yaml_cfg = AttributeDict(yaml_file)
 
