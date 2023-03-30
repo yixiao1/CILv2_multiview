@@ -18,5 +18,5 @@ class GradCAM(BaseCAM):
                         target_layer,
                         target_category,
                         activations,
-                        grads):  # grads size [B, dim, h, w]
-        return np.mean(grads, axis=(2, 3))
+                        grads):  # grads size [B, seq_len, hidden_dim]
+        return np.mean(grads, axis=2)  # TODO: axis=(2, 3) for attention maps

@@ -55,7 +55,7 @@ class BaseCAM:
                                        activations,
                                        grads)
 
-        weighted_activations = weights[:, :, None, None] * activations
+        weighted_activations = weights[:, :, None] * activations
         if output[0] < 0.0:
             weighted_activations = -weighted_activations
 

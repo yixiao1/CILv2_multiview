@@ -261,7 +261,9 @@ class CILv2_agent(object):
             self.direction = \
                 [torch.cuda.LongTensor([self.process_command(self.input_data['GPS'][1], self.input_data['IMU'][1])[1]-1]).unsqueeze(0).cuda()]
 
-        actions_outputs, _, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
+        # actions_outputs, _, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
+
+        actions_outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
 
         last_action_outputs = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 
@@ -351,10 +353,10 @@ class CILv2_agent(object):
                 rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
                 cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
 
-            target_layers = [self._model._model.encoder_embedding_perception.layer4[-1]]
+            target_layers = [self._model._model.encoder_embedding_perception.encoder.layers.encoder_layer_11]
             cam = GradCAM(model=self._model._model, target_layers=target_layers)
 
-            input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]
+            input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]  # [3, 3, H, W], [no_commands], [1]
             with torch.enable_grad():
                 grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
 
