@@ -12,9 +12,9 @@ nocrash_newweathertown_empty () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full_samehparams/config80.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full/config80.json \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=2 \
+    --gpus=3 \
     --fps=20 \
     --PedestriansSeed=0 \
     --trafficManagerSeed=0 \
@@ -32,9 +32,9 @@ nocrash_newweathertown_regular () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full_samehparams/config80.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full/config80.json \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=2 \
+    --gpus=3 \
     --fps=20 \
     --PedestriansSeed=0 \
     --trafficManagerSeed=0 \
@@ -51,9 +51,9 @@ nocrash_newweathertown_busy () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full_samehparams/config80.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full/config80.json \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=2 \
+    --gpus=3 \
     --fps=20 \
     --PedestriansSeed=0 \
     --trafficManagerSeed=0 \

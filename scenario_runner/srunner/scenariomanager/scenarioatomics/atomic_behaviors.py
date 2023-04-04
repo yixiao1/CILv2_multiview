@@ -31,7 +31,7 @@ import carla
 from agents.navigation.basic_agent import BasicAgent, LocalPlanner
 from agents.navigation.local_planner import RoadOption
 from agents.navigation.global_route_planner import GlobalRoutePlanner
-from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+# from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from srunner.scenariomanager.actorcontrols.actor_control import ActorControl
@@ -651,9 +651,9 @@ class ChangeActorWaypointsToReachPosition(ChangeActorWaypoints):
         self._end_transform = position
 
         town_map = CarlaDataProvider.get_map()
-        dao = GlobalRoutePlannerDAO(town_map, 2)
-        self._grp = GlobalRoutePlanner(dao)
-        self._grp.setup()
+        # dao = GlobalRoutePlannerDAO(town_map, 2)
+        self._grp = GlobalRoutePlanner(town_map, 2)
+        # self._grp.setup()
 
     def initialise(self):
         """

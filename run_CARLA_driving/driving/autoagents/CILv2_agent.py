@@ -110,8 +110,7 @@ class CILv2_agent(object):
             print("Using multiple GPUs parallel! ")
             print(torch.cuda.device_count(), 'GPUs to be used: ', os.environ["CUDA_VISIBLE_DEVICES"])
             self._model = DataParallelWrapper(self._model)
-        self.checkpoint = torch.load(
-            os.path.join(exp_dir, 'checkpoints', self._model.name + '_' + str(checkpoint_number) + '.pth'))
+        self.checkpoint = torch.load(os.path.join(exp_dir, 'checkpoints', f'{self._model.name}_{checkpoint_number}.pth'))
         print(self._model.name + '_' + str(checkpoint_number) + '.pth', "loaded from ",
               os.path.join(exp_dir, 'checkpoints'))
         if isinstance(self._model, torch.nn.DataParallel):

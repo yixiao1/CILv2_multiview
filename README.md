@@ -81,8 +81,7 @@ and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-
 ### Online driving test on CIL++ models in CARLA simulator
 
 ***NOTE:*** 
-* The following code needs that we add a `global_route_planner_dao.py` in the `PythonAPI/carla/agents/navigation` folder. This is a copy of the `global_route_planner_dao.py` file in previous versions of `CARLA` and thus must be added manually. TODO: elminate the necessity of this file!
-* We also require the `PYTHONPATH` from the above bash command to be set (i.e., the `PYTHONPATH` from the training/evaluation section). Make sure that the `PYTHONPATH` is set before running the following commands.
+* We require the `PYTHONPATH` from the above bash command to be set (i.e., the `PYTHONPATH` from the training/evaluation section). Make sure that the `PYTHONPATH` is set before running the following commands.
 
 So, to run the `NoCrash` benchmark, run:
 
@@ -90,7 +89,7 @@ So, to run the `NoCrash` benchmark, run:
 export SENSOR_SAVE_PATH=/datafast/Datasets/dporres/CARLA/driving_record/
 export DRIVING_TEST_ROOT=/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving/
 cd $DRIVING_TEST_ROOT
-./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02_lbc.sh
+./scripts/run_evaluation/CILv2/smallnocrash_newweathertown_Town02_lbc.sh
 ```
 
 -------------------------------------------------------------

@@ -14,7 +14,7 @@ import math
 import xml.etree.ElementTree as ET
 
 from agents.navigation.global_route_planner import GlobalRoutePlanner
-from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+# from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from agents.navigation.local_planner import RoadOption
 
 
@@ -143,7 +143,7 @@ def interpolate_trajectory(world, waypoints_trajectory, hop_resolution=1.0):
     # dao = GlobalRoutePlannerDAO(world.get_map(), hop_resolution)
     # grp = GlobalRoutePlanner(dao, hop_resolution)
     grp = GlobalRoutePlanner(world.get_map(), hop_resolution)
-    grp.setup()
+    # grp.setup()
     # Obtain route plan
     route = []
     for i in range(len(waypoints_trajectory) - 1):   # Goes until the one before the last.

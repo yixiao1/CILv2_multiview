@@ -97,7 +97,7 @@ class CIL_multiview(nn.Module):
 
         return action_output
 
-    def foward_eval(self, s, s_d, s_s):
+    def forward_eval(self, s, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
 

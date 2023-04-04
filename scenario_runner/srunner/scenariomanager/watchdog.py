@@ -69,7 +69,7 @@ class Watchdog(object):
         """
         Stops the watchdog.
         """
-        self._timer.cancel()
+        self._timer.cancel()  # TODO: Error here: AttributeError: 'NoneType' object has no attribute 'cancel'
 
     def get_status(self):
         """
