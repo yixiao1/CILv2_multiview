@@ -23,15 +23,15 @@ _g_conf.NUM_WORKER = 14
 _g_conf.DATA_PARALLEL = False
 _g_conf.TRAINING_RESUME = True
 _g_conf.BATCH_SIZE = 120
-_g_conf.NUMBER_EPOCH = 100     # Total number of training iteration
+_g_conf.NUMBER_EPOCH = 100     # Total number of training epochs
 _g_conf.TRAIN_DATASET_NAME = []
-_g_conf.VALID_DATASET_NAME = []      # More than one datasets could be evaluated, thus a list
+_g_conf.VALID_DATASET_NAME = []      # More than one dataset could be evaluated, thus a list
 _g_conf.DATA_USED = ['rgb_left', 'rgb_central', 'rgb_right']
 _g_conf.IMAGE_SHAPE = [3, 88, 200]
 _g_conf.ENCODER_INPUT_FRAMES_NUM = 1
 _g_conf.ENCODER_STEP_INTERVAL = 1     # the pace step of frame you want to use. For example, if you want to have 5 sequential input images taking pre 20-frames as a step, you should set INPUT_FRAMES_NUM =5 and INPUT_FRAME_INTERVAL=20
 _g_conf.ENCODER_OUTPUT_STEP_DELAY = 0  # whether we want to predict the future data points or just the current point
-_g_conf.DECODER_OUTPUT_FRAMES_NUM= 1
+_g_conf.DECODER_OUTPUT_FRAMES_NUM = 1
 _g_conf.AUGMENTATION = False
 _g_conf.DATA_FPS = 10
 _g_conf.DATA_COMMAND_CLASS_NUM = 4
@@ -59,9 +59,10 @@ _g_conf.IMAGENET_PRE_TRAINED = False
 _g_conf.LOAD_CHECKPOINT = ''
 
 """#### Validation Related Parameters"""
-_g_conf.EVAL_SAVE_LAST_Conv_ACTIVATIONS = True     # the last Conv. layer of backbone that to be saved attention maps
+_g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder
+_g_conf.EVAL_SAVE_LAST_Conv_ACTIVATIONS = False     # the last Conv. layer of backbone that to be saved attention maps
 _g_conf.EVAL_BATCH_SIZE = 1          # batch size for evaluation
-_g_conf.EVAL_SAVE_EPOCHES = [1]      # we specifize the epoch we want to do offline evaluation
+_g_conf.EVAL_SAVE_EPOCHES = [1]      # we specify the epoch we want to do offline evaluation
 _g_conf.EVAL_IMAGE_WRITING_NUMBER = 10
 _g_conf.EARLY_STOPPING = False          # By default, we do not apply early stopping
 _g_conf.EARLY_STOPPING_PATIENCE = 3
@@ -72,6 +73,7 @@ _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY = 2
 _g_conf.TRAIN_IMAGE_WRITING_NUMBER = 2
 _g_conf.TRAIN_IMAGE_LOG_FREQUENCY = 1000
 _g_conf.TRAIN_PRINT_LOG_FREQUENCY = 100
+
 
 def merge_with_yaml(yaml_filename, process_type='train_val'):
     """Load a yaml config file and merge it into the global config object"""
@@ -150,7 +152,6 @@ def set_type_of_process(process_type, root):
                 _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY,
                 _g_conf.TRAIN_IMAGE_LOG_FREQUENCY)
 
-
     _g_conf.immutable(True)
 
 
@@ -188,7 +189,6 @@ def _decode_cfg_value(v):
     """
     # Configs parsed from raw yaml will contain dictionary keys that need to be
     # converted to AttrDict objects
-
 
     # All remaining processing is only applied to strings
     if not isinstance(v, str):
@@ -245,4 +245,3 @@ def _check_and_coerce_cfg_value_type(value_a, value_b, key, full_key):
 
 
 g_conf = _g_conf
-

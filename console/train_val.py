@@ -9,6 +9,7 @@ from _utils.utils import extract_targets, extract_other_inputs, extract_commands
 from _utils.evaluation import evaluation_saving
 from logger import _logger
 
+
 def train_upstream_task(model, optimizer):
     """
     Upstream task is for training your model
@@ -32,11 +33,12 @@ def train_upstream_task(model, optimizer):
                         ((model._current_iteration-1)*g_conf.BATCH_SIZE <= len(model) * model._done_epoch):
                     update_learning_rate(optimizer, minimumlr=g_conf.LEARNING_RATE_MINIMUM)
 
-            src_images = [[data['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED] for i in range(len(data['current']))]
+            src_images = [[data['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED]
+                          for i in range(len(data['current']))]
             src_directions = [extract_commands(data['current'][i]['can_bus']['direction']).cuda() for i in
                               range(len(data['current']))]
             src_s = [extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
-                                     ignore=['direction']).cuda() for i in range(len(data['current']))]
+                                          ignore=['direction']).cuda() for i in range(len(data['current']))]
             if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
                 tgt_a = [extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda() for i in range(len(data['future']))]
             else:
@@ -51,12 +53,25 @@ def train_upstream_task(model, optimizer):
 
             if g_conf.ACCELERATION_AS_ACTION:
                 loss, steer_loss, acceleration_loss = model.loss(loss_params)
-                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.BATCH_SIZE, model, time_start,
-                                            acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
+                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY,
+                                            g_conf.BATCH_SIZE,
+                                            model,
+                                            time_start,
+                                            acc_time,
+                                            loss.item(),
+                                            steer_loss.item(),
+                                            acceleration_loss.item())
             else:
                 loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
-                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.BATCH_SIZE, model, time_start,
-                                            acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
+                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY,
+                                            g_conf.BATCH_SIZE,
+                                            model,
+                                            time_start,
+                                            acc_time,
+                                            loss.item(),
+                                            steer_loss.item(),
+                                            throttle_loss.item(),
+                                            brake_loss.item)
 
             optimizer.zero_grad()
             loss.backward()
@@ -79,9 +94,9 @@ def train_upstream_task(model, optimizer):
                 _logger.add_scalar('Loss_brake', brake_loss.item(), model._current_iteration)
 
             if test_stop(g_conf.NUMBER_EPOCH*len(model), model._current_iteration * g_conf.BATCH_SIZE):
-                print('')
-                print('Training finished !!')
+                print('\nTraining finished !!')
                 break
+
             model._current_iteration += 1
             model._done_epoch = (model._current_iteration*g_conf.BATCH_SIZE // len(model))
 

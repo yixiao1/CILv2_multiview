@@ -5,7 +5,7 @@ MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
 BATCH_SIZE: 120
 NUM_WORKER: 10
-NUMBER_EPOCH: 80  # Number of epochs to train
+NUMBER_EPOCH: 120  # Number of epochs to train
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
 OTHER_INPUTS: ['speed', 'direction'] # extra input to the neural network
@@ -45,7 +45,7 @@ LEARNING_RATE_POLICY:
   level: 0.5
 
 #### Validation Related Parameters ####
-EVAL_SAVE_LAST_Conv_ACTIVATIONS: True
+EVAL_SAVE_LAST_ATT_MAPS: True
 EVAL_BATCH_SIZE: 30
 EVAL_SAVE_EPOCHES: [5, 15, 30, 45, 60, 70, 80]
 EARLY_STOPPING: False
