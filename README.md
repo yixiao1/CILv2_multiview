@@ -76,6 +76,7 @@ and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-
 * [ ] Try adding the `[CMD]` and `[SPD]` tokens to the model instead of just adding the output of the FC
   * Note that this will require us to interpolate the positional embedding to accomodate for this longer sequence length
 * [x] Make sure the network initializations is not undoing the pre-trained weights!
+* [ ] Recreate Figure 11 of the ViT paper ) i.e., the size of attended area by head and network depth/layer; code [here](https://github.com/google-research/vision_transformer/issues/162)
 
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator

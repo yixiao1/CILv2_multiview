@@ -11,7 +11,7 @@ from network.models.building_blocks.Transformer.TransformerEncoder import Transf
 
 class CIL_multiview_multitokens(nn.Module):
     def __init__(self, params):
-        super(CIL_multiview, self).__init__()
+        super(CIL_multiview_multitokens, self).__init__()
         self.params = params
 
         # Get ViT model characteristics (our new perception module)
@@ -21,22 +21,21 @@ class CIL_multiview_multitokens(nn.Module):
 
         # Get the vision transformer characteristics
         self.tfx_hidden_dim = self.encoder_embedding_perception.hidden_dim  # D
-        self.tfx_seq_length = self.encoder_embedding_perception.seq_length  # (H//P)^2 + 
+        self.tfx_seq_length = self.encoder_embedding_perception.seq_length  # (H//P)^2 + 1  (1 for the class token)
         self.tfx_patch_size = self.encoder_embedding_perception.patch_size  # P
         self.tfx_image_size = self.encoder_embedding_perception.image_size  # H, W
         # Network pieces
-        self.tfx_class_token = self.encoder_embedding_perception.class_token
-        self.tfx_conv_projection = self.encoder_embedding_perception.conv_proj
+        self.tfx_class_token = self.encoder_embedding_perception.class_token  # Idea is that this is pretrained
+        self.tfx_conv_projection = self.encoder_embedding_perception.conv_proj  # Ibidem
         self.tfx_encoder = self.encoder_embedding_perception.encoder
         self.tfx_pos_embedding = self.tfx_encoder.pos_embedding  # Used implicitly by the encoder above
 
-
-        join_dim = self.tfx_hidden_dim  # params['TxEncoder']['d_model']
+        self.join_dim = self.tfx_hidden_dim  # params['TxEncoder']['d_model']
 
         self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)#  params['TxEncoder']['d_model'])
         self.speed = nn.Linear(1, self.tfx_hidden_dim)  # params['TxEncoder']['d_model'])
 
-        self.action_output = FC(params={'neurons': [join_dim] +
+        self.action_output = FC(params={'neurons': [self.join_dim] +
                                             params['action_output']['fc']['neurons'] +
                                             [len(g_conf.TARGETS)],
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
