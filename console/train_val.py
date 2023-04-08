@@ -135,7 +135,7 @@ def execute(gpus_list, exp_batch, exp_name):
     set_type_of_process('train_val', root= os.environ["TRAINING_RESULTS_ROOT"])
     seed_everything(seed=g_conf.MAGICAL_SEED)
 
-    model = Models(g_conf.MODEL_TYPE, g_conf.MODEL_CONFIGURATION)
+    model = Models(g_conf.MODEL_CONFIGURATION)
     # print("===================== Model Configuration =====================")
     # print("")
     # print(model)

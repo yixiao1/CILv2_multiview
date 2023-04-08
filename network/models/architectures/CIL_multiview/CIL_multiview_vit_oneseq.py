@@ -57,8 +57,8 @@ class CIL_multiview_vit_oneseq(nn.Module):
             new_pos_embedding_img = rearrange(new_pos_embedding_img, '1 D (S cam p1) p2 -> 1 (S cam p1 p2) D',
                                               D=self.tfx_hidden_dim, S=int(g_conf.ENCODER_INPUT_FRAMES_NUM),
                                               cam=len(g_conf.DATA_USED))  # [1, S*cam*(H//P)^2, D]
-            self.tfx_encoder.pos_embedding = torch.cat([old_pos_embedding_token,
-                                                        new_pos_embedding_img], dim=1)  # [1, S*cam*(H//P)^2 + 1, D]
+            self.tfx_encoder.pos_embedding = nn.Parameter(
+                torch.cat([old_pos_embedding_token, new_pos_embedding_img], dim=1))  # [1, S*cam*(H//P)^2 + 1, D]
         else:
             # If we are not using a pre-trained model, we need to create the positional embedding from scratch
             # (as interpolating the old one would not make sense); we use the same method as in the official code
@@ -95,7 +95,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         """
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
-        B = int(g_conf.BATCH_SIZE)     # Batch size
+        B = s_d[0].shape[0]     # Batch size; will change if using multiple GPUs
         cam = len(g_conf.DATA_USED)  # Number of cameras
 
         # Image info
@@ -134,7 +134,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
     def forward_eval(self, s, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
-        B = int(g_conf.BATCH_SIZE)  # Batch size
+        B = s_d[0].shape[0]  # Batch size; will change if using multiple GPUs
         cam = len(g_conf.DATA_USED)  # Number of cameras
 
         # Image info

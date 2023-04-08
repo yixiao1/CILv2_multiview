@@ -2,6 +2,9 @@
 import os
 import argparse
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
 
@@ -23,7 +26,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         '-f',
         '--folder',
-        default='NoDate',
+        default='CILv2',
         dest='folder',
         type=str,
         help='The folder of the configuration files'

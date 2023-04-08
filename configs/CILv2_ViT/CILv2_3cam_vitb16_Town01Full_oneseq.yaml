@@ -62,7 +62,7 @@ MODEL_CONFIGURATION:
   encoder_embedding:
     perception:
       res:
-        name: 'vit_b_32'
+        name: 'vit_b_16'
         layer_id: 4  # Remove
 
   TxEncoder:  # This won't be used anymore

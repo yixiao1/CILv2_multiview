@@ -54,7 +54,7 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 ### Network Parameters ####
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
-MODEL_TYPE: 'CILv2_multiview_attention'
+MODEL_TYPE: 'CIL_multiview'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:
