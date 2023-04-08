@@ -4,14 +4,11 @@ import importlib
 
 from configs import g_conf
 from network.models.building_blocks import FC
-from network.models.building_blocks.PositionalEncoding import PositionalEncoding
-from network.models.building_blocks.Transformer.TransformerEncoder import TransformerEncoder
-from network.models.building_blocks.Transformer.TransformerEncoder import TransformerEncoderLayer
 
 
-class CIL_multiview_multitokens(nn.Module):
+class CIL_multiview_vit_multitokens(nn.Module):
     def __init__(self, params):
-        super(CIL_multiview_multitokens, self).__init__()
+        super(CIL_multiview_vit_multitokens, self).__init__()
         self.params = params
 
         # Get ViT model characteristics (our new perception module)

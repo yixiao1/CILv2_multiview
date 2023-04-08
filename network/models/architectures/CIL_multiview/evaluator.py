@@ -6,6 +6,7 @@ from collections import OrderedDict
 import matplotlib.pyplot as plt
 import os
 
+
 class CIL_multiview_Evaluator(object):
     """
     Evaluate
@@ -18,10 +19,10 @@ class CIL_multiview_Evaluator(object):
         self._action_batch_errors_mat = 0
         self._total_num = 0
         self._metrics = {}
-        self.steers =[]
-        self.accelerations=[]
-        self.gt_steers =[]
-        self.gt_accelerations=[]
+        self.steers = []
+        self.accelerations= []
+        self.gt_steers = []
+        self.gt_accelerations = []
 
     def process(self, action_outputs, targets_action):
         """
@@ -50,12 +51,12 @@ class CIL_multiview_Evaluator(object):
         plt.figure()
         W, H = plt.gcf().get_size_inches()
         plt.gcf().set_size_inches([4.0*W, H])
-        plt.plot(range(len(self.gt_accelerations)), self.gt_accelerations, color = 'green')
-        plt.plot(range(len(self.accelerations)), self.accelerations, color = 'blue')
+        plt.plot(range(len(self.gt_accelerations)), self.gt_accelerations, color='green')
+        plt.plot(range(len(self.accelerations)), self.accelerations, color='blue')
         plt.ylim([-1.2, 1.2])
         plt.xlabel('frame id')
         plt.ylabel('')
-        plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, 'acc_'+dataset_name+'_epoch'+str(current_epoch)+'.jpg'))
+        plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, f'acc_{dataset_name}_epoch{current_epoch}.jpg'))
         plt.close()
 
         plt.figure()
@@ -66,7 +67,7 @@ class CIL_multiview_Evaluator(object):
         plt.ylim([-1.2, 1.2])
         plt.xlabel('frame id')
         plt.ylabel('')
-        plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, 'steer_'+dataset_name+'_epoch'+str(current_epoch)+'.jpg'))
+        plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, f'steer_{dataset_name}_epoch{current_epoch}.jpg'))
         plt.close()
         return results
 
@@ -78,5 +79,3 @@ class CIL_multiview_Evaluator(object):
         else:
             pass
         self._metrics.update({'MAE': torch.sum(action_errors_mat) / self._total_num})
-
-

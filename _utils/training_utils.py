@@ -8,6 +8,7 @@ import numpy as np
 from .utils import sort_nicely
 from configs import g_conf
 
+
 class DataParallelWrapper(DataParallel):
     def __getattr__(self, name):
         try:
@@ -17,6 +18,7 @@ class DataParallelWrapper(DataParallel):
 
     def __len__(self):
         return len(self.module)
+
 
 def seed_everything(seed=0):
     random.seed(seed)
@@ -38,6 +40,7 @@ def check_saved_checkpoints(checkpoints_path):
         else:
             return None
 
+
 def check_saved_checkpoints_in_total(checkpoints_path):
     if not os.path.exists(checkpoints_path):
         return None
@@ -50,7 +53,7 @@ def check_saved_checkpoints_in_total(checkpoints_path):
             return None
 
 
-def update_learning_rate(optimizer, minimumlr = 0.00001):
+def update_learning_rate(optimizer, minimumlr: float = 0.00001):
     """
         Adjusts the learning rate based on the schedule
         """
@@ -63,7 +66,9 @@ def update_learning_rate(optimizer, minimumlr = 0.00001):
             new_lr = cur_lr * g_conf.LEARNING_RATE_POLICY['level']
             param_group['lr'] = max(new_lr, minlr)
             print('New lr:', param_group['lr'])
+    elif g_conf.LEARNING_RATE_POLICY['name'] == 'warmup_cooldown':
+        # TODO: implement this
+        pass
 
     else:
-        raise NotImplementedError('Not found learning rate policy !')
-
+        raise NotImplementedError('Not found learning rate policy!')

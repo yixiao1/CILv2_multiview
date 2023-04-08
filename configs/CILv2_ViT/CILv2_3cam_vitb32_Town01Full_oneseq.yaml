@@ -1,7 +1,7 @@
 
 #### Model Related Parameters ####
 #### Training Related Parameters ####
-MAGICAL_SEED: 1314520
+MAGICAL_SEED: 0
 DATA_PARALLEL: True
 BATCH_SIZE: 120
 NUM_WORKER: 10
@@ -37,17 +37,18 @@ LOSS_WEIGHT:
     acceleration: 0.50
 
 # Optimizer Parameters #
+LEARNING_RATE_DECAY: True  # Default, but good to set it explicitly
 LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [30, 50, 65]   # Remove this and do a warmpu/cooldown schedule (TODO later)
+LEARNING_RATE_DECAY_EPOCHES: [30, 50, 70, 90, 110]   # Remove this and do a warmpu/cooldown schedule (TODO later)
 LEARNING_RATE_POLICY:
-  name: 'normal'
+  name: 'normal'  # TODO
   level: 0.5
 
 #### Validation Related Parameters ####
 EVAL_SAVE_LAST_ATT_MAPS: True
 EVAL_BATCH_SIZE: 30
-EVAL_SAVE_EPOCHES: [5, 15, 30, 45, 60, 70, 80]
+EVAL_SAVE_EPOCHES: [5, 15, 30, 45, 60, 75, 90, 100, 110, 120]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
 EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
@@ -55,7 +56,7 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 ### Network Parameters ####
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
-MODEL_TYPE: 'CILv2_multiview_attention'
+MODEL_TYPE: 'CIL_multiview_vit_oneseq'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:
@@ -73,12 +74,12 @@ MODEL_CONFIGURATION:
 
   command:
     fc:
-      neurons: [512]
+      neurons: [512]  # TODO: for multitokens, use a deeper FC
       dropouts: [0.0]
 
   speed:
     fc:
-      neurons: [512]
+      neurons: [512]  # TODO: for multitokens, use a deeper FC
       dropouts: [0.0]
 
   action_output:
