@@ -104,7 +104,7 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
         results = evaluator.evaluate(eval_epoch, dataset_name)
         if results is None:
             results = {}
-        results_dict[dataset_name]=results
+        results_dict[dataset_name] = results
     return results_dict
 
 #@timeit
@@ -175,16 +175,15 @@ def evaluation_saving(model, optimizers, early_stopping_flags, save_all_checkpoi
     Evaluates but also saves if the model is better
     """
     if g_conf.PROCESS_NAME == 'train_val':
-        if (model._done_epoch != 0) and (model._done_epoch in g_conf.EVAL_SAVE_EPOCHES) \
-                and ((model._current_iteration-1)*g_conf.BATCH_SIZE <= len(model) * model._done_epoch):
+        if (model._done_epoch in g_conf.EVAL_SAVE_EPOCHES) and \
+                ((model._current_iteration-1)*g_conf.BATCH_SIZE <= len(model) * model._done_epoch):
 
             # check if the checkpoint has been evaluated
-            if not eval_done(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME,g_conf.EXPERIMENT_NAME),
-                                 g_conf.VALID_DATASET_NAME, model._done_epoch):
-                print('')
-                print('---------------------------------------------------------------------------------------')
-                print('')
-                print('Evaluating epoch:', str(model._done_epoch))
+            if not eval_done(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results',
+                                          g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME),
+                             g_conf.VALID_DATASET_NAME, model._done_epoch):
+                print('\n---------------------------------------------------------------------------------------\n')
+                print(f'Evaluating epoch: {model._done_epoch}')
                 # switch to evaluation mode
                 model.eval()
                 results_dict = model._eval(model._current_iteration, model._done_epoch)

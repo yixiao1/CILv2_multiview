@@ -1,7 +1,9 @@
-
 import torch
+import numpy as np
+
 from configs import g_conf
 from collections import OrderedDict
+from typing import Union
 
 import matplotlib.pyplot as plt
 import os
@@ -31,11 +33,11 @@ class CIL_multiview_Evaluator(object):
         B = action_outputs.shape[0]
         self._total_num += B
         action_outputs = action_outputs[:, -1, -len(g_conf.TARGETS):]
-        self.steers += list(action_outputs[:,0].detach().cpu().numpy())
+        self.steers += list(action_outputs[:, 0].detach().cpu().numpy())
         self.accelerations += list(action_outputs[:, 1].detach().cpu().numpy())
         self.gt_steers += list(targets_action[-1][:, 0].detach().cpu().numpy())
         self.gt_accelerations += list(targets_action[-1][:, 1].detach().cpu().numpy())
-        actions_loss_mat_normalized = torch.clip(action_outputs, -1, 1) - targets_action[-1] # (B, len(g_conf.TARGETS))
+        actions_loss_mat_normalized = torch.clip(action_outputs, -1, 1) - targets_action[-1]  # (B, len(g_conf.TARGETS))
 
         # unnormalize the outputs and targets to compute actual error
         if g_conf.ACCELERATION_AS_ACTION:
@@ -48,27 +50,55 @@ class CIL_multiview_Evaluator(object):
         self.metrics_compute(self._action_batch_errors_mat)
         results = OrderedDict({self.name: self._metrics})
 
-        plt.figure()
-        W, H = plt.gcf().get_size_inches()
-        plt.gcf().set_size_inches([4.0*W, H])
-        plt.plot(range(len(self.gt_accelerations)), self.gt_accelerations, color='green')
-        plt.plot(range(len(self.accelerations)), self.accelerations, color='blue')
-        plt.ylim([-1.2, 1.2])
-        plt.xlabel('frame id')
-        plt.ylabel('')
-        plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, f'acc_{dataset_name}_epoch{current_epoch}.jpg'))
-        plt.close()
+        def plot_and_save_results(data: Union[list, np.ndarray],
+                                  ground_truth_data: Union[list, np.ndarray],
+                                  save_name: str) -> None:
+            """ Plot the data with the ground truth and save the figure """
+            plt.figure()
+            width, height = plt.gcf().get_size_inches()
+            plt.gcf().set_size_inches([4.0 * width, height])
+            plt.plot(range(len(ground_truth_data)), ground_truth_data, color='green')
+            plt.plot(range(len(data)), data, color='blue')
+            plt.ylim([-1.2, 1.2])
+            plt.xlabel('Frame Id')
+            plt.ylabel('')
+            plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.jpg'))
+            plt.close()
 
-        plt.figure()
-        W, H = plt.gcf().get_size_inches()
-        plt.gcf().set_size_inches([4.0*W, H])
-        plt.plot(range(len(self.gt_steers)), self.gt_steers, color = 'green')
-        plt.plot(range(len(self.steers)), self.steers, color = 'blue')
-        plt.ylim([-1.2, 1.2])
-        plt.xlabel('frame id')
-        plt.ylabel('')
-        plt.savefig(os.path.join(g_conf.EXP_SAVE_PATH, f'steer_{dataset_name}_epoch{current_epoch}.jpg'))
-        plt.close()
+        # Plot the accelerations w.r.t. the ground truth on the validation set
+        plot_and_save_results(self.accelerations, self.gt_accelerations, f'acc_{dataset_name}_epoch{current_epoch}')
+
+        # Plot the acceleration signs w.r.t. the ground truth on the validation set
+        plot_and_save_results(np.sign(self.accelerations), np.sign(self.gt_accelerations),
+                              f'acc-sign_{dataset_name}_epoch{current_epoch}')
+
+        # Plot the steering angles w.r.t. the ground truth on the validation set
+        plot_and_save_results(self.steers, self.gt_steers, f'steer_{dataset_name}_epoch{current_epoch}')
+
+        # Plot the acceleration signs w.r.t. the ground truth on the validation set
+        plot_and_save_results(np.sign(self.steers), np.sign(self.gt_steers),
+                              f'steer-sign_{dataset_name}_epoch{current_epoch}')
+
+        def save_frame_ids_different_signs(data: Union[list, np.ndarray],
+                                           ground_truth_data: Union[list, np.ndarray],
+                                           save_name: str) -> None:
+            """ Save the frame ids when the sign of the data is different from the ground truth as a csv file """
+            # First, if the file doesn't exist, create it, with the first line reading "epoch" and "frame_id"
+            if not os.path.exists(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.csv')):
+                with open(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.csv'), 'w') as f:
+                    f.write('epoch, frame_id')
+
+            # With this file, append the current epoch and the frame ids where the sign of the acceleration is different
+            # from the ground truth
+            with open(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.csv'), 'a') as f:
+                f.write(f'{current_epoch}, {np.where(np.sign(data) != np.sign(ground_truth_data))[0]}')
+
+        # Save the frame ids where the sign of the acceleration is different from the ground truth
+        save_frame_ids_different_signs(self.accelerations, self.gt_accelerations, f'acc-sign_{dataset_name}')
+
+        # Ibidem for steer sign
+        save_frame_ids_different_signs(self.steers, self.gt_steers, f'steer-sign_{dataset_name}')
+
         return results
 
     def metrics_compute(self, action_errors_mat):

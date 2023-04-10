@@ -5,8 +5,6 @@ import importlib
 from configs import g_conf
 from network.models.building_blocks import FC
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
-from network.models.building_blocks.Transformer.TransformerEncoder import TransformerEncoder
-from network.models.building_blocks.Transformer.TransformerEncoder import TransformerEncoderLayer
 
 from einops import rearrange
 

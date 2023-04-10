@@ -5,6 +5,8 @@ import importlib
 from configs import g_conf
 from network.models.building_blocks import FC
 
+from einops import rearrange
+
 
 class CIL_multiview_vit_multitokens(nn.Module):
     def __init__(self, params):
@@ -29,7 +31,7 @@ class CIL_multiview_vit_multitokens(nn.Module):
 
         self.join_dim = self.tfx_hidden_dim  # params['TxEncoder']['d_model']
 
-        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)#  params['TxEncoder']['d_model'])
+        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)  # params['TxEncoder']['d_model'])
         self.speed = nn.Linear(1, self.tfx_hidden_dim)  # params['TxEncoder']['d_model'])
 
         self.action_output = FC(params={'neurons': [self.join_dim] +

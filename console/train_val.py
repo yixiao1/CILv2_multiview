@@ -28,6 +28,7 @@ def train_upstream_task(model, optimizer):
                 print(' Apply early stopping, training stopped !')
                 break
 
+            # TODO: warmup/cosine learning rate decay
             if g_conf.LEARNING_RATE_DECAY:
                 if model._done_epoch in g_conf.LEARNING_RATE_DECAY_EPOCHES and \
                         ((model._current_iteration-1)*g_conf.BATCH_SIZE <= len(model) * model._done_epoch):

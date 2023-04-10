@@ -81,7 +81,10 @@ where `--process-type` defines the process type (could be either train_val or va
 * [ ] Log the attention maps during training and validation
 * [ ] ***New Model Architecture: `CIL_multiview_vit_multitokens`***: where we will concatenate the `[CMD]` and `[SPD]` tokens to the sequence instead of element-wise addition (i.e., `x = x + cmd + spd`)
   * We also want to have the action output to be a combination of the `[CMD]` and `[SPD]` tokens, as well as a `[CAM]` token
-  * In essence, the `[CAM]` token will be the representation of each camera/view, so we can in essence use its output as a "gate" or weight to perform the action (i.e., $a_t = \sum_{i} w_{i,t} \cdot f(\mathbf{z}_{L,t}^{\texttt{CMD}}, \mathbf{z}_{L,t}^{\texttt{SPD}})$, with $w_{i, t} = g(\mathbf{z}_{L,t}^{\texttt{CAM}_i})$, $f$ and $g$ to be decided
+  * In essence, the `[CAM]` token will be the representation of each camera/view, so we can in essence use its output as a "gate" or weight to perform the action
+    * In other words, $\mathbf{a}_t = \sum_{i=1}^{C} w_{i,t} \cdot f(\mathbf{z}_{L,t}^{\texttt{CMD}}, \mathbf{z}_{L,t}^{\texttt{SPD}}, \mathbf{z}_{L,t}^{\texttt{CLS}})$, with $w_{i, t} = g(\mathbf{z}_{L,t}^{\texttt{CAM}_i})$, $f$ and $g$ TBD but most likely an MLP
+    * We could treat the weights as logits, i.e., apply the softmax function to them or do a simple normalization: $w_{j,t}=\frac{w_{i,t}}{\sum_{i=1}^{C} w_{i,t}}$
+  * *Advantage:* We can easily access **which camera** has the most influence in the model's decision, though this may not happen at all 
 * [ ] Recreate Figure 11 of the ViT paper) i.e., the size of attended area by head and network depth/layer; code [here](https://github.com/google-research/vision_transformer/issues/162)
 
 -------------------------------------------------------------
