@@ -7,6 +7,7 @@ from network.models.building_blocks import FC
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 
 from einops import rearrange
+from typing import Tuple
 
 
 class CIL_multiview_vit_oneseq(nn.Module):
@@ -29,40 +30,28 @@ class CIL_multiview_vit_oneseq(nn.Module):
         self.tfx_patch_size = self.encoder_embedding_perception.patch_size  # P
         self.tfx_image_size = self.encoder_embedding_perception.image_size  # H, W
 
-        # Token characteristics
+        # Token characteristics from ViT pre-trained model
         old_seq_length = self.encoder_embedding_perception.seq_length  # (H//P)^2 + 1
         old_patch_number = old_seq_length - 1  # (H//P)^2
         old_seq_length_1d = int(old_patch_number ** 0.5)  # H//P; keep same names as in official code
 
-        self.tfx_patch_number = int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * old_patch_number  # S*cam*(H//P)^2
-        new_seq_shape = (int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * old_seq_length_1d,
-                         old_seq_length_1d)  # [S*cam*H//P, H//P]
+        # Check image size and patch size
+        assert g_conf.IMAGE_SHAPE[1] % self.tfx_patch_size == 0, 'Image height must be divisible by patch size!'
+        assert g_conf.IMAGE_SHAPE[2] % self.tfx_patch_size == 0, 'Image width must be divisible by patch size!'
 
-        # Interpolate the positional encoding to the correct size
-        old_pos_embedding_token = self.tfx_encoder.pos_embedding[:, :1, :]  # [1, 1, D]
-        old_pos_embedding_img = self.tfx_encoder.pos_embedding[:, 1:, :]  # [1, (H//P)^2, D]
-        old_pos_embedding_img = rearrange(old_pos_embedding_img, '1 (p1 p2) d -> 1 d p1 p2', p1=old_seq_length_1d)  # [1, D, H//P, H//P]
+        # Get the sequence length w.r.t. the image shape and patch size
+        new_seq_length_h = g_conf.IMAGE_SHAPE[1] // self.tfx_patch_size  # H//P
+        new_seq_length_w = g_conf.IMAGE_SHAPE[2] // self.tfx_patch_size  # W//P
+        new_seq_length = new_seq_length_h * new_seq_length_w + 1  # (H//P)*(W//P) + 1
 
-        # Create the positional embedding; will be used implicitly by the Encoder
-        if g_conf.IMAGENET_PRE_TRAINED:
-            # If pre-trained, we need to interpolate the positional embedding
-            new_pos_embedding_img = nn.functional.interpolate(
-                old_pos_embedding_img,  # Grab the old positional embedding, [1, D, H//P, H//P]
-                size=new_seq_shape,  # expand it as we have concatenated the images, [S*cam*H//P, H//P]
-                mode='bicubic',
-                align_corners=True
-            )  # [1, D, S*cam*H//P, H//P]
-            new_pos_embedding_img = rearrange(new_pos_embedding_img, '1 D (S cam p1) p2 -> 1 (S cam p1 p2) D',
-                                              D=self.tfx_hidden_dim, S=int(g_conf.ENCODER_INPUT_FRAMES_NUM),
-                                              cam=len(g_conf.DATA_USED))  # [1, S*cam*(H//P)^2, D]
-            self.tfx_encoder.pos_embedding = nn.Parameter(
-                torch.cat([old_pos_embedding_token, new_pos_embedding_img], dim=1))  # [1, S*cam*(H//P)^2 + 1, D]
-        else:
-            # If we are not using a pre-trained model, we need to create the positional embedding from scratch
-            # (as interpolating the old one would not make sense); we use the same method as in the official code
-            self.tfx_encoder.pos_embedding = nn.Parameter(
-                torch.empty(1, self.tfx_patch_number + 1, self.tfx_hidden_dim).normal_(std=0.02)
-            )
+        # Interpolate the positional encoding only if the sequence length changed
+        if new_seq_length != old_seq_length:
+            print(f'WARNING: Sequence length changed from {old_seq_length} to {new_seq_length}!')
+            self.tfx_patch_number = int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * old_patch_number  # S*cam*(H//P)^2
+            new_seq_shape = (int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * old_seq_length_1d,
+                             old_seq_length_1d)  # [S*cam*H//P, H//P]
+            # Interpolate the positional encoding to the correct size
+            self.interpolate_pos_encoding(new_seq_shape)
 
         join_dim = self.tfx_hidden_dim  # params['TxEncoder']['d_model']
 
@@ -83,6 +72,33 @@ class CIL_multiview_vit_oneseq(nn.Module):
                     nn.init.constant_(module.bias, 0.1)
 
         self.train()
+
+    def interpolate_pos_encoding(self, new_seq_shape: Tuple[int, int]) -> None:
+        # Interpolate the positional encoding to the correct size
+        old_pos_embedding_token = self.tfx_encoder.pos_embedding[:, :1, :]
+        old_pos_embedding_img = self.tfx_encoder.pos_embedding[:, 1:, :]
+        old_pos_embedding_img = rearrange(old_pos_embedding_img, '1 (p1 p2) d -> 1 d p1 p2', p1=self.tfx_patch_size)
+
+        # Create the positional embedding; will be used implicitly by the Encoder
+        if g_conf.IMAGENET_PRE_TRAINED:
+            # If pre-trained, we need to interpolate the positional embedding
+            new_pos_embedding_img = nn.functional.interpolate(
+                old_pos_embedding_img,  # Grab the old positional embedding, [1, D, H//P, H//P]
+                size=new_seq_shape,  # expand it as we have concatenated the images, [S*cam*H//P, H//P]
+                mode='bicubic',
+                align_corners=True)  # [1, D, S*cam*H//P, H//P]
+
+            new_pos_embedding_img = rearrange(new_pos_embedding_img, '1 D (S cam p1) p2 -> 1 (S cam p1 p2) D',
+                                              D=self.tfx_hidden_dim, S=int(g_conf.ENCODER_INPUT_FRAMES_NUM),
+                                              cam=len(g_conf.DATA_USED))  # [1, S*cam*(H//P)^2, D]
+            self.tfx_encoder.pos_embedding = nn.Parameter(
+                torch.cat([old_pos_embedding_token, new_pos_embedding_img], dim=1))  # [1, S*cam*(H//P)^2 + 1, D]
+        else:
+            # If we are not using a pre-trained model, we need to create the positional embedding from scratch
+            # (as interpolating the old one would not make sense); we use the same method as in the official code
+            self.tfx_encoder.pos_embedding = nn.Parameter(
+                torch.empty(1, self.tfx_patch_number + 1, self.tfx_hidden_dim).normal_(std=0.02)
+            )
 
     def forward(self, s, s_d, s_s):
         """
