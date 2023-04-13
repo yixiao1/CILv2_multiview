@@ -84,14 +84,16 @@ class CIL_multiview_Evaluator(object):
                                            save_name: str) -> None:
             """ Save the frame ids when the sign of the data is different from the ground truth as a csv file """
             # First, if the file doesn't exist, create it, with the first line reading "epoch" and "frame_id"
-            if not os.path.exists(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.csv')):
-                with open(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.csv'), 'w') as f:
-                    f.write('epoch, frame_id')
+            sdir = os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.txt')
+            if not os.path.exists(sdir):
+                with open(sdir, 'w') as f:
+                    f.write('epoch, total_different, frame_id')
 
             # With this file, append the current epoch and the frame ids where the sign of the acceleration is different
             # from the ground truth
-            with open(os.path.join(g_conf.EXP_SAVE_PATH, f'{save_name}.csv'), 'a') as f:
-                f.write(f'{current_epoch}, {np.where(np.sign(data) != np.sign(ground_truth_data))[0]}')
+            with open(sdir, 'a') as f:
+                different_frames_idx = np.where(np.sign(data) != np.sign(ground_truth_data))[0]
+                f.write(f'\n{current_epoch}, {len(different_frames_idx)}, {different_frames_idx.tolist()}')
 
         # Save the frame ids where the sign of the acceleration is different from the ground truth
         save_frame_ids_different_signs(self.accelerations, self.gt_accelerations, f'acc-sign_{dataset_name}')

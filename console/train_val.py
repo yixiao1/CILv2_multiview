@@ -1,13 +1,17 @@
 import os
+import sys
 import torch
 import time
 import shutil
+import resource
+from typing import Union, Any
+
 from configs import g_conf, set_type_of_process, merge_with_yaml
 from network.models_console import Models
 from _utils.training_utils import seed_everything, DataParallelWrapper, check_saved_checkpoints, update_learning_rate
 from _utils.utils import extract_targets, extract_other_inputs, extract_commands, print_train_info, test_stop
 from _utils.evaluation import evaluation_saving
-from logger import _logger
+from logger import _logger, StdoutLogger
 
 
 def train_upstream_task(model, optimizer):
@@ -125,14 +129,21 @@ def execute(gpus_list, exp_batch, exp_name):
         None
 
     """
-    import resource
+    # Merge the yaml file with the default configuration
+    merge_with_yaml(os.path.join('configs', exp_batch, exp_name + '.yaml'))
+    shutil.copyfile(os.path.join('configs', exp_batch, exp_name + '.yaml'), 
+                    os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME, 
+                                 g_conf.EXPERIMENT_NAME, exp_name + '.yaml'))
+
+    # Flush stdout to a log.txt file
+    StdoutLogger(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results',
+                              g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME, 'log.txt'), file_mode='a', should_flush=True)
+    
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
     print(torch.cuda.device_count(), 'GPUs to be used: ', gpus_list)
-    merge_with_yaml(os.path.join('configs', exp_batch, exp_name + '.yaml'))
-    shutil.copyfile(os.path.join('configs', exp_batch, exp_name + '.yaml'),
-                    os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results',
-                                 g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME, exp_name + '.yaml'))
+
+    # Final setup
     set_type_of_process('train_val', root= os.environ["TRAINING_RESULTS_ROOT"])
     seed_everything(seed=g_conf.MAGICAL_SEED)
 

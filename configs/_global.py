@@ -46,7 +46,8 @@ _g_conf.OTHER_INPUTS= ['speed'] # From the float data, the ones that are input t
 """#### Optimizer Related Parameters ####"""
 _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or an architecure name such as "fasterRcnn, deeplabv3", which means we use the same loss as this architectures
 _g_conf.LOSS_WEIGHT = {}
-_g_conf.LEARNING_RATE = 0.0002       # the original learning rate setting
+_g_conf.LEARNING_RATE = 0.0002       # the max learning rate setting
+_g_conf.LEARNING_RATE_SCHEDULE = 'step'  # the learning rate schedule; 'step' -> StepLR, 'cosine' ->
 _g_conf.LEARNING_RATE_DECAY = True
 _g_conf.LEARNING_RATE_MINIMUM = 0.00001
 _g_conf.LEARNING_RATE_DECAY_EPOCHES = []    # we adjust learning rate for each 1000 iterations

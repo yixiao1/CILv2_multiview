@@ -1,7 +1,7 @@
-
 import torch.nn as nn
 import torch
 import math
+
 
 class PositionalEncoding(nn.Module):
     r"""Inject some information about the relative or absolute position of the tokens
@@ -28,9 +28,9 @@ class PositionalEncoding(nn.Module):
         pe = torch.zeros(max_len, d_model)     # [max_len, d_model]
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)    # [max_len, 1]
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))   # [d_model/2]
-        pe[:, 0::2] = torch.sin(position * div_term)   #[max_len, d_model/2]
-        pe[:, 1::2] = torch.cos(position * div_term)   #[max_len, d_model/2]
-        pe = pe.unsqueeze(0)                           #[1, max_len, d_model]
+        pe[:, 0::2] = torch.sin(position * div_term)  # [max_len, d_model/2]
+        pe[:, 1::2] = torch.cos(position * div_term)  # [max_len, d_model/2]
+        pe = pe.unsqueeze(0)                          # [1, max_len, d_model]
         self.register_buffer('pe', pe)
 
     def forward(self, x):
@@ -43,6 +43,6 @@ class PositionalEncoding(nn.Module):
         Examples:
             >>> output = pos_encoder(x)
         """
-        x = x + self.pe[:, :x.size(1), :]      #[B, len, d_model] + [1, len, d_model]
+        x = x + self.pe[:, :x.size(1), :]  # [B, len, d_model] + [1, len, d_model]
         return self.dropout(x)
 

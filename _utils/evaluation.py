@@ -190,7 +190,8 @@ def evaluation_saving(model, optimizers, early_stopping_flags, save_all_checkpoi
                 if results_dict is not None:
                     write_model_results(g_conf.EXP_SAVE_PATH, model.name,
                                         results_dict, acc_as_action=g_conf.ACCELERATION_AS_ACTION)
-                    draw_offline_evaluation_results(g_conf.EXP_SAVE_PATH, metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,
+                    draw_offline_evaluation_results(g_conf.EXP_SAVE_PATH,
+                                                    metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,
                                                     x_range=g_conf.EVAL_SAVE_EPOCHES)
                     is_better_flag, best_pred = save_model_if_better(results_dict, model, optimizers, save_all=save_all_checkpoints)
                     if g_conf.EARLY_STOPPING:
@@ -199,11 +200,9 @@ def evaluation_saving(model, optimizers, early_stopping_flags, save_all_checkpoi
                         early_stopping_flags.append(False)
                 else:
                     raise ValueError('No evaluation results !')
-                # switch back to train mode and countine training
+                # switch back to train mode and continue training
                 model.train()
-                print('')
-                print('---------------------------------------------------------------------------------------')
-                print('')
+                print('\n---------------------------------------------------------------------------------------\n')
 
     else:
         raise NotImplementedError('No this type of process name defined')

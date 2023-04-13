@@ -3,6 +3,8 @@ import torch
 import glob
 import os
 import re
+from typing import Union, List
+
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.nn import DataParallel
@@ -105,15 +107,14 @@ def test_stop(number_of_data, iterated_data):
     return False
 
 
-def generate_specific_rows(filePath, row_indices=[]):
-    with open(filePath) as f:
-
+def generate_specific_rows(filepath: Union[str, os.PathLike], row_indices: List[int] = None):
+    with open(filepath) as f:
         # using enumerate to track line no.
         for i, line in enumerate(f):
-
             # if line no. is in the row index list, then return that line
             if i in row_indices:
-                yield line
+                yield line.strip()
+
 
 def read_results(result_file, metric=''):
     head = np.genfromtxt(generate_specific_rows(result_file, row_indices=[0]), delimiter=',', dtype='str')
@@ -121,17 +122,18 @@ def read_results(result_file, metric=''):
     res = np.loadtxt(result_file, delimiter=",", skiprows=1)
     if len(res.shape) == 1:
         res = np.expand_dims(res, axis=0)
-
     return res[:, col]
 
 
-def draw_offline_evaluation_results(experiment_path, metrics_list, x_range=[0, 10]):
+def draw_offline_evaluation_results(experiment_path: Union[str, os.PathLike],
+                                    metrics_list: List[str],
+                                    x_range: List[int] = None):
     for metric in metrics_list:
         print('drawing results graph for ', experiment_path, 'of', metric)
         results_files = glob.glob(os.path.join(experiment_path, '*.csv'))
         for results_file in results_files:
             plt.figure()
-            output_path = os.path.join(experiment_path, results_file.split('/')[-1].split('.')[-2]+ '_' + metric+'.jpg')
+            output_path = os.path.join(experiment_path, results_file.split(os.sep)[-1].split('.')[-2]+ '_' + metric+'.jpg')
             results_list = read_results(results_file, metric=metric)
             epochs_list = read_results(results_file, metric='epoch')
             plt.ylabel(metric, fontsize=15)
@@ -143,7 +145,7 @@ def draw_offline_evaluation_results(experiment_path, metrics_list, x_range=[0, 1
                     plt.plot(epochs_list[i], results_list[i], color='blue', marker='*')
             plt.xlabel('Epoch', fontsize=15)
             plt.xlim(left=x_range[0], right=x_range[-1])
-            plt.title(results_file.split('/')[-1].split('.')[-2])
+            plt.title(results_file.split(os.sep)[-1].split('.')[-2])
             plt.savefig(output_path)
             plt.close()
 
