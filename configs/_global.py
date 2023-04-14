@@ -59,6 +59,7 @@ _g_conf.MODEL_CONFIGURATION = {}
 _g_conf.IMAGENET_PRE_TRAINED = False
 _g_conf.LOAD_CHECKPOINT = ''
 _g_conf.LEARNABLE_POS_EMBED = False
+_g_conf.CMD_SPD_TOKENS = False
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

@@ -72,7 +72,7 @@ where `--process-type` defines the process type (could be either train_val or va
 
 ## CoRL 2023 Submission
 
-The goal is to submit for CoRL 2023, so the deadline is in June 8th. Paper submission opens in May 15th, so start preparing for that!
+The goal is to submit for [CoRL 2023](https://www.corl2023.org/), so the deadline is in June 8th. Paper submission opens in May 15th, so start preparing for that!
 
 ### TODOs:
 * [x] Make sure the network initializations is not undoing the pre-trained weights!
