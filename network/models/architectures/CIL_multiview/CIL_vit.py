@@ -7,9 +7,9 @@ from network.models.building_blocks import FC
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 
 
-class CIL_multiview(nn.Module):
+class CIL_vit(nn.Module):
     def __init__(self, params):
-        super(CIL_multiview, self).__init__()
+        super(CIL_vit, self).__init__()
         self.params = params
 
         # Get ViT model characteristics (our new perception module)
@@ -28,12 +28,17 @@ class CIL_multiview(nn.Module):
         self.tfx_encoder = self.encoder_embedding_perception.encoder
 
         # Replace learned pos embedding with fixed sin/cos 2d embedding, used implicitly by the encoder
-        # device = self.tfx_encoder.pos_embedding.device
-        # print("DEBAISS", device)
-        del self.tfx_encoder.pos_embedding  # A nn.Parameter, so it most go
-        self.tfx_encoder.pos_embedding = PositionalEncoding(
-            d_model=self.tfx_hidden_dim, 
-            max_len=self.tfx_seq_length).pe.cuda()
+        if g_conf.LEARNABLE_POS_EMBED and not g_conf.IMAGENET_PRE_TRAINED:
+            self.tfx_encoder.pos_embedding = nn.Parameter(
+                torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))
+        elif g_conf.LEARNABLE_POS_EMBED:
+            pass
+        else:
+            del self.tfx_encoder.pos_embedding  # A nn.Parameter, so it most go
+            
+            self.tfx_encoder.pos_embedding = PositionalEncoding(
+                d_model=self.tfx_hidden_dim, 
+                max_len=self.tfx_seq_length).pe.cuda()
 
         join_dim = self.tfx_hidden_dim  # params['TxEncoder']['d_model']
 

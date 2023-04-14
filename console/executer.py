@@ -1,5 +1,7 @@
 
 import os
+import shutil
+
 from configs._global import create_exp_path
 from . import train_val, val
 
@@ -15,7 +17,7 @@ def execute_train_val(gpus_list, exp_batch, exp_alias):
     Returns:
 
     """
-    create_exp_path(os.environ['TRAINING_RESULTS_ROOT'],exp_batch, exp_alias)
+    create_exp_path(os.environ['TRAINING_RESULTS_ROOT'], exp_batch, exp_alias)
     train_val.execute(gpus_list, exp_batch, exp_alias)
 
 

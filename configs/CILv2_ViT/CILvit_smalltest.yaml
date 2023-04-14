@@ -5,13 +5,12 @@ MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
 BATCH_SIZE: 256
 NUM_WORKER: 10
-NUMBER_EPOCH: 120  # Number of epochs to train
+NUMBER_EPOCH: 30
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
 OTHER_INPUTS: ['speed', 'direction'] # extra input to the neural network
-# These datasets have 529525 images in total
-TRAIN_DATASET_NAME: ['Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam'] # Folders of the used training datasets. Should be inside DATASET_PATH folder
-VALID_DATASET_NAME: ['Roach_carla0913_fps10/Roach_LBCRoutes_3cam_valid'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
+TRAIN_DATASET_NAME: ['Roach_carla0913_fps10/smalltrain1', 'Roach_carla0913_fps10/smalltrain2'] # Folders of the used training datasets. Should be inside DATASET_PATH folder
+VALID_DATASET_NAME: ['Roach_carla0913_fps10/smallval1'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
 ENCODER_INPUT_FRAMES_NUM: 1
 ENCODER_STEP_INTERVAL: 1
 ENCODER_OUTPUT_STEP_DELAY: 0
@@ -39,15 +38,15 @@ LOSS_WEIGHT:
 # Optimizer Parameters #
 LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [15, 25, 35, 40, 50, 55]    # Remove this and do a warmpu/cooldown schedule (TODO later)
+LEARNING_RATE_DECAY_EPOCHES: [15, 20, 25]   # Remove this and do a warmpu/cooldown schedule (TODO later)
 LEARNING_RATE_POLICY:
   name: 'normal'
   level: 0.5
 
 #### Validation Related Parameters ####
-EVAL_SAVE_LAST_ATT_MAPS: True
+EVAL_SAVE_LAST_Conv_ACTIVATIONS: True
 EVAL_BATCH_SIZE: 30
-EVAL_SAVE_EPOCHES: [0, 5, 15, 30, 40, 50]
+EVAL_SAVE_EPOCHES: [1, 15, 30]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
 EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
@@ -55,7 +54,7 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 ### Network Parameters ####
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
-MODEL_TYPE: 'CIL_multiview'
+MODEL_TYPE: 'CIL_vit'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:

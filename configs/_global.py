@@ -41,7 +41,7 @@ _g_conf.IMG_NORMALIZATION = {'mean':[0.485, 0.456, 0.406], 'std':[0.229, 0.224, 
 _g_conf.EXP_SAVE_PATH = '_results'
 _g_conf.TARGETS = ['steer', 'throttle', 'brake']  # From the float data, the ones that the network should estimate
 _g_conf.ACCELERATION_AS_ACTION = False
-_g_conf.OTHER_INPUTS= ['speed'] # From the float data, the ones that are input to the neural network
+_g_conf.OTHER_INPUTS = ['speed'] # From the float data, the ones that are input to the neural network
 
 """#### Optimizer Related Parameters ####"""
 _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or an architecure name such as "fasterRcnn, deeplabv3", which means we use the same loss as this architectures
@@ -58,6 +58,7 @@ _g_conf.MODEL_TYPE = ''
 _g_conf.MODEL_CONFIGURATION = {}
 _g_conf.IMAGENET_PRE_TRAINED = False
 _g_conf.LOAD_CHECKPOINT = ''
+_g_conf.LEARNABLE_POS_EMBED = False
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

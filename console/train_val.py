@@ -131,13 +131,14 @@ def execute(gpus_list, exp_batch, exp_name):
     """
     # Merge the yaml file with the default configuration
     merge_with_yaml(os.path.join('configs', exp_batch, exp_name + '.yaml'))
-    shutil.copyfile(os.path.join('configs', exp_batch, exp_name + '.yaml'), 
-                    os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME, 
-                                 g_conf.EXPERIMENT_NAME, exp_name + '.yaml'))
+
+    # Copy yaml config file and architecture file to the results folder
+    results_folder = os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME)
+    shutil.copy2(os.path.join('configs', exp_batch, f'{exp_name}.yaml'), results_folder)
+    shutil.copy2(os.path.join('network', 'models', 'architectures', 'CIL_multiview', f'{g_conf.MODEL_TYPE}.py'), results_folder)
 
     # Flush stdout to a log.txt file
-    StdoutLogger(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results',
-                              g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME, 'log.txt'), file_mode='a', should_flush=True)
+    StdoutLogger(os.path.join(results_folder, 'log.txt'), file_mode='a', should_flush=True)
     
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
@@ -152,7 +153,7 @@ def execute(gpus_list, exp_batch, exp_name):
     # print("")
     # print(model)
 
-    num_params=0
+    num_params = 0
     for param in model.parameters():
         num_params += param.numel()
     print('model params: ', num_params)
@@ -164,13 +165,11 @@ def execute(gpus_list, exp_batch, exp_name):
 
     # To load a specific checkpoint
     if g_conf.LOAD_CHECKPOINT:
-        latest_checkpoint = os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME,
-                                                                g_conf.EXPERIMENT_NAME, 'checkpoints', g_conf.LOAD_CHECKPOINT)
+        latest_checkpoint = os.path.join(results_folder, 'checkpoints', g_conf.LOAD_CHECKPOINT)
 
     # To train model from scratch, or to resume training on a previous one
     elif g_conf.TRAINING_RESUME:
-        latest_checkpoint = check_saved_checkpoints(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME,
-                                                                g_conf.EXPERIMENT_NAME, 'checkpoints'))
+        latest_checkpoint = check_saved_checkpoints(os.path.join(results_folder, 'checkpoints'))
     else:
         latest_checkpoint = None
 

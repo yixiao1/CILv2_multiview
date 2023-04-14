@@ -68,6 +68,7 @@ def update_learning_rate(optimizer, minimumlr: float = 0.00001):
             print('New lr:', param_group['lr'])
     elif g_conf.LEARNING_RATE_POLICY['name'] == 'warmup_cooldown':
         # TODO: implement this
+        # Inspo: https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup/blob/master/cosine_annealing_warmup/scheduler.py
         pass
 
     else:
