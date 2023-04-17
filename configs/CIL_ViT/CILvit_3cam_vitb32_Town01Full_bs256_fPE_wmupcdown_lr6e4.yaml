@@ -36,7 +36,7 @@ LOSS_WEIGHT:
     acceleration: 0.50
 
 # Optimizer Parameters #
-LEARNING_RATE: 0.0005
+LEARNING_RATE: 0.0006
 LEARNING_RATE_MINIMUM: 0.00001
 LEARNING_RATE_SCHEDULE: 'warmup_cooldown'  # linear warmup, cosine cooldown
 LEARNING_RATE_POLICY:
