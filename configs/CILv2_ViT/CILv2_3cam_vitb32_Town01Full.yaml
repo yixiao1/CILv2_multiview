@@ -60,7 +60,7 @@ MODEL_TYPE: 'CIL_multiview'
 MODEL_CONFIGURATION:
   encoder_embedding:
     perception:
-      res:
+      vit:
         name: 'vit_b_32'
         layer_id: 4  # Remove
 

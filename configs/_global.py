@@ -27,6 +27,9 @@ _g_conf.NUMBER_EPOCH = 100     # Total number of training epochs
 _g_conf.TRAIN_DATASET_NAME = []
 _g_conf.VALID_DATASET_NAME = []      # More than one dataset could be evaluated, thus a list
 _g_conf.DATA_USED = ['rgb_left', 'rgb_central', 'rgb_right']
+_g_conf.DATA_INFORMATION = {'rgb_left': {'fov': 60, 'position': [0.0, 0.0, 0.0], 'rotation': [0.0, 0.0, 0.0]},
+                            'rgb_central': {'fov': 60, 'position': [0.0, 0.0, 0.0], 'rotation': [0.0, 0.0, 0.0]},
+                            'rgb_right': {'fov': 60, 'position': [0.0, 0.0, 0.0], 'rotation': [0.0, 0.0, 0.0]}}
 _g_conf.IMAGE_SHAPE = [3, 88, 200]
 _g_conf.ENCODER_INPUT_FRAMES_NUM = 1
 _g_conf.ENCODER_STEP_INTERVAL = 1     # the pace step of frame you want to use. For example, if you want to have 5 sequential input images taking pre 20-frames as a step, you should set INPUT_FRAMES_NUM =5 and INPUT_FRAME_INTERVAL=20

@@ -62,7 +62,7 @@ MODEL_TYPE: 'CIL_ViT'
 MODEL_CONFIGURATION:
   encoder_embedding:
     perception:
-      res:
+      vit:
         name: 'vit_b_32'
         layer_id: 4  # Remove
 

@@ -1,11 +1,10 @@
-
 #### Model Related Parameters ####
 #### Training Related Parameters ####
-MAGICAL_SEED: 1314520  # Get everything the same; then we may go to our own seeds
+MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
-BATCH_SIZE: 120
-NUM_WORKER: 10
-NUMBER_EPOCH: 120  # Number of epochs to train
+BATCH_SIZE: 256
+NUM_WORKER: 4
+NUMBER_EPOCH: 60  # Number of epochs to train
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
 OTHER_INPUTS: ['speed', 'direction'] # extra input to the neural network
@@ -19,7 +18,7 @@ DECODER_OUTPUT_FRAMES_NUM: 1
 IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
-IMAGE_SHAPE: [3, 288, 288]  # Input image shape; we have lowered this for vanilla ViT deployment (300 => 224)
+IMAGE_SHAPE: [3, 224, 224]  # Input image shape; we have lowered this for vanilla ViT deployment (300 => 224)
 DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right']  # Multi-view cameras, it needs to be set in this order
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # Number of commands: 4 for single-lane towns, 6 for multi-lane towns (lane change)
@@ -37,18 +36,16 @@ LOSS_WEIGHT:
     acceleration: 0.50
 
 # Optimizer Parameters #
-LEARNING_RATE_DECAY: True  # Default, but good to set it explicitly
-LEARNING_RATE: 0.0001
+LEARNING_RATE: 0.0005
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [30, 50, 70, 90, 110]   # Remove this and do a warmpu/cooldown schedule (TODO later)
+LEARNING_RATE_SCHEDULE: 'warmup_cooldown'  # linear warmup, cosine cooldown
 LEARNING_RATE_POLICY:
-  name: 'normal'  # TODO
-  level: 0.5
+  warmup: 0.01  # 1% of the total epochs
 
 #### Validation Related Parameters ####
 EVAL_SAVE_LAST_ATT_MAPS: True
 EVAL_BATCH_SIZE: 30
-EVAL_SAVE_EPOCHES: [1, 5, 20, 40, 60, 80, 90, 100, 110, 120]
+EVAL_SAVE_EPOCHES: [5, 15, 30, 40, 50, 60]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
 EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
@@ -56,7 +53,13 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 ### Network Parameters ####
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
-MODEL_TYPE: 'CIL_multiview_vit_oneseq'
+CMD_SPD_TOKENS: False  # Setup [CMD] and [SPD] tokens instead of addition
+LEARNABLE_POS_EMBED: False
+PRETRAINED_ACC_STR_TOKENS: False  # Initialize [ACC] and [STR] tokens as clones of the (pretrained) [CLS] token
+FREEZE_CLS_TOKEN: False  # freeze the [CLS] token
+REMOVE_CLS_TOKEN: False  # Remove the [CLS] token from the sequence
+
+MODEL_TYPE: 'CIL_ViT'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:
@@ -65,25 +68,12 @@ MODEL_CONFIGURATION:
         name: 'vit_b_32'
         layer_id: 4  # Remove
 
-  TxEncoder:  # This won't be used anymore
-    d_model: 512
-    n_head: 4
-    num_layers: 4
-    norm_first: True
-    learnable_pe: True
-
   command:
     fc:
-      neurons: [512]  # TODO: for multitokens, use a deeper FC
+      neurons: [512]
       dropouts: [0.0]
 
   speed:
     fc:
-      neurons: [512]  # TODO: for multitokens, use a deeper FC
+      neurons: [512]
       dropouts: [0.0]
-
-  action_output:
-    fc:
-      neurons: [512, 256]
-      dropouts: [0.0, 0.0]
-

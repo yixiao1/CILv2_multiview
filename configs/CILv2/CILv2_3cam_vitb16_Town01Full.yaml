@@ -60,7 +60,7 @@ MODEL_TYPE: 'CILv2_multiview_attention'
 MODEL_CONFIGURATION:
   encoder_embedding:
     perception:
-      res:
+      vit:
         name: 'vit_b_16'
         layer_id: 4  # Remove
 
