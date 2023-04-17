@@ -22,7 +22,7 @@ def train_upstream_task(model, optimizer):
     acc_time = 0.0
     time_start = time.time()
 
-    total_iterations = g_conf.NUMBER_EPOCH * len(model)
+    total_iterations = g_conf.NUMBER_EPOCH * len(model) // g_conf.BATCH_SIZE
 
     while True:
 
@@ -91,6 +91,8 @@ def train_upstream_task(model, optimizer):
 
             optimizer.zero_grad()
             loss.backward()
+            # Clip the grad norm
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
 
             time_start = time.time()
@@ -111,7 +113,7 @@ def train_upstream_task(model, optimizer):
             # Extra logging
             _logger.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], model._current_iteration)
 
-            if test_stop(total_iterations, model._current_iteration * g_conf.BATCH_SIZE):
+            if test_stop(total_iterations * g_conf.BATCH_SIZE, model._current_iteration * g_conf.BATCH_SIZE):
                 print('\nTraining finished !!')
                 break
 

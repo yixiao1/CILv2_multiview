@@ -3,7 +3,7 @@
 MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
 BATCH_SIZE: 256
-NUM_WORKER: 4
+NUM_WORKER: 10
 NUMBER_EPOCH: 60  # Number of epochs to train
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
@@ -40,7 +40,7 @@ LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
 LEARNING_RATE_SCHEDULE: 'warmup_cooldown'  # linear warmup, cosine cooldown
 LEARNING_RATE_POLICY:
-  warmup: 0.01  # 1% of the total epochs
+  warmup: 0.1  # 1% of the total epochs
 
 #### Validation Related Parameters ####
 EVAL_SAVE_LAST_ATT_MAPS: True
@@ -59,7 +59,7 @@ PRETRAINED_ACC_STR_TOKENS: False  # Initialize [ACC] and [STR] tokens as clones 
 FREEZE_CLS_TOKEN: False  # freeze the [CLS] token
 REMOVE_CLS_TOKEN: False  # Remove the [CLS] token from the sequence
 
-MODEL_TYPE: 'CIL_ViT'
+MODEL_TYPE: 'CIL_vit'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:
