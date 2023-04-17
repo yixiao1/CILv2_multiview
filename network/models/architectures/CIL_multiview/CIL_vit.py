@@ -15,7 +15,7 @@ class CIL_vit(nn.Module):
 
         # Get ViT model characteristics (our new perception module)
         vit_module = importlib.import_module('network.models.building_blocks.vit')
-        vit_module = getattr(vit_module, params['encoder_embedding']['perception']['res']['name'])
+        vit_module = getattr(vit_module, params['encoder_embedding']['perception']['vit']['name'])
         self.encoder_embedding_perception = vit_module(pretrained=g_conf.IMAGENET_PRE_TRAINED)
 
         self.image_channels, self.image_height, self.image_width = g_conf.IMAGE_SHAPE
@@ -36,8 +36,14 @@ class CIL_vit(nn.Module):
 
         # Additional tokens
         self.tfx_class_token = self.encoder_embedding_perception.class_token
-        self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
-        self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
+        if g_conf.PRETRAINED_ACC_STR_TOKENS:
+            # Start from the [CLS] token of the pretrained model
+            self.tfx_accel_token = nn.Parameter(self.tfx_class_token.detach().clone())
+            self.tfx_steer_token = nn.Parameter(self.tfx_class_token.detach().clone())
+        else:
+            # Start from scratch
+            self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
+            self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
         self.tfx_seq_length = self.tfx_num_patches + 3  # +3 for the additional tokens
         self.act_tokens_pos = [0, 1]  # Which tokens in the sequence to use for the action
 
@@ -111,7 +117,7 @@ class CIL_vit(nn.Module):
             e_s = e_s.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
             self.tfx_seq_length += 2
             self.act_tokens_pos = [_ + 2 for _ in self.act_tokens_pos]
-            self.setup_pos_embedding()
+            self.setup_pos_embedding()  # New sequence length, so we need to update the positional embedding
             encoded_obs = torch.cat([e_p, e_d, e_s], dim=1)  # [B*S*cam, (H//P)^2 + 5, D]; K = 5
         else:
             e_p = e_p.reshape(B, -1, self.tfx_hidden_dim)  # [B, S*cam*((H//P)^2 + 3), D]

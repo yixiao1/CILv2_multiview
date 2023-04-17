@@ -47,7 +47,7 @@ _g_conf.OTHER_INPUTS = ['speed'] # From the float data, the ones that are input 
 _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or an architecure name such as "fasterRcnn, deeplabv3", which means we use the same loss as this architectures
 _g_conf.LOSS_WEIGHT = {}
 _g_conf.LEARNING_RATE = 0.0002       # the max learning rate setting
-_g_conf.LEARNING_RATE_SCHEDULE = 'step'  # the learning rate schedule; 'step' -> StepLR, 'cosine' ->
+_g_conf.LEARNING_RATE_SCHEDULE = 'step'  # the learning rate schedule; 'step' -> StepLR, 'warmup_cooldown' -> linear warmup, cosine cooldown
 _g_conf.LEARNING_RATE_DECAY = True
 _g_conf.LEARNING_RATE_MINIMUM = 0.00001
 _g_conf.LEARNING_RATE_DECAY_EPOCHES = []    # we adjust learning rate for each 1000 iterations
@@ -59,7 +59,10 @@ _g_conf.MODEL_CONFIGURATION = {}
 _g_conf.IMAGENET_PRE_TRAINED = False
 _g_conf.LOAD_CHECKPOINT = ''
 _g_conf.LEARNABLE_POS_EMBED = False
+_g_conf.PRETRAINED_ACC_STR_TOKENS = False
 _g_conf.CMD_SPD_TOKENS = False
+_g_conf.FREEZE_CLS_TOKEN = False  # freeze the classification token
+_g_conf.REMOVE_CLS_TOKEN = False  # remove the classification token from the sequence
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

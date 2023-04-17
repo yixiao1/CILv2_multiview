@@ -1,21 +1,20 @@
-
 #### Model Related Parameters ####
 #### Training Related Parameters ####
 MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
 BATCH_SIZE: 256
-NUM_WORKER: 10
-NUMBER_EPOCH: 30
+NUM_WORKER: 4
+NUMBER_EPOCH: 60  # Number of epochs to train
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
 OTHER_INPUTS: ['speed', 'direction'] # extra input to the neural network
-TRAIN_DATASET_NAME: ['Roach_carla0913_fps10/smalltrain1', 'Roach_carla0913_fps10/smalltrain2'] # Folders of the used training datasets. Should be inside DATASET_PATH folder
-VALID_DATASET_NAME: ['Roach_carla0913_fps10/smallval1'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
+# These datasets have 529525 images in total
+TRAIN_DATASET_NAME: ['Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam'] # Folders of the used training datasets. Should be inside DATASET_PATH folder
+VALID_DATASET_NAME: ['Roach_carla0913_fps10/Roach_LBCRoutes_3cam_valid'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
 ENCODER_INPUT_FRAMES_NUM: 1
 ENCODER_STEP_INTERVAL: 1
 ENCODER_OUTPUT_STEP_DELAY: 0
 DECODER_OUTPUT_FRAMES_NUM: 1
-# Data
 IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
@@ -39,15 +38,14 @@ LOSS_WEIGHT:
 # Optimizer Parameters #
 LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [15, 20, 25]   # Remove this and do a warmpu/cooldown schedule (TODO later)
+LEARNING_RATE_SCHEDULE: 'warmup_cooldown'  # linear warmup, cosine cooldown
 LEARNING_RATE_POLICY:
-  name: 'normal'
-  level: 0.5
+  warmup: 0.01  # 1% of the total epochs
 
 #### Validation Related Parameters ####
-EVAL_SAVE_LAST_Conv_ACTIVATIONS: True
+EVAL_SAVE_LAST_ATT_MAPS: True
 EVAL_BATCH_SIZE: 30
-EVAL_SAVE_EPOCHES: [1, 15, 30]
+EVAL_SAVE_EPOCHES: [10, 30, 60, 80, 100, 110, 120]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
 EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
@@ -55,23 +53,20 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 ### Network Parameters ####
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
+CMD_SPD_TOKENS: False  # Setup [CMD] and [SPD] tokens instead of addition
 LEARNABLE_POS_EMBED: False
+PRETRAINED_ACC_STR_TOKENS: True  # Initialize [ACC] and [STR] tokens as clones of the (pretrained) [CLS] token
+FREEZE_CLS_TOKEN: False  # freeze the [CLS] token
+REMOVE_CLS_TOKEN: False  # Remove the [CLS] token from the sequence
+
 MODEL_TYPE: 'CIL_ViT'
-CMD_SPD_TOKENS: False
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:
     perception:
-      res:
+      vit:
         name: 'vit_b_32'
         layer_id: 4  # Remove
-
-  TxEncoder:  # This won't be used anymore
-    d_model: 512
-    n_head: 4
-    num_layers: 4
-    norm_first: True
-    learnable_pe: True
 
   command:
     fc:
@@ -82,9 +77,3 @@ MODEL_CONFIGURATION:
     fc:
       neurons: [512]
       dropouts: [0.0]
-
-  action_output:
-    fc:
-      neurons: [512, 256]
-      dropouts: [0.0, 0.0]
-

@@ -98,13 +98,9 @@ def print_train_info(log_frequency, batch_size, model,
     return acc_time
 
 
-#@timeit
-def test_stop(number_of_data, iterated_data):
-
-    if number_of_data != 0 and \
-            iterated_data >= number_of_data:
-        return True
-    return False
+def test_stop(number_of_data: int, iterated_data: int) -> bool:
+    """ Check if the training should stop """
+    return number_of_data != 0 and iterated_data >= number_of_data
 
 
 def generate_specific_rows(filepath: Union[str, os.PathLike], row_indices: List[int] = None):

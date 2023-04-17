@@ -56,7 +56,7 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
 LEARNABLE_POS_EMBED: False
-MODEL_TYPE: 'CIL_vit'
+MODEL_TYPE: 'CIL_ViT'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:

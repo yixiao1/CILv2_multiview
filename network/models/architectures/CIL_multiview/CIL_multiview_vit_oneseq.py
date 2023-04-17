@@ -17,7 +17,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         # Get ViT model characteristics (our new perception module)
         vit_module = importlib.import_module('network.models.building_blocks.vit')
-        vit_module = getattr(vit_module, params['encoder_embedding']['perception']['res']['name'])
+        vit_module = getattr(vit_module, params['encoder_embedding']['perception']['vit']['name'])
         self.encoder_embedding_perception = vit_module(pretrained=g_conf.IMAGENET_PRE_TRAINED)
 
         # Network pieces
