@@ -38,14 +38,27 @@ class CIL_vit(nn.Module):
         self.tfx_class_token = self.encoder_embedding_perception.class_token
         if g_conf.PRETRAINED_ACC_STR_TOKENS:
             # Start from the [CLS] token of the pretrained model
+            print('Initializing the acceleration ([ACC]) and steering ([STR]) tokens with the [CLS] token...')
             self.tfx_accel_token = nn.Parameter(self.tfx_class_token.detach().clone())
             self.tfx_steer_token = nn.Parameter(self.tfx_class_token.detach().clone())
         else:
             # Start from scratch
+            print('Randomly initializing the acceleration ([ACC]) and steering ([STR]) tokens...')
             self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
             self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
-        self.tfx_seq_length = self.tfx_num_patches + 3  # +3 for the additional tokens
+
+        self.tfx_seq_length = self.tfx_num_patches + 3  # K=3 for the additional tokens
         self.act_tokens_pos = [0, 1]  # Which tokens in the sequence to use for the action
+
+        if g_conf.FREEZE_CLS_TOKEN:
+            print('Freezing the [CLS] token...')
+            self.tfx_class_token.requires_grad = False
+
+        # Remove the [CLS] token if needed
+        if g_conf.REMOVE_CLS_TOKEN:
+            print('Removing the [CLS] token from the sequence...')
+            self.tfx_seq_length -= 1  # K=2
+            del self.tfx_class_token
 
         # Replace learned pos embedding with fixed sin/cos 2d embedding, used implicitly by the encoder
         self.setup_pos_embedding()
@@ -66,9 +79,19 @@ class CIL_vit(nn.Module):
                 torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))  # From BERT
         elif g_conf.LEARNABLE_POS_EMBED and g_conf.IMAGENET_PRE_TRAINED:
             if self.tfx_seq_length == self.encoder_embedding_perception.seq_length:
+                # Sequence length is the same as the pretrained one, so we can use the pretrained one
                 pass
             else:
-                raise ValueError('The learnable positional embedding is not compatible with the current sequence length')
+                # TODO: Is there a way to interpolate from [1, S, hidden_dim] to [1, new_S, hidden_dim]?
+                print('Warning: current sequence length is different from the pretrained one. Starting '
+                      'Positional Encoding from scratch...')
+                self.tfx_encoder.pos_embedding = nn.Parameter(
+                    torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))
+
+                print('Warning: current sequence length is different from the pretrained one. Starting from scratch...')
+                self.tfx_encoder.pos_embedding = nn.Parameter(
+                    torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))
+
         else:
             del self.tfx_encoder.pos_embedding  # A nn.Parameter, so it most go
 
@@ -99,13 +122,18 @@ class CIL_vit(nn.Module):
         e_p = rearrange(e_p, '(B S cam) D (patches_h) (patches_w) -> (B S cam) (patches_h patches_w) D',
                         B=B, cam=cam)  # [B*S*cam, H*W/P^2, D]
 
-        # Now the rest of forward
+        # Setup the first tokens in the sequence
         n = e_p.shape[0]  # B*S*cam
-        e_p = torch.cat([
-            self.tfx_accel_token.expand(n, -1, -1),
-            self.tfx_steer_token.expand(n, -1, -1),
-            self.tfx_class_token.expand(n, -1, -1),
-            e_p], dim=1)  # [B*S*cam, (H/P)(W/P) + 3, D]])
+        if g_conf.REMOVE_CLS_TOKEN:
+            first_tokens = [self.tfx_accel_token.expand(n, -1, -1),
+                            self.tfx_steer_token.expand(n, -1, -1)]
+        else:
+            first_tokens = [self.tfx_accel_token.expand(n, -1, -1),
+                            self.tfx_steer_token.expand(n, -1, -1),
+                            self.tfx_class_token.expand(n, -1, -1)]
+
+        # Concatenate the first tokens to the image embeddings
+        e_p = torch.cat([*first_tokens, e_p], dim=1)  # [B*S*cam, (H/P)(W/P) + K, D]]), K = 3 if w/CLS token else 2
 
         # Embedding of command and speed
         e_d = self.command(d).unsqueeze(1)     # [B, 1, D]
@@ -118,21 +146,21 @@ class CIL_vit(nn.Module):
             self.tfx_seq_length += 2
             self.act_tokens_pos = [_ + 2 for _ in self.act_tokens_pos]
             self.setup_pos_embedding()  # New sequence length, so we need to update the positional embedding
-            encoded_obs = torch.cat([e_p, e_d, e_s], dim=1)  # [B*S*cam, (H//P)^2 + 5, D]; K = 5
+            encoded_obs = torch.cat([e_p, e_d, e_s], dim=1)  # [B*S*cam, (H//P)^2 + 5, D]; K = 5 w/CLS token else 4
         else:
             e_p = e_p.reshape(B, -1, self.tfx_hidden_dim)  # [B, S*cam*((H//P)^2 + 3), D]
-            encoded_obs = e_p + e_d + e_s  # [B, S*cam*((H//P)^2 + 3), D]; K = 3
+            encoded_obs = e_p + e_d + e_s  # [B, S*cam*((H//P)^2 + K), D]; K = 3 if not removing CLS token else 2
 
         encoded_obs = encoded_obs.reshape(-1, self.tfx_seq_length, self.tfx_hidden_dim)  # [B*S*cam, (H//P)^2 + K, D]
 
         # Pass on to the Transformer encoder
         in_memory = self.tfx_encoder(encoded_obs)  # [B*S*cam, (H//P)^2+K, D]
         # Use only the [ACC] and [STR] tokens for the action prediction
-        in_memory = in_memory[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, 2, D]
-        in_memory = rearrange(in_memory, '(B S cam) t D -> B (S cam D) t', B=B, S=S)  # [B*S*cam, D] => [B, 2, S*cam*D]
+        in_memory = in_memory[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, t, D]; t = 2
+        in_memory = rearrange(in_memory, '(B S cam) t D -> B (S cam D) t', B=B, S=S)  # [B*S*cam, t, D] => [B, S*cam*D]
 
         # Action prediction
-        action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, 2] or [B, 1, len(TARGETS)]
+        action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         return action_output
 

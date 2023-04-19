@@ -161,7 +161,7 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str):
     print(torch.cuda.device_count(), 'GPUs to be used: ', gpus_list)
 
     # Final setup
-    set_type_of_process('train_val', root= os.environ["TRAINING_RESULTS_ROOT"])
+    set_type_of_process('train_val', root=os.environ["TRAINING_RESULTS_ROOT"])
     seed_everything(seed=g_conf.MAGICAL_SEED)
 
     # Create the model
