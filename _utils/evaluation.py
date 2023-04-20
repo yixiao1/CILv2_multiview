@@ -1,25 +1,28 @@
 import datetime
 from collections import OrderedDict
 import time
-import torch
 import os
 from contextlib import contextmanager
+
+import torch
+import torch.nn as nn
 
 from _utils.utils import extract_targets, extract_commands, \
     write_model_results, is_result_better, extract_other_inputs, draw_offline_evaluation_results, eval_done
 from configs import g_conf
 from logger import _logger
 from dataloaders.transforms import inverse_normalize
+from network.models.architectures.CIL_multiview.evaluator import CIL_multiview_Evaluator
 
 
-def get_model_state(model: torch.nn.Module) -> OrderedDict:
+def get_model_state(model: nn.Module) -> OrderedDict:
     """ Get the state of a model """
     if isinstance(model, torch.nn.DataParallel):
         return model.module.state_dict()
     return model.state_dict()
 
 
-def save_model(model: torch.nn.Module, optimizer, best_pred: int) -> None:
+def save_model(model: nn.Module, optimizer, best_pred: int) -> None:
     """ Save the model to the checkpoint directory """
 
     model_state_dict = get_model_state(model)
@@ -36,7 +39,7 @@ def save_model(model: torch.nn.Module, optimizer, best_pred: int) -> None:
 
 
 @contextmanager
-def inference_context(model):
+def inference_context(model: nn.Module):
     """
     A context where the model is temporarily changed to eval mode,
     and restored to previous mode afterwards.
@@ -50,7 +53,12 @@ def inference_context(model):
     model.train(training_mode)
 
 
-def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iteration, eval_epoch):
+def evaluation_on_model(model: nn.Module,
+                        data_loaders: torch.utils.data.DataLoader,
+                        model_name: str,
+                        evaluator: CIL_multiview_Evaluator,
+                        eval_iteration: int,
+                        eval_epoch: int) -> dict:
     results_dict = {}
     for data_loader in data_loaders:
         total = len(data_loader.dataset)  # inference data loader must have a fixed length
@@ -134,7 +142,10 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
     return results_dict
 
 
-def save_model_if_better(results_dict, model, optimizer, save_all=False):
+def save_model_if_better(results_dict: dict,
+                         model: nn.Module,
+                         optimizer: torch.optim.Optimizer,
+                         save_all: bool = False):
     # we are saving the model if it is better than the previous one
     if g_conf.PROCESS_NAME == 'train_val':
         dataset_name = list(results_dict.keys())[0]
@@ -169,7 +180,7 @@ def save_model_if_better(results_dict, model, optimizer, save_all=False):
     return is_better_flag, best_pred
 
 
-def evaluation_saving(model, optimizers, early_stopping_flags, save_all_checkpoints = False):
+def evaluation_saving(model: nn.Module, optimizers, early_stopping_flags, save_all_checkpoints = False):
     """
     Evaluates but also saves if the model is better
     """

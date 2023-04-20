@@ -19,6 +19,7 @@ import json
 import numpy as np
 import torchvision.transforms.functional as TF
 from PIL import Image, ImageDraw, ImageFont
+import cv2
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
@@ -31,7 +32,6 @@ from _utils.training_utils import DataParallelWrapper
 from dataloaders.transforms import encode_directions_4, encode_directions_6, inverse_normalize, decode_directions_4, \
     decode_directions_6
 from driving.utils.waypointer import Waypointer
-from pytorch_grad_cam.pytorch_grad_cam.grad_cam import GradCAM
 from driving.utils.route_manipulation import interpolate_trajectory
 
 from omegaconf import OmegaConf
@@ -83,10 +83,23 @@ class CILv2_agent(object):
         self.vision_save_path = save_driving_vision
         self.plug_in_expert=plug_in_expert
 
+        # Data
+        self.direction = None
+        self.steer = None
+        self.throttle = None
+        self.brake = None
+
+        self._model = None
+        self.norm_rgb = None
+        self.norm_speed = None
+        self.checkpoint = None
+        self.world = None
+        self.map = None
+
         # agent's initialization
         self.setup_model(path_to_conf_file)
 
-        self.cmap_2 = plt.get_cmap('jet')
+        self.cmap_2 = plt.get_cmap('inferno')
         self.cmap_1 = plt.get_cmap('Reds')
         self.datapoint_count = 0
         self.save_frequence = 1
@@ -252,17 +265,20 @@ class CILv2_agent(object):
         self.control = carla.VehicleControl()
         self.norm_rgb = [[self.process_image(self.input_data[camera_type][1]).unsqueeze(0).cuda() for camera_type in g_conf.DATA_USED]]
         self.norm_speed = [torch.cuda.FloatTensor([self.process_speed(self.input_data['SPEED'][1]['speed'])]).unsqueeze(0)]
+
+        #
         if g_conf.DATA_COMMAND_ONE_HOT:
             self.direction = \
-                [torch.cuda.FloatTensor(self.process_command(self.input_data['GPS'][1], self.input_data['IMU'][1])[0]).unsqueeze(0).cuda()]
-
+                [torch.cuda.FloatTensor(self.process_command(self.input_data['GPS'][1],
+                                                             self.input_data['IMU'][1])[0]).unsqueeze(0).cuda()]
         else:
             self.direction = \
-                [torch.cuda.LongTensor([self.process_command(self.input_data['GPS'][1], self.input_data['IMU'][1])[1]-1]).unsqueeze(0).cuda()]
+                [torch.cuda.LongTensor([self.process_command(self.input_data['GPS'][1],
+                                                             self.input_data['IMU'][1])[1]-1]).unsqueeze(0).cuda()]
 
-        # actions_outputs, _, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
+        actions_outputs, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
 
-        actions_outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
+        # actions_outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
 
         last_action_outputs = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 
@@ -352,17 +368,22 @@ class CILv2_agent(object):
                 rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
                 cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
 
-            target_layers = [self._model._model.encoder_embedding_perception.encoder.layers.encoder_layer_11]
-            cam = GradCAM(model=self._model._model, target_layers=target_layers)
+            # target_layers = [self._model._model.encoder_embedding_perception.encoder.layers.encoder_layer_11]
+            # cam = GradCAM(model=self._model._model, target_layers=target_layers)
 
-            input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]  # [3, 3, H, W], [no_commands], [1]
-            with torch.enable_grad():
-                grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
+            # input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]  # [3, 3, H, W], [no_commands], [1]
+            # with torch.enable_grad():
+            #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
 
-            grayscale_cam = grayscale_cam.reshape((1, len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))
+            grayscale_cam = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; just the ACC token
+            grayscale_cam = grayscale_cam.transpose(1, 2, 0)  # [H, W, S*cam]
+            grayscale_cam = cv2.resize(grayscale_cam, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
+                                       interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+            grayscale_cam = grayscale_cam.transpose(2, 0, 1)  # [S*cam, H, W]
+
             gradcams = []
             for cam_id in range(len(g_conf.DATA_USED)):
-                att = grayscale_cam[0, cam_id, :]
+                att = grayscale_cam[cam_id, :]
                 cmap_att = np.delete(self.cmap_2(att), 3, 2)
                 cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
                 gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
@@ -397,14 +418,15 @@ class CILv2_agent(object):
 
             command_sign = command_sign.resize((280, 70))
 
-            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10), 120+ rgb_backontop.height+120), (0, 0, 0))
+            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10),
+                                    120 + rgb_backontop.height+120), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
             font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
             font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
             font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
 
             # third person
-            draw_mat.text((260 , 40), str("Third Person Perspective"), fill=(255, 255, 255), font=font_2)
+            draw_mat.text((260, 40), str("Third Person Perspective"), fill=(255, 255, 255), font=font_2)
             mat.paste(rgb_backontop, (0, 120))
 
             # RGB
@@ -413,14 +435,12 @@ class CILv2_agent(object):
             draw_mat.text((435 + rgb_backontop.width, 80), str("0.0"+'\u00b0'), fill=(255, 255, 255), font=font)
             draw_mat.text((735 + rgb_backontop.width, 80), str("60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
             mat.paste(cams[0], (rgb_backontop.width+10, 120))
-            mat.paste(cams[1], (rgb_backontop.width+10 +int(cams[0].width) + 10, 120))
+            mat.paste(cams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120))
             mat.paste(cams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
 
             # activation maps
-            draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35),
-                          str("Activation Maps"),
-                          fill=(255, 255, 255),
-                          font=font)
+            draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35), str("[ACC] Attention Maps"),
+                          fill=(255, 255, 255), font=font)
             mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
             mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
             mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
@@ -478,6 +498,7 @@ class CILv2_agent(object):
                     {'range': [-1, self.steer], 'color': "black"},
                     {'range': [self.steer, 0], 'color': "yellow"},
                     {'range': [0, 1], 'color': "black"}]
+
             steer_gauge = go.Figure(go.Indicator(
                 mode="number+gauge",
                 gauge={'shape': "bullet",

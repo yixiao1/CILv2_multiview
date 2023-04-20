@@ -76,13 +76,13 @@ class EncoderBlock(nn.Module):
     def forward(self, input: torch.Tensor):
         torch._assert(input.dim() == 3, f"Expected (seq_length, batch_size, hidden_dim) got {input.shape}")
         x = self.ln_1(input)
-        x, _ = self.self_attention(query=x, key=x, value=x, need_weights=False)
+        x, att = self.self_attention(query=x, key=x, value=x, need_weights=True, average_attn_weights=True)
         x = self.dropout(x)
         x = x + input
 
         y = self.ln_2(x)
         y = self.mlp(y)
-        return x + y
+        return x + y, att
 
 
 class Encoder(nn.Module):
@@ -104,8 +104,13 @@ class Encoder(nn.Module):
         # we have batch_first=True in nn.MultiAttention() by default
         self.pos_embedding = nn.Parameter(torch.empty(1, seq_length, hidden_dim).normal_(std=0.02))  # from BERT
         self.dropout = nn.Dropout(dropout)
+        # Encoder characteristics
+        self.seq_length = seq_length
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+
         layers: OrderedDict[str, nn.Module] = OrderedDict()
-        for i in range(num_layers):
+        for i in range(self.num_layers):
             layers[f"encoder_layer_{i}"] = EncoderBlock(
                 num_heads,
                 hidden_dim,
@@ -121,6 +126,19 @@ class Encoder(nn.Module):
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
         input = input + self.pos_embedding
         return self.ln(self.layers(self.dropout(input)))
+
+    def forward_return_attn(self, input: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        """
+        Get the attention matrices (R^(1xSxS), S the sequence length) for each layer of the encoder (input is after
+        embedding, positional encoding, and addition of command and speed encodings)
+        """
+        torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
+        input = self.dropout(input)
+        attns = []
+        for i in range(self.num_layers):
+            input, att = self.layers[i](input)
+            attns.append(att)
+        return self.ln(input), attns
 
 
 class VisionTransformer(nn.Module):
@@ -254,17 +272,17 @@ class VisionTransformer(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # Reshape and permute the input tensor
-        x = self._process_input(x)
+        x = self._process_input(x)  # [N, 3, H, W] -> [N, S, D]
         n = x.shape[0]
 
         # Expand the class token to the full batch
         batch_class_token = self.class_token.expand(n, -1, -1)
-        x = torch.cat([batch_class_token, x], dim=1)
+        x = torch.cat([batch_class_token, x], dim=1)  # [N, S + 1, D]
 
-        x = self.encoder(x)
+        x = self.encoder(x)  # [N, S + 1, D]
 
         # Classifier "token" as used by standard language architectures
-        x = x[:, 0]
+        x = x[:, 0, :]  # [N, D]
 
         x = self.heads(x)
 
@@ -297,6 +315,7 @@ def _vision_transformer(
     if pretrained:
         if arch not in model_urls:
             raise ValueError(f"No checkpoint is available for model type '{arch}'!")
+        # TODO: remove heads from model and state dict: https://stackoverflow.com/a/74493561
         state_dict = load_state_dict_from_url(model_urls[arch], progress=progress)
         model.load_state_dict(state_dict)
 
@@ -306,85 +325,188 @@ def _vision_transformer(
 # ========================== Models =================================
 # This all works only for torchvision == 0.12 (0.11 doesn't have vit models!)
 
-def vit_b_16(pretrained=False, **kwargs):
-    """Constructs a ViT Base (16x16 patches) model.
-    Args:
-        pretrained (bool): If True, returns a model pretrained on ImageNet
-    Note:
-        Input resolution: 224x224
+def vit_b_16(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
     """
-    model = torchvision.models.vit_b_16(pretrained=False, **kwargs)
-    if pretrained:
-        print(f"Loading pretrained weights from: {model_urls['vit_b_16']}...")
-        model_dict = model_zoo.load_url(model_urls['vit_b_16'])
-        # remove the fc layers
-        del model_dict['heads.head.weight']
-        del model_dict['heads.head.bias']
-        state = model.state_dict()
-        state.update(model_dict)
-        model.load_state_dict(state)
+    Constructs a vit_b_16 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
 
-    return model
-
-
-def vit_b_32(pretrained=False, **kwargs: Any):
-    """Constructs a ViT Base (32x32 patches) model.
     Args:
-        pretrained (bool): If True, returns a model pretrained on ImageNet-1k
-    Note:
-        Input resolution: 224x224
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
     """
-    model = torchvision.models.vit_b_32(pretrained=False, **kwargs)
-    if pretrained:
-        print(f"Loading pretrained weights from: {model_urls['vit_b_32']}...")
-        model_dict = model_zoo.load_url(model_urls['vit_b_32'])
-        # remove the fc layers
-        del model_dict['heads.head.weight']
-        del model_dict['heads.head.bias']
-        state = model.state_dict()
-        state.update(model_dict)
-        model.load_state_dict(state)
+    return _vision_transformer(
+        arch="vit_b_16",
+        patch_size=16,
+        num_layers=12,
+        num_heads=12,
+        hidden_dim=768,
+        mlp_dim=3072,
+        pretrained=pretrained,
+        progress=progress,
+        **kwargs,
+    )
 
-    return model
 
+def vit_b_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_b_32 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
 
-def vit_l_16(pretrained=False, **kwargs):
-    """Constructs a ViT Large (16x16 patches) model.
     Args:
-        pretrained (bool): If True, returns a model pretrained on ImageNet
-    Note:
-        Input resolution: 224x224
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
     """
-    model = torchvision.models.vit_l_16(pretrained=False, **kwargs)
-    if pretrained:
-        print(f"Loading pretrained weights from: {model_urls['vit_l_16']}...")
-        model_dict = model_zoo.load_url(model_urls['vit_l_16'])
-        # remove the fc layers
-        del model_dict['heads.head.weight']
-        del model_dict['heads.head.bias']
-        state = model.state_dict()
-        state.update(model_dict)
-        model.load_state_dict(state)
+    return _vision_transformer(
+        arch="vit_b_32",
+        patch_size=32,
+        num_layers=12,
+        num_heads=12,
+        hidden_dim=768,
+        mlp_dim=3072,
+        pretrained=pretrained,
+        progress=progress,
+        **kwargs,
+    )
 
-    return model
 
+def vit_l_16(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_l_16 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
 
-def vit_l_32(pretrained=False, **kwargs):
-    """Constructs a ViT Large (32x32 patches) model.
     Args:
-        pretrained (bool): If True, returns a model pretrained on ImageNet
-    Note:
-        Input resolution: 224x224
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
     """
-    model = torchvision.models.vit_l_32(pretrained=False, **kwargs)
-    if pretrained:
-        print(f"Loading pretrained weights from: {model_urls['vit_l_32']}...")
-        model_dict = model_zoo.load_url(model_urls['vit_l_32'])
-        # remove the fc layers
-        del model_dict['heads.head.weight']
-        del model_dict['heads.head.bias']
-        state = model.state_dict()
-        state.update(model_dict)
-        model.load_state_dict(state)
+    return _vision_transformer(
+        arch="vit_l_16",
+        patch_size=16,
+        num_layers=24,
+        num_heads=16,
+        hidden_dim=1024,
+        mlp_dim=4096,
+        pretrained=pretrained,
+        progress=progress,
+        **kwargs,
+    )
 
-    return model
+
+def vit_l_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_l_32 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _vision_transformer(
+        arch="vit_l_32",
+        patch_size=32,
+        num_layers=24,
+        num_heads=16,
+        hidden_dim=1024,
+        mlp_dim=4096,
+        pretrained=pretrained,
+        progress=progress,
+        **kwargs,
+    )
+
+# def vit_l_32(pretrained=False, **kwargs):
+#     """Constructs a ViT Large (32x32 patches) model.
+#     Args:
+#         pretrained (bool): If True, returns a model pretrained on ImageNet
+#     Note:
+#         Input resolution: 224x224
+#     """
+#     model = torchvision.models.vit_l_32(pretrained=False, **kwargs)
+#     if pretrained:
+#         print(f"Loading pretrained weights from: {model_urls['vit_l_32']}...")
+#         model_dict = model_zoo.load_url(model_urls['vit_l_32'])
+#         # remove the fc layers
+#         del model_dict['heads.head.weight']
+#         del model_dict['heads.head.bias']
+#         state = model.state_dict()
+#         state.update(model_dict)
+#         model.load_state_dict(state)
+#
+#     return model
+
+# ========================== Positional Encoding interpolation =================================
+
+
+# Not useful for me, as the code limits itself to just being able to interpolate the positional encoding
+# of the patches, leaving the CLS token positional encoding untouched. How to interpolate from 1D to 1D?
+def interpolate_embeddings(
+    image_size: int,
+    patch_size: int,
+    model_state: "OrderedDict[str, torch.Tensor]",
+    interpolation_mode: str = "bicubic",
+    reset_heads: bool = False,
+) -> "OrderedDict[str, torch.Tensor]":
+    """This function helps interpolating positional embeddings during checkpoint loading,
+    especially when you want to apply a pre-trained model on images with different resolution.
+
+    Args:
+        image_size (int): Image size of the new model.
+        patch_size (int): Patch size of the new model.
+        model_state (OrderedDict[str, torch.Tensor]): State dict of the pre-trained model.
+        interpolation_mode (str): The algorithm used for upsampling. Default: bicubic.
+        reset_heads (bool): If true, not copying the state of heads. Default: False.
+
+    Returns:
+        OrderedDict[str, torch.Tensor]: A state dict which can be loaded into the new model.
+    """
+    # Shape of pos_embedding is (1, seq_length, hidden_dim)
+    pos_embedding = model_state["encoder.pos_embedding"]
+    n, seq_length, hidden_dim = pos_embedding.shape
+    if n != 1:
+        raise ValueError(f"Unexpected position embedding shape: {pos_embedding.shape}")
+
+    new_seq_length = (image_size // patch_size) ** 2 + 1
+
+    # Need to interpolate the weights for the position embedding.
+    # We do this by reshaping the positions embeddings to a 2d grid, performing
+    # an interpolation in the (h, w) space and then reshaping back to a 1d grid.
+    if new_seq_length != seq_length:
+        # The class token embedding shouldn't be interpolated so we split it up.
+        seq_length -= 1
+        new_seq_length -= 1
+        pos_embedding_token = pos_embedding[:, :1, :]
+        pos_embedding_img = pos_embedding[:, 1:, :]
+
+        # (1, seq_length, hidden_dim) -> (1, hidden_dim, seq_length)
+        pos_embedding_img = pos_embedding_img.permute(0, 2, 1)
+        seq_length_1d = int(math.sqrt(seq_length))
+        torch._assert(seq_length_1d * seq_length_1d == seq_length, "seq_length is not a perfect square!")
+
+        # (1, hidden_dim, seq_length) -> (1, hidden_dim, seq_l_1d, seq_l_1d)
+        pos_embedding_img = pos_embedding_img.reshape(1, hidden_dim, seq_length_1d, seq_length_1d)
+        new_seq_length_1d = image_size // patch_size
+
+        # Perform interpolation.
+        # (1, hidden_dim, seq_l_1d, seq_l_1d) -> (1, hidden_dim, new_seq_l_1d, new_seq_l_1d)
+        new_pos_embedding_img = nn.functional.interpolate(
+            pos_embedding_img,
+            size=new_seq_length_1d,
+            mode=interpolation_mode,
+            align_corners=True,
+        )
+
+        # (1, hidden_dim, new_seq_l_1d, new_seq_l_1d) -> (1, hidden_dim, new_seq_length)
+        new_pos_embedding_img = new_pos_embedding_img.reshape(1, hidden_dim, new_seq_length)
+
+        # (1, hidden_dim, new_seq_length) -> (1, new_seq_length, hidden_dim)
+        new_pos_embedding_img = new_pos_embedding_img.permute(0, 2, 1)
+        new_pos_embedding = torch.cat([pos_embedding_token, new_pos_embedding_img], dim=1)
+
+        model_state["encoder.pos_embedding"] = new_pos_embedding
+
+        if reset_heads:
+            model_state_copy: "OrderedDict[str, torch.Tensor]" = OrderedDict()
+            for k, v in model_state.items():
+                if not k.startswith("heads"):
+                    model_state_copy[k] = v
+            model_state = model_state_copy
+
+    return model_state
