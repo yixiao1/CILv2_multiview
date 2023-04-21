@@ -82,7 +82,7 @@ The goal is to submit for [CoRL 2023](https://www.corl2023.org/), so the deadlin
   * *Advantage:* We can easily access **where** is the model focusing on to make its decision
   * *Disadvantage:* the sequence length is now `S*cam*(H//P)**2 + 1`, whereas before it was only `(H//P)**2 + 1` per camera view
   * *Disadvantage:* We are forcing it to see like a human, which is in itself limiting
-* [ ] Log the attention maps during training and validation
+* [x] Log the attention maps during training and validation
   * [ ] Extract the attention map of any token in the sequence (as there will be more than one)
 * [ ] Recreate Figure 11 of the ViT paper) i.e., the size of attended area by head and network depth/layer; code [here](https://github.com/google-research/vision_transformer/issues/162)
 

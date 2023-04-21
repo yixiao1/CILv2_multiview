@@ -60,6 +60,11 @@ class CIL_vit(nn.Module):
             self.tfx_seq_length -= 1  # K=2
             del self.tfx_class_token
 
+        # Add the command and speed as tokens to the sequence
+        if g_conf.CMD_SPD_TOKENS:
+            self.tfx_seq_length += 2
+            self.act_tokens_pos = [_ + 2 for _ in self.act_tokens_pos]
+
         # Replace learned pos embedding with fixed sin/cos 2d embedding, used implicitly by the encoder
         self.setup_pos_embedding()
 
@@ -143,9 +148,6 @@ class CIL_vit(nn.Module):
         if g_conf.CMD_SPD_TOKENS:
             e_d = e_d.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
             e_s = e_s.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
-            self.tfx_seq_length += 2
-            self.act_tokens_pos = [_ + 2 for _ in self.act_tokens_pos]
-            self.setup_pos_embedding()  # New sequence length, so we need to update the positional embedding
             encoded_obs = torch.cat([e_p, e_d, e_s], dim=1)  # [B*S*cam, (H//P)^2 + 5, D]; K = 5 w/CLS token else 4
         else:
             e_p = e_p.reshape(B, -1, self.tfx_hidden_dim)  # [B, S*cam*((H//P)^2 + K), D]
@@ -202,9 +204,6 @@ class CIL_vit(nn.Module):
         if g_conf.CMD_SPD_TOKENS:
             e_d = e_d.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
             e_s = e_s.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
-            self.tfx_seq_length += 2
-            self.act_tokens_pos = [_ + 2 for _ in self.act_tokens_pos]
-            self.setup_pos_embedding()  # New sequence length, so we need to update the positional embedding
             encoded_obs = torch.cat([e_p, e_d, e_s], dim=1)  # [B*S*cam, (H//P)^2 + 5, D]; K = 5 w/CLS token else 4
         else:
             e_p = e_p.reshape(B, -1, self.tfx_hidden_dim)  # [B, S*cam*((H//P)^2 + K), D]
@@ -223,8 +222,8 @@ class CIL_vit(nn.Module):
         action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
-        attn_weights = attn_weights[-1][:, self.act_tokens_pos, self.act_tokens_pos[-1]+1:]  # [B*S*cam, t, (H//P)^2]
-        attn_weights = attn_weights.unflatten(-1, self.tfx_num_patches_h, self.tfx_num_patches_w)  # [B*S*cam, t, H//P, W//P]
+        attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]
+        attn_weights = attn_weights.unflatten(2, (self.tfx_num_patches_h, self.tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
 
         return action_output, attn_weights
 

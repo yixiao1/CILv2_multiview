@@ -125,7 +125,11 @@ class Encoder(nn.Module):
     def forward(self, input: torch.Tensor):
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
         input = input + self.pos_embedding
-        return self.ln(self.layers(self.dropout(input)))
+        input = self.dropout(input)
+        for i in range(self.num_layers):
+            input, _ = self.layers[i](input)
+
+        return self.ln(input)
 
     def forward_return_attn(self, input: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         """
@@ -133,6 +137,7 @@ class Encoder(nn.Module):
         embedding, positional encoding, and addition of command and speed encodings)
         """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
+        input = input + self.pos_embedding
         input = self.dropout(input)
         attns = []
         for i in range(self.num_layers):

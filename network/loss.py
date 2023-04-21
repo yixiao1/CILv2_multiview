@@ -2,11 +2,11 @@ import torch
 from configs import g_conf
 
 
-def Action_nospeed_L1(params):
+def Action_nospeed_L1(params: dict):
     B = params['action_output'].shape[0]  # batch_size
 
     # SingleFrame model - we only take into account the last frame's action
-    actions_loss_mat = torch.abs(params['action_output'][:,-1,:] - params['targets_action'][-1])  # (B, 2)
+    actions_loss_mat = torch.abs(params['action_output'][:, -1, :] - params['targets_action'][-1])  # (B, 2)
 
     steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
     steer_loss = torch.sum(steer_loss) / B
@@ -29,10 +29,11 @@ def Action_nospeed_L1(params):
 
         return loss, steer_loss, throttle_loss, brake_loss
 
-def Loss(loss):
+
+def Loss(loss: str):
 
     if loss=='Action_nospeed_L1':
         return Action_nospeed_L1
 
     else:
-        raise NotImplementError(" The loss of this model type has not yet defined ")
+        raise NotImplementedError("The loss of this model type has not yet defined ")

@@ -1,0 +1,27 @@
+{
+    "envs": {
+        "SoftRainSunset_route00000": {
+            "repetitions": 1,
+            "route": {
+                "file": "Town01_navigation_lbc.xml",
+                "id": 0
+            },
+            "scenarios": {},
+            "town_name": "Town01",
+            "vehicle_model": "vehicle.lincoln.mkz_2017",
+            "weather_profile": "SoftRainSunset"
+        },
+        "SoftRainSunset_route00001": {
+            "repetitions": 1,
+            "route": {
+                "file": "Town01_navigation_lbc.xml",
+                "id": 1
+            },
+            "scenarios": {},
+            "town_name": "Town01",
+            "vehicle_model": "vehicle.lincoln.mkz_2017",
+            "weather_profile": "SoftRainSunset"
+        }
+    },
+    "package_name": "nocrash_newweather_empty_Town01_lbc"
+}

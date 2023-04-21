@@ -118,7 +118,7 @@ class CILv2_agent(object):
         merge_with_yaml(os.path.join(exp_dir, yaml_conf), process_type='drive')
         set_type_of_process('drive', root=os.environ["TRAINING_RESULTS_ROOT"])
         
-        self._model = Models(g_conf.MODEL_TYPE, g_conf.MODEL_CONFIGURATION)
+        self._model = Models(g_conf.MODEL_CONFIGURATION)
         if torch.cuda.device_count() > 1 and g_conf.DATA_PARALLEL:
             print("Using multiple GPUs parallel! ")
             print(torch.cuda.device_count(), 'GPUs to be used: ', os.environ["CUDA_VISIBLE_DEVICES"])
@@ -265,7 +265,6 @@ class CILv2_agent(object):
         self.control = carla.VehicleControl()
         self.norm_rgb = [[self.process_image(self.input_data[camera_type][1]).unsqueeze(0).cuda() for camera_type in g_conf.DATA_USED]]
         self.norm_speed = [torch.cuda.FloatTensor([self.process_speed(self.input_data['SPEED'][1]['speed'])]).unsqueeze(0)]
-
         #
         if g_conf.DATA_COMMAND_ONE_HOT:
             self.direction = \
@@ -278,11 +277,9 @@ class CILv2_agent(object):
 
         actions_outputs, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
 
-        # actions_outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
+        self.steer, self.throttle, self.brake = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 
-        last_action_outputs = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
-
-        self.steer, self.throttle, self.brake = last_action_outputs
+        # Pass to the controller
         self.control.steer = float(self.steer)
         self.control.throttle = float(self.throttle)
         self.control.brake = float(self.brake)
@@ -338,6 +335,7 @@ class CILv2_agent(object):
         return norm_speed
 
     def process_control_outputs(self, action_outputs):
+        """ Hand-crafted control outputs processing. """
         if g_conf.ACCELERATION_AS_ACTION:
             steer, self.acceleration = action_outputs[0], action_outputs[1]
             if self.acceleration >= 0.0:
@@ -365,8 +363,14 @@ class CILv2_agent(object):
         if self.vision_save_path:
             cams = []
             for i in range(len(g_conf.DATA_USED)):
-                rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
-                cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
+                rgb_img = inverse_normalize(self.norm_rgb[-1][i],
+                                            g_conf.IMG_NORMALIZATION['mean'],
+                                            g_conf.IMG_NORMALIZATION['std'])
+                rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
+                rgb_img = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8))
+                rgb_img.putalpha(255)
+                # cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
+                cams.append(rgb_img)
 
             # target_layers = [self._model._model.encoder_embedding_perception.encoder.layers.encoder_layer_11]
             # cam = GradCAM(model=self._model._model, target_layers=target_layers)
@@ -375,18 +379,35 @@ class CILv2_agent(object):
             # with torch.enable_grad():
             #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
 
-            grayscale_cam = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; just the ACC token
-            grayscale_cam = grayscale_cam.transpose(1, 2, 0)  # [H, W, S*cam]
-            grayscale_cam = cv2.resize(grayscale_cam, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
-                                       interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
-            grayscale_cam = grayscale_cam.transpose(2, 0, 1)  # [S*cam, H, W]
+            grayscale_cam_acc = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+            grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
+            grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
+                                           interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+            grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
 
-            gradcams = []
+            gradcams_acc = []
             for cam_id in range(len(g_conf.DATA_USED)):
-                att = grayscale_cam[cam_id, :]
+                att = grayscale_cam_acc[cam_id, :]
                 cmap_att = np.delete(self.cmap_2(att), 3, 2)
                 cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-                gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
+                cmap_att.putalpha(170)
+                # gradcams_acc.append(Image.blend(cams[cam_id], cmap_att, 0.85))
+                gradcams_acc.append(Image.alpha_composite(cams[cam_id], cmap_att).convert('RGB'))
+
+            grayscale_cam_str = self.attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+            grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
+            grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
+                                           interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+            grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
+
+            gradcams_str = []
+            for cam_id in range(len(g_conf.DATA_USED)):
+                att = grayscale_cam_str[cam_id, :]
+                cmap_att = np.delete(self.cmap_2(att), 3, 2)
+                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
+                cmap_att.putalpha(170)
+                # gradcams_str.append(Image.blend(cams[cam_id], cmap_att, 0.85))
+                gradcams_str.append(Image.alpha_composite(cams[cam_id], cmap_att).convert('RGB'))
 
             # last_input_ontop = Image.fromarray(current_input_data['rgb_ontop'][1])
             rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
@@ -418,7 +439,7 @@ class CILv2_agent(object):
 
             command_sign = command_sign.resize((280, 70))
 
-            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10),
+            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10+300),
                                     120 + rgb_backontop.height+120), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
             font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
@@ -429,21 +450,17 @@ class CILv2_agent(object):
             draw_mat.text((260, 40), str("Third Person Perspective"), fill=(255, 255, 255), font=font_2)
             mat.paste(rgb_backontop, (0, 120))
 
-            # RGB
-            draw_mat.text((330 + rgb_backontop.width, 30), str("RGB Cameras Input"), fill=(255, 255, 255), font=font)
-            draw_mat.text((120 + rgb_backontop.width, 80), str("-60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
-            draw_mat.text((435 + rgb_backontop.width, 80), str("0.0"+'\u00b0'), fill=(255, 255, 255), font=font)
-            draw_mat.text((735 + rgb_backontop.width, 80), str("60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
-            mat.paste(cams[0], (rgb_backontop.width+10, 120))
-            mat.paste(cams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120))
-            mat.paste(cams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
+            # Attention Maps
+            draw_mat.text((330 + rgb_backontop.width, 30), str("[STR] Attention Maps"), fill=(255, 255, 255), font=font)
+            mat.paste(gradcams_str[0], (rgb_backontop.width+10, 120))
+            mat.paste(gradcams_str[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120))
+            mat.paste(gradcams_str[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
 
-            # activation maps
             draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35), str("[ACC] Attention Maps"),
                           fill=(255, 255, 255), font=font)
-            mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
-            mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
-            mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
+            mat.paste(gradcams_acc[0], (rgb_backontop.width+10, 120+cams[0].height+80))
+            mat.paste(gradcams_acc[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
+            mat.paste(gradcams_acc[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
 
             # command
             draw_mat.text((rgb_backontop.width, 120 + rgb_backontop.height + 15),
@@ -466,8 +483,9 @@ class CILv2_agent(object):
                 gauge={'axis': {'range': [0, 12], 'visible': False},
                        'bordercolor': "white",
                        'borderwidth': 3},
-                value= round(current_input_data['SPEED'][1]['speed'], 3),
+                value=round(current_input_data['SPEED'][1]['speed'], 3),
                 domain={'x': [0, 1], 'y': [0, 1]},))
+
             speed_gauge.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -479,7 +497,7 @@ class CILv2_agent(object):
             speed_gauge = speed_gauge.resize((202, 144))
             speed_gauge = speed_gauge.crop((20, 20, 182, 124))
             mat.paste(speed_gauge, (140 + rgb_backontop.width + command_sign.width + 280, 120+rgb_backontop.height+5))
-            draw_mat.text((1760, 120 + rgb_backontop.height + 75), str("0" ), fill=(255, 255, 255), font=font_3)
+            draw_mat.text((1760, 120 + rgb_backontop.height + 75), str("0"), fill=(255, 255, 255), font=font_3)
             draw_mat.text((1955, 120 + rgb_backontop.height + 75),
                           str("12"), fill=(255, 255, 255), font=font_3)
 

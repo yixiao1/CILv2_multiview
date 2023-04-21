@@ -5,16 +5,16 @@
 nocrash_newweathertown_busy_small () {
     python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
-    --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_dense_small_Town02_lbc.json  \
+    --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweather_empty_small_Town01_lbc.json  \
     --routes=${DRIVING_TEST_ROOT}/data/nocrash \
     --repetitions=1 \
     --resume=True \
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CIL_ViT/CILvit_3cam_vitb32_Town01Full_bs256_fPE_wmupcdown_lr1e4_preActTokens/config50.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CIL_ViT/CILvit_3cam_vitb32_Town01Full_bs256_fPE_wmupcdown_lr1e3/config50.json \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=4 \
+    --gpus=3 \
     --fps=20 \
     --PedestriansSeed=0 \
     --trafficManagerSeed=0 \
