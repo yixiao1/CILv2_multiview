@@ -13,7 +13,7 @@ from torchvision.ops.misc import ConvNormActivation
 from torchvision.utils import _log_api_usage_once
 
 
-__all__ = ["VisionTransformer", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32"]
+__all__ = ["VisionTransformer", "vit_s_8", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32"]
 
 
 model_urls = {
@@ -329,6 +329,28 @@ def _vision_transformer(
 
 # ========================== Models =================================
 # This all works only for torchvision == 0.12 (0.11 doesn't have vit models!)
+
+def vit_s_8(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_s_8 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _vision_transformer(
+        arch="vit_s_8",
+        patch_size=8,
+        num_layers=12,
+        num_heads=6,
+        hidden_dim=384,
+        mlp_dim=1536,
+        pretrained=False,  # No pretrained weights for vit_s_8
+        progress=progress,
+        **kwargs,
+    )
+
 
 def vit_b_16(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
     """
