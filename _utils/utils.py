@@ -40,11 +40,13 @@ color_plate = {
 
 ########################################################
 
+
 def tryint(s):
     try:
         return int(s)
     except:
         return s
+
 
 def alphanum_key(s):
     """ Turn a string into a list of string and number chunks.
@@ -52,14 +54,17 @@ def alphanum_key(s):
     """
     return [tryint(c) for c in re.split('([0-9]+)', s) ]
 
-def sort_nicely(l):
+
+def sort_nicely(l: list) -> None:
     l.sort(key=alphanum_key)
+
 
 def experiment_log_path(experiment_path, dataset_name):
     # WARNING if the path exist without checkpoints it breaks
     if not os.path.exists(experiment_path):
         os.makedirs(experiment_path)
     return os.path.join(experiment_path, dataset_name + '_result.csv')
+
 
 class DataParallelWrapper(DataParallel):
     def __getattr__(self, name):
@@ -70,6 +75,8 @@ class DataParallelWrapper(DataParallel):
 
     def __len__(self):
         return len(self.module)
+
+
 #@timeit
 def print_train_info(log_frequency, batch_size, model,
                      time_start, acc_time, loss_data, steer_loss_data, acc_loss_data, brake_loss_data=None):
@@ -89,10 +96,8 @@ def print_train_info(log_frequency, batch_size, model,
             print ("Training epoch {:3.2f}, iteration {:6d}, Loss {:.3f}, Steer Loss {:.3f}, Throttle Loss {:.3f}, , Brake Loss {:.3f}, {:.2f} steps/s".format(
                 epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, brake_loss_data, (log_frequency / acc_time)))
         else:
-            print(f'Epoch {epoch:3.2f}, Iteration {model._current_iteration:{digits_total_iters}d}, ' \
+            print(f'Epoch {epoch:3.2f}, Iteration {model._current_iteration:{digits_total_iters}d}, '
                   f'Loss {loss_data:.4f}, Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f}, {(log_frequency / acc_time):.2f} steps/s')
-            # print ("Training epoch {:3.2f}, iteration {:6d}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, {:.2f} steps/s".format(
-            #     epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data,(log_frequency / acc_time)))
         acc_time = 0.0
 
     return acc_time
@@ -112,8 +117,9 @@ def generate_specific_rows(filepath: Union[str, os.PathLike], row_indices: List[
                 yield line.strip()
 
 
-def read_results(result_file, metric=''):
-    head = np.genfromtxt(generate_specific_rows(result_file, row_indices=[0]), delimiter=',', dtype='str')
+def read_results(result_file: Union[str, os.PathLike], metric: str = '') -> np.ndarray:
+    head = np.genfromtxt(generate_specific_rows(result_file, row_indices=[0]),
+                         delimiter=',', dtype='str')
     col = [h.strip() for h in list(head)].index(metric)
     res = np.loadtxt(result_file, delimiter=",", skiprows=1)
     if len(res.shape) == 1:
@@ -172,6 +178,7 @@ def write_model_results(experiment_path, model_name, results_dict, acc_as_action
             new_row += "\n"
             f.write(new_row)
         print (" The results have been saved in: ", results_file_csv)
+
 
 def eval_done(experiment_path, dataset_paths, epoch):
     results_files = glob.glob(os.path.join(experiment_path, '*.csv'))
@@ -244,4 +251,3 @@ def extract_other_inputs(data, other_inputs=[], ignore=[]):
 
 def extract_commands(data):
     return torch.stack(data, 1).float()
-

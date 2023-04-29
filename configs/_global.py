@@ -66,6 +66,7 @@ _g_conf.PRETRAINED_ACC_STR_TOKENS = False
 _g_conf.CMD_SPD_TOKENS = False
 _g_conf.FREEZE_CLS_TOKEN = False  # freeze the classification token
 _g_conf.REMOVE_CLS_TOKEN = False  # remove the classification token from the sequence
+_g_conf.EXTRA_POS_EMBED = False  # A final positional embedding at the output of the encoder
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

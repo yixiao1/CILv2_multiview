@@ -1,8 +1,9 @@
+from typing import Tuple
 import torch
 from configs import g_conf
 
 
-def Action_nospeed_L1(params: dict):
+def Action_nospeed_L1(params: dict) -> Tuple[torch.Tensor, ...]:
     B = params['action_output'].shape[0]  # batch_size
 
     # SingleFrame model - we only take into account the last frame's action

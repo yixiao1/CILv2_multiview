@@ -372,14 +372,8 @@ class CILv2_agent(object):
                 # cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
                 cams.append(rgb_img)
 
-            # target_layers = [self._model._model.encoder_embedding_perception.encoder.layers.encoder_layer_11]
-            # cam = GradCAM(model=self._model._model, target_layers=target_layers)
-
-            # input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]  # [3, 3, H, W], [no_commands], [1]
-            # with torch.enable_grad():
-            #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
-
-            grayscale_cam_acc = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+            # Get the acceleration [ACC] attention map
+            grayscale_cam_acc = self.attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
             grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
             grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
                                            interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
@@ -394,7 +388,8 @@ class CILv2_agent(object):
                 # gradcams_acc.append(Image.blend(cams[cam_id], cmap_att, 0.85))
                 gradcams_acc.append(Image.alpha_composite(cams[cam_id], cmap_att).convert('RGB'))
 
-            grayscale_cam_str = self.attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+            # Get the steering [STR] attention map
+            grayscale_cam_str = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
             grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
             grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
                                            interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels

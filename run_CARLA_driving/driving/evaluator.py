@@ -489,7 +489,7 @@ def main():
 
     arguments = parser.parse_args()
 
-    gpus=[]
+    gpus = []
     if arguments.gpus:
         # Check if the vector of GPUs passed are valid.
         for gpu in arguments.gpus[0].split(','):

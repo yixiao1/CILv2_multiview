@@ -122,22 +122,27 @@ class Encoder(nn.Module):
         self.layers = nn.Sequential(layers)
         self.ln = norm_layer(hidden_dim)
 
-    def forward(self, input: torch.Tensor):
+    def forward(self, input: torch.Tensor, pre_pos_emb: bool = False) -> torch.Tensor:
+        """ Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
+         True. """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
-        input = input + self.pos_embedding
+        input = input + self.pos_embedding if pre_pos_emb else input
         input = self.dropout(input)
         for i in range(self.num_layers):
-            input, _ = self.layers[i](input)
+            input = self.layers[i](input)[0]
 
         return self.ln(input)
 
-    def forward_return_attn(self, input: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    def forward_return_attn(self, input: torch.Tensor,
+                            pre_pos_emb: bool = False) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         """
+        Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
+        True.
         Get the attention matrices (R^(1xSxS), S the sequence length) for each layer of the encoder (input is after
         embedding, positional encoding, and addition of command and speed encodings)
         """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
-        input = input + self.pos_embedding
+        input = input + self.pos_embedding if pre_pos_emb else input
         input = self.dropout(input)
         attns = []
         for i in range(self.num_layers):
@@ -347,6 +352,28 @@ def vit_s_8(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> V
         hidden_dim=384,
         mlp_dim=1536,
         pretrained=False,  # No pretrained weights for vit_s_8
+        progress=progress,
+        **kwargs,
+    )
+
+
+def vit_s_14(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_s_14 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _vision_transformer(
+        arch="vit_s_14",
+        patch_size=14,
+        num_layers=12,
+        num_heads=6,
+        hidden_dim=384,
+        mlp_dim=1536,
+        pretrained=False,  # No pretrained weights for vit_s_14
         progress=progress,
         **kwargs,
     )

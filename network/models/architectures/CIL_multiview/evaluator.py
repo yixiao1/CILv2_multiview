@@ -26,10 +26,12 @@ class CIL_multiview_Evaluator(object):
         self.gt_steers = []
         self.gt_accelerations = []
 
-    def process(self, action_outputs, targets_action):
+    def process(self, action_outputs: Union[torch.Tensor, tuple], targets_action: torch.Tensor):
         """
         Compute the errors sum for the outputs and targets of the neural network in val dataset
         """
+        if isinstance(action_outputs, tuple) or isinstance(action_outputs, list):
+            action_outputs = action_outputs[0]
         B = action_outputs.shape[0]
         self._total_num += B
         action_outputs = action_outputs[:, -1, -len(g_conf.TARGETS):]

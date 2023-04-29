@@ -6,6 +6,7 @@ from einops import rearrange
 
 from configs import g_conf
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
+from network.models.building_blocks import FC
 
 
 class CIL_vit(nn.Module):
@@ -15,7 +16,7 @@ class CIL_vit(nn.Module):
 
         # Get ViT model characteristics (our new perception module)
         vit_module = importlib.import_module('network.models.building_blocks.vit')
-        vit_module = getattr(vit_module, params['encoder_embedding']['perception']['vit']['name'])
+        vit_module = getattr(vit_module, self.params['encoder_embedding']['perception']['vit']['name'])
         self.encoder_embedding_perception = vit_module(pretrained=g_conf.IMAGENET_PRE_TRAINED)
 
         self.image_channels, self.image_height, self.image_width = g_conf.IMAGE_SHAPE
@@ -68,6 +69,34 @@ class CIL_vit(nn.Module):
         # Replace learned pos embedding with fixed sin/cos 2d embedding, used implicitly by the encoder
         self.setup_pos_embedding()
 
+        # Add another Positional Encoding:
+        if g_conf.EXTRA_POS_EMBED:
+            # [1, S*cam*t, D]
+            self.pe_final = PositionalEncoding(
+                d_model=len(g_conf.TARGETS),
+                max_len=int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * self.tfx_hidden_dim).pe.cuda()
+
+        if 'action_output' in self.params:
+            # Default: GAP
+            if self.params['action_output']['type'] == 'gap':
+                pass
+            # Most likely, there's an MLP involved here
+            elif self.params['action_output']['type'] == 'mlp':
+                # S*cam*t*D
+                join_dim = int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * len(g_conf.TARGETS) * self.tfx_hidden_dim
+            elif self.params['action_output']['type'] == 'map_mlp':
+                # D
+                join_dim = self.tfx.hidden_dim
+            elif self.params['action_output']['type'] == 'gap_mlp':
+                # S*cam*t
+                join_dim = int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * len(g_conf.TARGETS)
+            else:
+                raise NotImplementedError(f"Unknown action output type: {self.params['action_output']['type']}")
+            self.action_output = FC(params={
+                'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
+                'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
+                'end_layer': True})
+
         # We don't want to undo the pretrained weights of the ViT!
         for name, module in self.named_modules():
             if 'encoder' not in name:
@@ -90,10 +119,6 @@ class CIL_vit(nn.Module):
                 # TODO: Is there a way to interpolate from [1, S, hidden_dim] to [1, new_S, hidden_dim]?
                 print('Warning: current sequence length is different from the pretrained one. Starting '
                       'Positional Encoding from scratch...')
-                self.tfx_encoder.pos_embedding = nn.Parameter(
-                    torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))
-
-                print('Warning: current sequence length is different from the pretrained one. Starting from scratch...')
                 self.tfx_encoder.pos_embedding = nn.Parameter(
                     torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))
 
@@ -161,12 +186,38 @@ class CIL_vit(nn.Module):
         in_memory = in_memory[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, t, D]; t = 2
         in_memory = rearrange(in_memory, '(B S cam) t D -> B (S cam D) t', B=B, S=S)  # [B*S*cam, t, D] => [B, S*cam*D, t]
 
+        if g_conf.EXTRA_POS_EMBED:
+            in_memory = in_memory + self.pe_final  # [B, S*cam*D, t]
         # Action prediction
-        action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
+        if 'action_output' in self.params:
+            # One-type action outputs
+            if self.params['action_output']['type'] == 'map':
+                action_output = torch.max(in_memory, dim=1, keepdim=True)[0]  # [B, 1, t] = [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'mlp':
+                in_memory = in_memory.reshape(B, -1)  # [B, S*cam*D*t]
+                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, t] => [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'gap':
+                action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
+            # More complex action outputs
+            elif self.params['action_output']['type'] == 'map_mlp':
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = torch.max(in_memory, dim=2)[0]  # [B, D, S*cam*t] => [B, D]  # TODO: try max over D, dim=1
+                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, D] => [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'gap_mlp':
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = torch.mean(in_memory, dim=1)  # [B, D, S*cam*t] => [B, S*cam*t]  # TODO: try mean over S*cam*t, dim=2
+                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, s*cam*t] => [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'encoder':
+                pass
+            else:
+                raise ValueError('Unknown action output type')
+        else:
+            # Fallback to GAP
+            action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         return action_output
 
-    def forward_eval(self, s, s_d, s_s):
+    def forward_eval(self, s, s_d, s_s, ):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size
         cam = len(g_conf.DATA_USED)  # Number of cameras/views
@@ -215,11 +266,36 @@ class CIL_vit(nn.Module):
         in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs)  # [B*S*cam, (H//P)^2+K, D]
         # Use only the [ACC] and [STR] tokens for the action prediction
         in_memory = in_memory[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, t, D]; t = 2
-        in_memory = rearrange(in_memory, '(B S cam) t D -> B (S cam D) t', B=B,
-                              S=S)  # [B*S*cam, t, D] => [B, S*cam*D, t]
+        in_memory = rearrange(in_memory, '(B S cam) t D -> B (S cam D) t', B=B, S=S)  # [B*S*cam, t, D] => [B, S*cam*D, t]
 
+        if g_conf.EXTRA_POS_EMBED:
+            in_memory = in_memory + self.pe_final  # [B, S*cam*D, t]
         # Action prediction
-        action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
+        if 'action_output' in self.params:
+            # One-type action outputs
+            if self.params['action_output']['type'] == 'map':
+                action_output = torch.max(in_memory, dim=1, keepdim=True)[0]  # [B, 1, t] = [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'mlp':
+                in_memory = in_memory.reshape(B, -1)  # [B, S*cam*D*t]
+                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, S*cam*D*t] => [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'gap':
+                action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
+            # More complex action outputs
+            elif self.params['action_output']['type'] == 'map_mlp':
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = torch.max(in_memory, dim=2)[0]  # [B, D, S*cam*t] => [B, D]  # TODO: try max over D, dim=1
+                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, D] => [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'gap_mlp':
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = torch.mean(in_memory, dim=1)  # [B, D, S*cam*t] => [B, S*cam*t]  # TODO: try mean over S*cam*t, dim=2
+                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, s*cam*t] => [B, 1, len(TARGETS)]
+            elif self.params['action_output']['type'] == 'encoder':
+                pass
+            else:
+                raise ValueError('Unknown action output type')
+        else:
+            # Fallback to GAP
+            action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
         attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]

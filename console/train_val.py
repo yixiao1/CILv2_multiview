@@ -60,34 +60,35 @@ def train_upstream_task(model, optimizer):
                 tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda() for i in range(len(data['current']))]
 
             # Get the action output from the model
-            action_outputs = model.forward(src_images, src_directions, src_s)
-            loss_params = {
-                'action_output': action_outputs,
-                'targets_action': tgt_a,
-                'variable_weights': g_conf.LOSS_WEIGHT
-            }
+            with torch.cuda.amp.autocast():
+                action_outputs = model.forward(src_images, src_directions, src_s)
+                loss_params = {
+                    'action_output': action_outputs,
+                    'targets_action': tgt_a,
+                    'variable_weights': g_conf.LOSS_WEIGHT
+                }
 
-            if g_conf.ACCELERATION_AS_ACTION:
-                loss, steer_loss, acceleration_loss = model.loss(loss_params)
-                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY,
-                                            g_conf.BATCH_SIZE,
-                                            model,
-                                            time_start,
-                                            acc_time,
-                                            loss.item(),
-                                            steer_loss.item(),
-                                            acceleration_loss.item())
-            else:
-                loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
-                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY,
-                                            g_conf.BATCH_SIZE,
-                                            model,
-                                            time_start,
-                                            acc_time,
-                                            loss.item(),
-                                            steer_loss.item(),
-                                            throttle_loss.item(),
-                                            brake_loss.item)
+                if g_conf.ACCELERATION_AS_ACTION:
+                    loss, steer_loss, acceleration_loss = model.loss(loss_params)
+                    acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY,
+                                                g_conf.BATCH_SIZE,
+                                                model,
+                                                time_start,
+                                                acc_time,
+                                                loss.item(),
+                                                steer_loss.item(),
+                                                acceleration_loss.item())
+                else:
+                    loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
+                    acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY,
+                                                g_conf.BATCH_SIZE,
+                                                model,
+                                                time_start,
+                                                acc_time,
+                                                loss.item(),
+                                                steer_loss.item(),
+                                                throttle_loss.item(),
+                                                brake_loss.item)
 
             optimizer.zero_grad()
             loss.backward()
