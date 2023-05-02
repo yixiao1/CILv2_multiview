@@ -69,8 +69,8 @@ class CILv2_multiview_attention(nn.Module):
     def forward(self, src_images, src_directions, src_speeds):
         return self._model.forward(src_images, src_directions, src_speeds)
 
-    def forward_eval(self, src_images, src_directions, src_speeds):
-        return self._model.forward_eval(src_images, src_directions, src_speeds)
+    def forward_eval(self, src_images, src_directions, src_speeds, attn_rollout: bool = False):
+        return self._model.forward_eval(src_images, src_directions, src_speeds, attn_rollout)
 
     def loss(self, params):
         loss = self._criterion(params)

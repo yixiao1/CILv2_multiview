@@ -32,7 +32,7 @@ def train_upstream_task(model, optimizer):
                 print(' Apply early stopping, training stopped !')
                 break
 
-            # TODO: warmup/cosine learning rate decay
+            # Update learning rate according to selected schedule
             if g_conf.LEARNING_RATE_DECAY:
                 # Step learning rate decay
                 if g_conf.LEARNING_RATE_SCHEDULE == 'step':

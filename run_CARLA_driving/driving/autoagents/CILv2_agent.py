@@ -275,7 +275,8 @@ class CILv2_agent(object):
                 [torch.cuda.LongTensor([self.process_command(self.input_data['GPS'][1],
                                                              self.input_data['IMU'][1])[1]-1]).unsqueeze(0).cuda()]
 
-        actions_outputs, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
+        actions_outputs, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed,
+                                                                      attn_rollout=False)  # Use Attention Rollout
 
         self.steer, self.throttle, self.brake = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 

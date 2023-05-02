@@ -217,7 +217,7 @@ class CIL_vit(nn.Module):
 
         return action_output
 
-    def forward_eval(self, s, s_d, s_s, ):
+    def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size
         cam = len(g_conf.DATA_USED)  # Number of cameras/views
@@ -297,9 +297,28 @@ class CIL_vit(nn.Module):
             # Fallback to GAP
             action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
-        # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
-        attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]
-        attn_weights = attn_weights.unflatten(2, (self.tfx_num_patches_h, self.tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
+        # Attention stuff
+        if attn_rollout:
+            # TODO: finish this
+            att_map = torch.stack(attn_weights, dim=0)  # [L, H or 1, S, S]
+            att_map = torch.mean(att_map, dim=1)  # [L, S, S]
+
+            eye = torch.eye(att_map.size(1), device=att_map.device)  # [S, S])
+            attn_weights_rollout = [0.5 * att_map[0] + 0.5 * eye]  # [1, S, S]
+            for w in att_map[1:]:
+                a = 0.5 * w + 0.5 * eye  # [S, S]
+                a_tilde = torch.matmul(a, attn_weights_rollout[-1])  # [S, S]
+                attn_weights_rollout.append(a_tilde)
+            attn_weights = attn_weights_rollout  # [B*S*cam, L, S, S]
+
+        if g_conf.CMD_SPD_TOKENS:
+            # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens
+            attn_weights = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, -self.tfx_num_patches:]  # [B*S*cam, t+2, (H//P)^2]
+            attn_weights = attn_weights.unflatten(2, (self.tfx_num_patches_h, self.tfx_num_patches_w))  # [B*S*cam, t+2, H//P, W//P]
+        else:
+            # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
+            attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]
+            attn_weights = attn_weights.unflatten(2, (self.tfx_num_patches_h, self.tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
 
         return action_output, attn_weights
 
