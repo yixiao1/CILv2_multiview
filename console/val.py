@@ -17,7 +17,7 @@ def val_task(model):
         write_model_results(g_conf.EXP_SAVE_PATH, model.name,
                             results_dict, acc_as_action=g_conf.ACCELERATION_AS_ACTION)
         draw_offline_evaluation_results(g_conf.EXP_SAVE_PATH, metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,
-                                                    x_range=g_conf.EVAL_SAVE_EPOCHES)
+                                        x_range=g_conf.EVAL_SAVE_EPOCHES)
 
     else:
         raise ValueError('No evaluation results !')
@@ -44,7 +44,7 @@ def execute(gpus_list, exp_batch, exp_name):
     set_type_of_process('val_only', root= os.environ["TRAINING_RESULTS_ROOT"])
     seed_everything(seed=g_conf.MAGICAL_SEED)
 
-    model = Models(g_conf.MODEL_TYPE, g_conf.MODEL_CONFIGURATION)
+    model = Models(g_conf.MODEL_CONFIGURATION)
     if len(gpus_list) > 1 and g_conf.DATA_PARALLEL:
         print("Using multiple GPUs parallel! ")
         model = DataParallelWrapper(model)

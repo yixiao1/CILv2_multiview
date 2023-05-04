@@ -97,7 +97,7 @@ def print_train_info(log_frequency, batch_size, model,
                 epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, brake_loss_data, (log_frequency / acc_time)))
         else:
             print(f'Epoch {epoch:3.2f}, Iteration {model._current_iteration:{digits_total_iters}d}, '
-                  f'Loss {loss_data:.4f}, Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f}, {(log_frequency / acc_time):.2f} steps/s')
+                  f'Loss {loss_data:3.2f}, Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f}, {(log_frequency / acc_time):.2f} steps/s')
         acc_time = 0.0
 
     return acc_time

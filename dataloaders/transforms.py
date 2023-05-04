@@ -44,7 +44,18 @@ def train_transform(data, image_shape, augmentation=False):
         output is from 0-1 float.
     """
     if augmentation:
-        pass
+        for camera_type in g_conf.DATA_USED:
+            image = data[camera_type]
+            height = image_shape[1]
+            width = image_shape[2]
+            image = image.resize((width, height))
+            image = transforms.RandAugment(2, 10)(image)
+            # image = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)(image)
+            # image = transforms.RandomResizedCrop((height, width), scale=(0.4, 1.0),
+            #                                      interpolation=TF.InterpolationMode.BICUBIC)(image)
+            image = TF.to_tensor(image)
+            image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
+            data[camera_type] = image
 
     else:
         for camera_type in g_conf.DATA_USED:

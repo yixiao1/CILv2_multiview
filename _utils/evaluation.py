@@ -114,13 +114,13 @@ def evaluation_on_model(model: nn.Module,
                         input_frames.append(cams)
 
                     # we save only the first of the batch
-                    if g_conf.EVAL_SAVE_LAST_Conv_ACTIVATIONS:
-                        _logger.add_gradCAM_attentions_to_disk('Valid', model,
+                    if g_conf.EVAL_SAVE_LAST_ATT_MAPS:
+                        _logger.add_vit_attention_maps_to_disk('Valid', model,
                                                                [eval_images, eval_directions, eval_speeds],
                                                                input_rgb_frames=input_frames,
                                                                epoch=eval_epoch,
                                                                save_path=os.path.join(g_conf.EXP_SAVE_PATH, 'Eval',
-                                                                                      f'Valid_gradCAM_{dataset_name}'),
+                                                                                      f'valid_lastAtt_{dataset_name}'),
                                                                batch_id=idx)
 
                 if (idx + 1) % logging_interval == 0:
