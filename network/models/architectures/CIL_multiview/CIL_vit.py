@@ -7,6 +7,7 @@ from einops import rearrange
 from configs import g_conf
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 from network.models.building_blocks import FC
+from network.models.building_blocks import TransformerEncoder
 
 
 class CIL_vit(nn.Module):
@@ -78,8 +79,8 @@ class CIL_vit(nn.Module):
 
         if 'action_output' in self.params:
             # Default: GAP
-            if self.params['action_output']['type'] == 'gap':
-                pass
+            if self.params['action_output']['type'] == 'gap' or self.params['action_output']['type'] == 'map':
+                join_dim = None
             # Most likely, there's an MLP involved here
             elif self.params['action_output']['type'] == 'mlp':
                 # S*cam*t*D
@@ -90,12 +91,16 @@ class CIL_vit(nn.Module):
             elif self.params['action_output']['type'] == 'gap_mlp':
                 # S*cam*t
                 join_dim = int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * len(g_conf.TARGETS)
+            elif self.params['action_output']['type'] == 'transformer':
+                join_dim = None
             else:
                 raise NotImplementedError(f"Unknown action output type: {self.params['action_output']['type']}")
-            self.action_output = FC(params={
-                'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
-                'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
-                'end_layer': True})
+
+            if join_dim is not None:
+                self.action_output = FC(params={
+                    'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
+                    'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
+                    'end_layer': True})
 
         # We don't want to undo the pretrained weights of the ViT!
         for name, module in self.named_modules():
@@ -155,11 +160,11 @@ class CIL_vit(nn.Module):
         # Setup the first tokens in the sequence
         n = e_p.shape[0]  # B*S*cam
         if g_conf.REMOVE_CLS_TOKEN:
-            first_tokens = [self.tfx_accel_token.expand(n, -1, -1),
-                            self.tfx_steer_token.expand(n, -1, -1)]
+            first_tokens = [self.tfx_steer_token.expand(n, -1, -1),
+                            self.tfx_accel_token.expand(n, -1, -1)]
         else:
-            first_tokens = [self.tfx_accel_token.expand(n, -1, -1),
-                            self.tfx_steer_token.expand(n, -1, -1),
+            first_tokens = [self.tfx_steer_token.expand(n, -1, -1),
+                            self.tfx_accel_token.expand(n, -1, -1),
                             self.tfx_class_token.expand(n, -1, -1)]
 
         # Concatenate the first tokens to the image embeddings
@@ -200,15 +205,17 @@ class CIL_vit(nn.Module):
                 action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
             # More complex action outputs
             elif self.params['action_output']['type'] == 'map_mlp':
-                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (S cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
                 in_memory = torch.max(in_memory, dim=2)[0]  # [B, D, S*cam*t] => [B, D]  # TODO: try max over D, dim=1
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, D] => [B, 1, len(TARGETS)]
             elif self.params['action_output']['type'] == 'gap_mlp':
-                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (S cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
                 in_memory = torch.mean(in_memory, dim=1)  # [B, D, S*cam*t] => [B, S*cam*t]  # TODO: try mean over S*cam*t, dim=2
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, s*cam*t] => [B, 1, len(TARGETS)]
-            elif self.params['action_output']['type'] == 'encoder':
-                pass
+            elif self.params['action_output']['type'] == 'transformer':
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B (S cam t) D', S=S, cam=cam)  # [B, S*cam*D, t] => [B, S*cam*t, D]
+                in_memory = in_memory + self.pe_final  # [B, S*cam*t, D]
+
             else:
                 raise ValueError('Unknown action output type')
         else:
@@ -237,11 +244,11 @@ class CIL_vit(nn.Module):
         # Setup the first tokens in the sequence
         n = e_p.shape[0]  # B*S*cam
         if g_conf.REMOVE_CLS_TOKEN:
-            first_tokens = [self.tfx_accel_token.expand(n, -1, -1),
-                            self.tfx_steer_token.expand(n, -1, -1)]
+            first_tokens = [self.tfx_steer_token.expand(n, -1, -1),
+                            self.tfx_accel_token.expand(n, -1, -1)]
         else:
-            first_tokens = [self.tfx_accel_token.expand(n, -1, -1),
-                            self.tfx_steer_token.expand(n, -1, -1),
+            first_tokens = [self.tfx_steer_token.expand(n, -1, -1),
+                            self.tfx_accel_token.expand(n, -1, -1),
                             self.tfx_class_token.expand(n, -1, -1)]
 
         # Concatenate the first tokens to the image embeddings
@@ -263,7 +270,7 @@ class CIL_vit(nn.Module):
         encoded_obs = encoded_obs.reshape(-1, self.tfx_seq_length, self.tfx_hidden_dim)  # [B*S*cam, (H//P)^2 + K, D]
 
         # Pass on to the Transformer encoder
-        in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs)  # [B*S*cam, (H//P)^2+K, D]
+        in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs)  # [B*S*cam, (H//P)^2+K, D], num_layers * [B*S*cam, (H//P)^2+K, (H//P)^2+K]
         # Use only the [ACC] and [STR] tokens for the action prediction
         in_memory = in_memory[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, t, D]; t = 2
         in_memory = rearrange(in_memory, '(B S cam) t D -> B (S cam D) t', B=B, S=S)  # [B*S*cam, t, D] => [B, S*cam*D, t]
@@ -286,7 +293,7 @@ class CIL_vit(nn.Module):
                 in_memory = torch.max(in_memory, dim=2)[0]  # [B, D, S*cam*t] => [B, D]  # TODO: try max over D, dim=1
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, D] => [B, 1, len(TARGETS)]
             elif self.params['action_output']['type'] == 'gap_mlp':
-                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (S cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
                 in_memory = torch.mean(in_memory, dim=1)  # [B, D, S*cam*t] => [B, S*cam*t]  # TODO: try mean over S*cam*t, dim=2
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, s*cam*t] => [B, 1, len(TARGETS)]
             elif self.params['action_output']['type'] == 'encoder':
@@ -300,16 +307,18 @@ class CIL_vit(nn.Module):
         # Attention stuff
         if attn_rollout:
             # TODO: finish this
-            att_map = torch.stack(attn_weights, dim=0)  # [L, H or 1, S, S]
-            att_map = torch.mean(att_map, dim=1)  # [L, S, S]
+            att_map = torch.stack(attn_weights, dim=0)  # [L, B*S*cam, S, S]
+            attn_weights_rollout = torch.empty(att_map.shape, device=att_map.device)  # [L, B*S*cam, S, S]
+            eye = torch.eye(att_map.size(-1), device=att_map.device)  # [S, S])
 
-            eye = torch.eye(att_map.size(1), device=att_map.device)  # [S, S])
-            attn_weights_rollout = [0.5 * att_map[0] + 0.5 * eye]  # [1, S, S]
-            for w in att_map[1:]:
-                a = 0.5 * w + 0.5 * eye  # [S, S]
-                a_tilde = torch.matmul(a, attn_weights_rollout[-1])  # [S, S]
-                attn_weights_rollout.append(a_tilde)
-            attn_weights = attn_weights_rollout  # [B*S*cam, L, S, S]
+            for idx, w in enumerate(att_map):
+                a = 0.5 * w + 0.5 * eye  # [B*S*cam, S, S]
+                if idx == 0:
+                    attn_weights_rollout[idx] = a
+                else:
+                    a_tilde = torch.matmul(a, attn_weights_rollout[idx-1])  # [B*S*cam, S, S]
+                    attn_weights_rollout[idx] = a_tilde
+            attn_weights = attn_weights_rollout
 
         if g_conf.CMD_SPD_TOKENS:
             # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens

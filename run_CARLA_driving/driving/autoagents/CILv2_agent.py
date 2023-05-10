@@ -362,6 +362,11 @@ class CILv2_agent(object):
 
     def record_driving(self, current_input_data):
         if self.vision_save_path:
+            # Do something different according to the model name
+            if self._model.name == 'CIL_multiview':
+                pass
+            else:
+                pass
             cams = []
             for i in range(len(g_conf.DATA_USED)):
                 rgb_img = inverse_normalize(self.norm_rgb[-1][i],
@@ -375,6 +380,7 @@ class CILv2_agent(object):
 
             # Get the acceleration [ACC] attention map
             grayscale_cam_acc = self.attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+            # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
             grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
             grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
                                            interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
@@ -391,6 +397,7 @@ class CILv2_agent(object):
 
             # Get the steering [STR] attention map
             grayscale_cam_str = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+            # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
             grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
             grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
                                            interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
