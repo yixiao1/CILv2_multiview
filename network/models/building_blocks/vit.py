@@ -335,6 +335,51 @@ def _vision_transformer(
 # ========================== Models =================================
 # This all works only for torchvision == 0.12 (0.11 doesn't have vit models!)
 
+
+def vit_c_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_c_32 architecture based on
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _vision_transformer(
+        arch="vit_c_32",
+        patch_size=32,
+        num_layers=4,
+        num_heads=4,
+        hidden_dim=256,
+        mlp_dim=1024,
+        pretrained=False,  # No pretrained weights
+        progress=progress,
+        **kwargs,
+    )
+
+
+def vit_t_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_t_32 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _vision_transformer(
+        arch="vit_t_32",
+        patch_size=32,
+        num_layers=12,
+        num_heads=3,
+        hidden_dim=192,
+        mlp_dim=768,
+        pretrained=False,  # No pretrained weights for vit_t_32
+        progress=progress,
+        **kwargs,
+    )
+
+
 def vit_s_8(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
     """
     Constructs a vit_s_8 architecture from
@@ -374,6 +419,28 @@ def vit_s_14(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
         hidden_dim=384,
         mlp_dim=1536,
         pretrained=False,  # No pretrained weights for vit_s_14
+        progress=progress,
+        **kwargs,
+    )
+
+
+def vit_s_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+    """
+    Constructs a vit_s_32 architecture from
+    `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _vision_transformer(
+        arch="vit_s_32",
+        patch_size=32,
+        num_layers=12,
+        num_heads=6,
+        hidden_dim=384,
+        mlp_dim=1536,
+        pretrained=False,  # No pretrained weights for vit_s_32
         progress=progress,
         **kwargs,
     )
@@ -466,25 +533,6 @@ def vit_l_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
         **kwargs,
     )
 
-# def vit_l_32(pretrained=False, **kwargs):
-#     """Constructs a ViT Large (32x32 patches) model.
-#     Args:
-#         pretrained (bool): If True, returns a model pretrained on ImageNet
-#     Note:
-#         Input resolution: 224x224
-#     """
-#     model = torchvision.models.vit_l_32(pretrained=False, **kwargs)
-#     if pretrained:
-#         print(f"Loading pretrained weights from: {model_urls['vit_l_32']}...")
-#         model_dict = model_zoo.load_url(model_urls['vit_l_32'])
-#         # remove the fc layers
-#         del model_dict['heads.head.weight']
-#         del model_dict['heads.head.bias']
-#         state = model.state_dict()
-#         state.update(model_dict)
-#         model.load_state_dict(state)
-#
-#     return model
 
 # ========================== Positional Encoding interpolation =================================
 

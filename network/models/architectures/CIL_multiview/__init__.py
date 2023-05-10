@@ -2,3 +2,4 @@ from .CIL_multiview import CIL_multiview
 from .CIL_multiview_vit_multitokens import CIL_multiview_vit_multitokens
 from .CIL_multiview_vit_oneseq import CIL_multiview_vit_oneseq
 from .CIL_vit import CIL_vit
+from .CIL_vit_v1_customvit import CIL_vit_v1_customvit

@@ -26,6 +26,10 @@ def train_upstream_task(model, optimizer):
 
     total_iterations = g_conf.NUMBER_EPOCH * len(model) // g_conf.BATCH_SIZE
 
+    if g_conf.AUTOCAST:
+        # Scale the gradients since we use autocast
+        scaler = torch.cuda.amp.GradScaler()
+
     while True:
 
         for data in model._train_loader:
@@ -93,10 +97,22 @@ def train_upstream_task(model, optimizer):
                                                 brake_loss.item)
 
             optimizer.zero_grad()
-            loss.backward()
-            # Clip the grad norm
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            if g_conf.AUTOCAST:
+                # Scale the loss/gradients and call backward
+                scaler.scale(loss).backward()
+                # Clip the grad norm
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+                # Unscale the gradients and call/skip optimizer.step()
+                scaler.step(optimizer)
+
+                # Update the scale for next iteration
+                scaler.update()
+            else:
+                loss.backward()
+                # Clip the grad norm
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
 
             time_start = time.time()
             """

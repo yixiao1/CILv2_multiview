@@ -289,7 +289,7 @@ class CIL_vit(nn.Module):
                 action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, 1, t] = [B, 1, len(TARGETS)]
             # More complex action outputs
             elif self.params['action_output']['type'] == 'map_mlp':
-                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (s cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
+                in_memory = rearrange(in_memory, 'B (S cam D) t -> B D (S cam t)', S=S, cam=cam)  # [B, S*cam*D, t] => [B, D, S*cam*t]
                 in_memory = torch.max(in_memory, dim=2)[0]  # [B, D, S*cam*t] => [B, D]  # TODO: try max over D, dim=1
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, D] => [B, 1, len(TARGETS)]
             elif self.params['action_output']['type'] == 'gap_mlp':

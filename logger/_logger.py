@@ -80,7 +80,7 @@ def add_vit_attention_maps_to_disk(process_type: str,
                                    batch_id=None) -> None:
     """Save the ViT Attention maps to the disk."""
     global TRAIN_IMAGE_LOG_FREQUENCY
-    cmap = plt.get_cmap('inferno')
+    cmap = plt.get_cmap('jet')
 
     ## For saving training attention maps of the backbone
     if process_type == 'Train':
@@ -97,14 +97,14 @@ def add_vit_attention_maps_to_disk(process_type: str,
         # Get the steering [STR] attention map
         grayscale_cam_str = attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
         grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
-        grayscale_cam_str = cv2.resize(grayscale_cam_str, (H, W), interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+        grayscale_cam_str = cv2.resize(grayscale_cam_str, (H, W))  # cv2 thinks it has multiple channels
         grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
         grayscale_cam_str = grayscale_cam_str.reshape((S, cam_num, H, W))
 
         # Get the acceleration [ACC] attention map
         grayscale_cam_acc = attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
         grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
-        grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (H, W), interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+        grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (H, W))  # cv2 thinks it has multiple channels
         grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
         grayscale_cam_acc = grayscale_cam_acc.reshape((S, cam_num, H, W))
 
