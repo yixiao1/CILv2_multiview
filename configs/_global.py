@@ -21,7 +21,10 @@ _g_conf.immutable(False)
 _g_conf.MAGICAL_SEED = 0
 _g_conf.NUM_WORKER = 14
 _g_conf.DATA_PARALLEL = False
+_g_conf.USE_AUTOCAST = False
 _g_conf.TRAINING_RESUME = True
+_g_conf.FINETUNE = False
+_g_conf.FINETUNE_MODEL = ''
 _g_conf.BATCH_SIZE = 120
 _g_conf.NUMBER_EPOCH = 100     # Total number of training iteration
 _g_conf.TRAIN_DATASET_NAME = []
@@ -36,15 +39,20 @@ _g_conf.AUGMENTATION = False
 _g_conf.DATA_FPS = 10
 _g_conf.DATA_COMMAND_CLASS_NUM = 4
 _g_conf.DATA_COMMAND_ONE_HOT = True
+_g_conf.SPEED_AUGMENTATION = False
+_g_conf.ERROR_CAM_AUGMENTATION = False
 _g_conf.DATA_NORMALIZATION = {}
 _g_conf.IMG_NORMALIZATION = {'mean':[0.485, 0.456, 0.406], 'std':[0.229, 0.224, 0.225]}   # ImageNet by default
 _g_conf.EXP_SAVE_PATH = '_results'
 _g_conf.TARGETS = ['steer', 'throttle', 'brake']  # From the float data, the ones that the network should estimate
 _g_conf.ACCELERATION_AS_ACTION = False
 _g_conf.OTHER_INPUTS= ['speed'] # From the float data, the ones that are input to the neural network
+_g_conf.ACTION_TOKEN = False
+_g_conf.SPEED_TOKEN = False
 
 """#### Optimizer Related Parameters ####"""
 _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or an architecure name such as "fasterRcnn, deeplabv3", which means we use the same loss as this architectures
+_g_conf.LOSS_POW = 1
 _g_conf.LOSS_WEIGHT = {}
 _g_conf.LEARNING_RATE = 0.0002       # the original learning rate setting
 _g_conf.LEARNING_RATE_DECAY = True
@@ -116,7 +124,7 @@ def create_exp_path(root, experiment_batch, experiment_name):
         os.makedirs(os.path.join(root_path, experiment_batch, experiment_name))
 
 
-def set_type_of_process(process_type, root):
+def set_type_of_process(process_type, root, rank=0):
     """
     This function is used to set which is the type of the current process, test, train or val
     and also the details of each since there could be many vals and tests for a single
@@ -135,7 +143,7 @@ def set_type_of_process(process_type, root):
         _g_conf.PROCESS_NAME = process_type
         if not os.path.exists(os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME,
                                            _g_conf.EXPERIMENT_NAME,
-                                           'checkpoints')):
+                                           'checkpoints')) and rank == 0:
             os.mkdir(os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME,
                                   _g_conf.EXPERIMENT_NAME,
                                   'checkpoints'))
@@ -145,7 +153,7 @@ def set_type_of_process(process_type, root):
     else:
         raise ValueError("Not found type of process")
 
-    if process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only':
+    if (process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only') and rank == 0:
         create_log(_g_conf.EXP_SAVE_PATH,
                 _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY,
                 _g_conf.TRAIN_IMAGE_LOG_FREQUENCY)
