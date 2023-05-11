@@ -1,2 +1,2 @@
 
-from ._models import CILv2_multiview_attention
+from ._models import CILv2_multiview_attention, CILv2_multiview_tokens_attention
