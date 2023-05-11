@@ -99,7 +99,7 @@ class CILv2_agent(object):
         # agent's initialization
         self.setup_model(path_to_conf_file)
 
-        self.cmap_2 = plt.get_cmap('inferno')
+        self.cmap_2 = plt.get_cmap('jet')
         self.cmap_1 = plt.get_cmap('Reds')
         self.datapoint_count = 0
         self.save_frequence = 1
@@ -373,46 +373,39 @@ class CILv2_agent(object):
                                             g_conf.IMG_NORMALIZATION['mean'],
                                             g_conf.IMG_NORMALIZATION['std'])
                 rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
-                rgb_img = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8))
-                rgb_img.putalpha(255)
-                # cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
-                cams.append(rgb_img)
+                rimg = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)).resize((300, 300))
+                cams.append(rimg)
 
             # Get the acceleration [ACC] attention map
             grayscale_cam_acc = self.attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
             # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
             grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
-            grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
-                                           interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+            grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
             grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
 
             gradcams_acc = []
             for cam_id in range(len(g_conf.DATA_USED)):
                 att = grayscale_cam_acc[cam_id, :]
                 cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-                cmap_att.putalpha(170)
-                # gradcams_acc.append(Image.blend(cams[cam_id], cmap_att, 0.85))
-                gradcams_acc.append(Image.alpha_composite(cams[cam_id], cmap_att).convert('RGB'))
+                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
+                gcacc = Image.blend(cams[cam_id], cmap_att, 0.5)
+                gradcams_acc.append(gcacc)
 
             # Get the steering [STR] attention map
             grayscale_cam_str = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
             # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
             grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
-            grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]),
-                                           interpolation=cv2.INTER_AREA)  # cv2 thinks it has multiple channels
+            grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
             grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
 
             gradcams_str = []
             for cam_id in range(len(g_conf.DATA_USED)):
                 att = grayscale_cam_str[cam_id, :]
                 cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-                cmap_att.putalpha(170)
-                # gradcams_str.append(Image.blend(cams[cam_id], cmap_att, 0.85))
-                gradcams_str.append(Image.alpha_composite(cams[cam_id], cmap_att).convert('RGB'))
+                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
+                gcstr = Image.blend(cams[cam_id], cmap_att, 0.5)
+                gradcams_str.append(gcstr)
 
-            # last_input_ontop = Image.fromarray(current_input_data['rgb_ontop'][1])
             rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
 
             if g_conf.DATA_COMMAND_ONE_HOT:
@@ -442,7 +435,7 @@ class CILv2_agent(object):
 
             command_sign = command_sign.resize((280, 70))
 
-            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10+300),
+            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10),
                                     120 + rgb_backontop.height+120), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
             font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)

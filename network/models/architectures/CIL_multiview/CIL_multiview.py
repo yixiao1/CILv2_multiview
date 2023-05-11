@@ -28,8 +28,6 @@ class CIL_multiview(nn.Module):
         self.tfx_encoder = self.encoder_embedding_perception.encoder
 
         # Replace learned pos embedding with fixed sin/cos 2d embedding, used implicitly by the encoder
-        # device = self.tfx_encoder.pos_embedding.device
-        # print("DEBAISS", device)
         del self.tfx_encoder.pos_embedding  # A nn.Parameter, so it most go
         self.tfx_encoder.pos_embedding = PositionalEncoding(
             d_model=self.tfx_hidden_dim, 

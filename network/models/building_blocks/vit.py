@@ -124,12 +124,12 @@ class Encoder(nn.Module):
 
     def forward(self, input: torch.Tensor, pre_pos_emb: bool = False) -> torch.Tensor:
         """ Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
-         True. """
+         False. """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
-        input = input + self.pos_embedding if pre_pos_emb else input
+        input = input + self.pos_embedding if not pre_pos_emb else input
         input = self.dropout(input)
         for i in range(self.num_layers):
-            input = self.layers[i](input)[0]
+            input, _ = self.layers[i](input)
 
         return self.ln(input)
 
@@ -142,7 +142,7 @@ class Encoder(nn.Module):
         embedding, positional encoding, and addition of command and speed encodings)
         """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
-        input = input + self.pos_embedding if pre_pos_emb else input
+        input = input + self.pos_embedding if not pre_pos_emb else input
         input = self.dropout(input)
         attns = []
         for i in range(self.num_layers):
