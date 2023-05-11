@@ -24,7 +24,7 @@ def val_task(model):
 
 
 # The main function maybe we could call it with a default name
-def execute(gpus_list, exp_batch, exp_name):
+def execute(gpus_list, exp_batch, exp_name, rank=0):
     """
         The main training function for decoder.
     Args:
