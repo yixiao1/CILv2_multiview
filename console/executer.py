@@ -3,7 +3,7 @@ import os
 from configs._global import create_exp_path
 from . import train_val, val
 
-def execute_train_val(gpus_list, exp_batch, exp_alias):
+def execute_train_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
 
     Args:
@@ -15,11 +15,12 @@ def execute_train_val(gpus_list, exp_batch, exp_alias):
     Returns:
 
     """
-    create_exp_path(os.environ['TRAINING_RESULTS_ROOT'],exp_batch, exp_alias)
-    train_val.execute(gpus_list, exp_batch, exp_alias)
+    if rank == 0:
+        create_exp_path(os.environ['TRAINING_RESULTS_ROOT'], exp_batch, exp_alias)
+    train_val.execute(gpus_list, exp_batch, exp_alias, rank=rank)
 
 
-def execute_val(gpus_list, exp_batch, exp_alias):
+def execute_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
 
     Args:
@@ -31,7 +32,8 @@ def execute_val(gpus_list, exp_batch, exp_alias):
     Returns:
 
     """
-    create_exp_path(os.environ['TRAINING_RESULTS_ROOT'],exp_batch, exp_alias)
-    val.execute(gpus_list, exp_batch, exp_alias)
+    if rank == 0:
+        create_exp_path(os.environ['TRAINING_RESULTS_ROOT'],exp_batch, exp_alias)
+    val.execute(gpus_list, exp_batch, exp_alias, rank=rank)
 
 
