@@ -69,22 +69,29 @@ class DataParallelWrapper(DataParallel):
     def __len__(self):
         return len(self.module)
 #@timeit
-def print_train_info(log_frequency, batch_size, model,
+def print_train_info(log_frequency, final_epoch, batch_size, model,
                      time_start, acc_time, loss_data, steer_loss_data, acc_loss_data, brake_loss_data=None):
 
-    epoch = model._current_iteration*batch_size / len(model)
+    epoch = model._current_iteration * batch_size / len(model)
 
     time_end = time.time()
     batch_time = time_end - time_start
     acc_time += batch_time
+
     if model._current_iteration % log_frequency == 0:
 
+        rem_iterations = ((float(final_epoch) - epoch) * len(model)) / batch_size
+        rem_time = rem_iterations / (log_frequency / acc_time)
+        hours = int(rem_time / 60 / 60)
+        minutes = int(rem_time / 60) - hours * 60
+        seconds = int(rem_time) - hours * 60 * 60 - minutes * 60
+
         if brake_loss_data is not None:
-            print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Throttle Loss {:.3f}, , Brake Loss {:.3f}, {:.2f} steps/s".format(
-                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, brake_loss_data, (log_frequency / acc_time)))
+            print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Throttle Loss {:.3f}, , Brake Loss {:.3f}, {:.2f} steps/s, ETA: {:0>2d}H:{:0>2d}M:{:0>2d}S".format(
+                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, brake_loss_data, (log_frequency / acc_time), hours, minutes, seconds))
         else:
-            print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, {:.2f} steps/s".format(
-                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data,(log_frequency / acc_time)))
+            print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, {:.2f} steps/s, ETA: {:0>2d}H:{:0>2d}M:{:0>2d}S".format(
+                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data,(log_frequency / acc_time), hours, minutes, seconds))
         acc_time = 0.0
 
     return acc_time
