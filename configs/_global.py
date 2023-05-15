@@ -29,6 +29,7 @@ _g_conf.BATCH_SIZE = 120
 _g_conf.NUMBER_EPOCH = 100     # Total number of training iteration
 _g_conf.TRAIN_DATASET_NAME = []
 _g_conf.VALID_DATASET_NAME = []      # More than one datasets could be evaluated, thus a list
+_g_conf.GT_DATA_USED = 'il_data'
 _g_conf.DATA_USED = ['rgb_left', 'rgb_central', 'rgb_right']
 _g_conf.IMAGE_SHAPE = [3, 88, 200]
 _g_conf.ENCODER_INPUT_FRAMES_NUM = 1
@@ -40,7 +41,12 @@ _g_conf.DATA_FPS = 10
 _g_conf.DATA_COMMAND_CLASS_NUM = 4
 _g_conf.DATA_COMMAND_ONE_HOT = True
 _g_conf.SPEED_AUGMENTATION = False
+_g_conf.SPEED_AUGMENTATION_MIN_ACC = 0.04  # m/s2
+_g_conf.SPEED_AUGMENTATION_PROB = 0.3  # max = 1.0
+_g_conf.SPEED_AUGMENTATION_MIN_PERC = 0.3  # Min decrease percentage of the original speed value; max = 1.0
 _g_conf.ERROR_CAM_AUGMENTATION = False
+_g_conf.ERROR_LIST_CAM_AUGMENTATION = ['conti_front']
+_g_conf.ERROR_CAM_AUGMENTATION_PROB = 0.1  # max = 1.0
 _g_conf.DATA_NORMALIZATION = {}
 _g_conf.IMG_NORMALIZATION = {'mean':[0.485, 0.456, 0.406], 'std':[0.229, 0.224, 0.225]}   # ImageNet by default
 _g_conf.EXP_SAVE_PATH = '_results'
