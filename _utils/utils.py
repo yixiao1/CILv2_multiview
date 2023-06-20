@@ -251,3 +251,27 @@ def extract_other_inputs(data, other_inputs=[], ignore=[]):
 
 def extract_commands(data):
     return torch.stack(data, 1).float()
+
+
+def attn_rollout(attn_weights: List[torch.Tensor], layer: int = None) -> torch.Tensor:
+    """ Perform attention rollout """
+    att_map = torch.stack([attn_weights[i] for i in range(len(attn_weights))], dim=0)  # [L, C, S, S]
+    num_layers, num_cams, S, _ = att_map.shape
+
+    # Use the last layer if no layer is specified by the user
+    layer = layer if layer is not None else num_layers
+    layer = min(max(1, layer), num_layers)
+
+    eye = torch.eye(S, device=att_map.device)  # [S, S])
+    attn_weights_rollout_cams = torch.empty(layer, num_cams, S, S, device=att_map.device)
+
+    for c in range(num_cams):
+        attn_weights_rollout = [0.5 * att_map[0, c] + 0.5 * eye]  # list of 1 [S, S]
+
+        for idx in range(1, layer):
+            a = 0.5 * att_map[idx, c] + 0.5 * eye  # [S, S]
+            a_tilde = torch.matmul(a, attn_weights_rollout[-1])  # [S, S]
+            attn_weights_rollout.append(a_tilde)
+        attn_weights_rollout_cams[:, c] = torch.stack(attn_weights_rollout)
+
+    return attn_weights_rollout_cams

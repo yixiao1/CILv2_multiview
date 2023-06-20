@@ -63,10 +63,13 @@ _g_conf.MODEL_CONFIGURATION = {}
 _g_conf.IMAGENET_PRE_TRAINED = False
 _g_conf.LOAD_CHECKPOINT = ''
 _g_conf.LEARNABLE_POS_EMBED = False
-_g_conf.PRETRAINED_ACC_STR_TOKENS = False
-_g_conf.CMD_SPD_TOKENS = False
+_g_conf.ONE_ACTION_TOKEN = False
+_g_conf.PRETRAINED_ACC_STR_TOKENS = False # If two action tokens are used, we can use start them from the pre-trained CLS token
+_g_conf.PRETRAINED_ACT_TOKENS = False  # If only one action token is used, we can start it from the pre-trained CLS token
+_g_conf.CMD_SPD_TOKENS = False  # Instead of adding the speed and action embeddings to the sequence, we can concatenate them to the sequence as tokens
 _g_conf.FREEZE_CLS_TOKEN = False  # freeze the classification token
 _g_conf.REMOVE_CLS_TOKEN = False  # remove the classification token from the sequence
+_g_conf.SENSOR_EMBED = False  # whether to use sensor embedding as in InterFuser/ReasonNet
 _g_conf.EXTRA_POS_EMBED = False  # A final positional embedding at the output of the encoder
 _g_conf.OLD_TOKEN_ORDER = True  # Originally had mixed the order of the [STR] and [ACC]; should be set explicitly
 

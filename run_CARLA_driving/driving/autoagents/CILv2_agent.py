@@ -11,11 +11,16 @@ from __future__ import print_function
 
 from enum import Enum
 
+import matplotlib.colors
+from einops import rearrange
+
 import carla
 import os
 import io
 import torch
 import json
+from typing import List
+
 import numpy as np
 import torchvision.transforms.functional as TF
 from PIL import Image, ImageDraw, ImageFont
@@ -124,8 +129,7 @@ class CILv2_agent(object):
             print(torch.cuda.device_count(), 'GPUs to be used: ', os.environ["CUDA_VISIBLE_DEVICES"])
             self._model = DataParallelWrapper(self._model)
         self.checkpoint = torch.load(os.path.join(exp_dir, 'checkpoints', f'{self._model.name}_{checkpoint_number}.pth'))
-        print(self._model.name + '_' + str(checkpoint_number) + '.pth', "loaded from ",
-              os.path.join(exp_dir, 'checkpoints'))
+        print(f'{self._model.name}_{checkpoint_number}.pth loaded from {os.path.join(exp_dir, "checkpoints")}')
         if isinstance(self._model, torch.nn.DataParallel):
             self._model.module.load_state_dict(self.checkpoint['model'])
         else:
@@ -362,117 +366,192 @@ class CILv2_agent(object):
 
     def record_driving(self, current_input_data):
         if self.vision_save_path:
+            # Aux function for getting the images to the desired shape
+            def get_grayscale_attn_map(attn_weights: torch.Tensor,
+                                       token_idx: int,
+                                       resize_width: int,
+                                       resize_height: int,
+                                       one_seq: bool = False) -> np.ndarray:
+                attn_weights = attn_weights[:, token_idx, :, :].detach().cpu().numpy()  # [S, H, cam * W]
+                attn_weights = attn_weights.transpose(1, 2, 0)  # [H, cam * W, S]
+                attn_weights = cv2.resize(attn_weights, (resize_width, resize_height))  # [imgH, cam * imgW]
+                if one_seq:
+                    attn_weights = attn_weights[:, :, None]  # [imgH, cam * imgW, 1]
+                attn_weights = attn_weights.transpose(2, 0, 1)  # [1, imgH, cam * imgW]
+                return attn_weights
+
+            def blend_gradcam_cameraimg(grayscale_cam: np.ndarray,
+                                        cmap: matplotlib.colors.LinearSegmentedColormap,
+                                        cams: List[Image.Image],
+                                        cam_index: int,
+                                        blend_strength: float = 0.5) -> List[Image.Image]:
+                # TODO: this must work for any number of cams, not just one sequence
+                cmap_att = np.delete(cmap(grayscale_cam), 3, 3)[0]
+                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
+                blended_img = Image.blend(cams[cam_index], cmap_att, blend_strength)
+                return [blended_img]
+
             # Do something different according to the model name
-            if self._model.name == 'CIL_multiview':
-                pass
+            if self._model.name == 'CIL_multiview_vit_oneseq':
+                cams = []
+                for i in range(len(g_conf.DATA_USED)):
+                    rgb_img = inverse_normalize(self.norm_rgb[-1][i],
+                                                g_conf.IMG_NORMALIZATION['mean'],
+                                                g_conf.IMG_NORMALIZATION['std'])
+                    rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
+                    rimg = (rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)
+                    cams.append(rimg)
+                cams = rearrange(cams, 'c h w C -> h (c w) C')
+                cams = [Image.fromarray(cams).resize((900, 300))]
+
+                if not g_conf.ONE_ACTION_TOKEN:
+                    # Get the steering [STR] attention map
+                    grayscale_cam_str = get_grayscale_attn_map(self.attn_weights, -2, 900, 300, one_seq=True)
+                    topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
+
+                    # Get the acceleration [ACC] attention map
+                    grayscale_cam_acc = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                    bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
+
+                else:
+                    # Only one attention map, so leave the top as the input rgb image
+                    topl_gradcam = [cams[0]]
+
+                    # Get the action [ACT] attention map
+                    grayscale_cam_act = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                    bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_act, self.cmap_2, cams, 0, 0.5)
+
             else:
-                pass
-            cams = []
-            for i in range(len(g_conf.DATA_USED)):
-                rgb_img = inverse_normalize(self.norm_rgb[-1][i],
-                                            g_conf.IMG_NORMALIZATION['mean'],
-                                            g_conf.IMG_NORMALIZATION['std'])
-                rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
-                rimg = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)).resize((300, 300))
-                cams.append(rimg)
+                cams = []
+                for i in range(len(g_conf.DATA_USED)):
+                    rgb_img = inverse_normalize(self.norm_rgb[-1][i],
+                                                g_conf.IMG_NORMALIZATION['mean'],
+                                                g_conf.IMG_NORMALIZATION['std'])
+                    rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
+                    rimg = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)).resize((300, 300))
+                    cams.append(rimg)
 
-            # Get the acceleration [ACC] attention map
-            grayscale_cam_acc = self.attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
-            # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
-            grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
-            grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
-            grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
+                # Get the acceleration [ACC] attention map
+                grayscale_cam_acc = self.attn_weights[:, -1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+                # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
+                grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
+                grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
+                grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
 
-            gradcams_acc = []
-            for cam_id in range(len(g_conf.DATA_USED)):
-                att = grayscale_cam_acc[cam_id, :]
-                cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                gcacc = Image.blend(cams[cam_id], cmap_att, 0.5)
-                gradcams_acc.append(gcacc)
+                gradcams_acc = []
+                for cam_id in range(len(g_conf.DATA_USED)):
+                    att = grayscale_cam_acc[cam_id, :]
+                    cmap_att = np.delete(self.cmap_2(att), 3, 2)
+                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
+                    gcacc = Image.blend(cams[cam_id], cmap_att, 0.5)
+                    gradcams_acc.append(gcacc)
 
-            # Get the steering [STR] attention map
-            grayscale_cam_str = self.attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
-            # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
-            grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
-            grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
-            grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
+                # Get the steering [STR] attention map
+                grayscale_cam_str = self.attn_weights[:, -2, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+                # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
+                grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
+                grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
+                grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
 
-            gradcams_str = []
-            for cam_id in range(len(g_conf.DATA_USED)):
-                att = grayscale_cam_str[cam_id, :]
-                cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                gcstr = Image.blend(cams[cam_id], cmap_att, 0.5)
-                gradcams_str.append(gcstr)
+                gradcams_str = []
+                for cam_id in range(len(g_conf.DATA_USED)):
+                    att = grayscale_cam_str[cam_id, :]
+                    cmap_att = np.delete(self.cmap_2(att), 3, 2)
+                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
+                    gcstr = Image.blend(cams[cam_id], cmap_att, 0.5)
+                    gradcams_str.append(gcstr)
 
             rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
 
+            # Get the command
             if g_conf.DATA_COMMAND_ONE_HOT:
                 cmd = decode_directions_6(self.direction[-1].detach().cpu().numpy().squeeze(0))
             else:
                 cmd = self.direction[-1].detach().cpu().numpy().squeeze(0) + 1
-            if float(cmd) == 1.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'turn_left.png'))
 
-            elif float(cmd) == 2.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'turn_right.png'))
+            command_sign_dict = {
+                1.0: 'turn_left.png',
+                2.0: 'turn_right.png',
+                3.0: 'go_straight.png',
+                4.0: 'follow_lane.png',
+                5.0: 'go_left.png',
+                6.0: 'go_right.png'
+            }
 
-            elif float(cmd) == 3.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'go_straight.png'))
-
-            elif float(cmd) == 4.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'follow_lane.png'))
-
-            elif float(cmd) == 5.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'change_left.png'))
-
-            elif float(cmd) == 6.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'change_right.png'))
-
-            else:
-                raise RuntimeError()
-
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', command_sign_dict[float(cmd)]))
             command_sign = command_sign.resize((280, 70))
 
-            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10),
-                                    120 + rgb_backontop.height+120), (0, 0, 0))
+            # Define image characteristics
+            border_height_top = 120
+            border_height_bottom = 120
+            images_separation_horizontally = 10  # how many pixels between images (horizontally)
+            images_separation_vertically = rgb_backontop.height - 2 * cams[0].height  # how many pixels between images (vertically)
+
+            # Backgroud image (black)
+            l = 2 if g_conf.CMD_SPD_TOKENS else 1
+            mat = Image.new('RGB', (rgb_backontop.width + l * len(cams) * (cams[0].width + images_separation_horizontally),
+                                    border_height_top + rgb_backontop.height + border_height_bottom), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
             font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
             font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
             font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
 
+            # Texts above each view
+            view_titles = [
+                'RGB Cameras Input' if g_conf.ONE_ACTION_TOKEN else '[STR] Attention Maps',
+                '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
+            ]
+            # We will have some extra attention maps if we use command and speed tokens in the sequence
+            if g_conf.CMD_SPD_TOKENS:
+                view_titles.extend(['[CMD] Attention Maps', '[SPD] Attention Maps'])
+
             # third person
-            draw_mat.text((260, 40), str("Third Person Perspective"), fill=(255, 255, 255), font=font_2)
-            mat.paste(rgb_backontop, (0, 120))
+            draw_mat.text((260, 40), "Third Person Perspective", fill=(255, 255, 255), font=font_2)
+            mat.paste(rgb_backontop, (0, border_height_top))
 
             # Attention Maps
-            draw_mat.text((330 + rgb_backontop.width, 30), str("[STR] Attention Maps"), fill=(255, 255, 255), font=font)
-            mat.paste(gradcams_str[0], (rgb_backontop.width+10, 120))
-            mat.paste(gradcams_str[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120))
-            mat.paste(gradcams_str[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
+            draw_mat.text((330 + rgb_backontop.width, 80), view_titles[0], fill=(255, 255, 255), font=font)
+            mat.paste(topl_gradcam[0], (rgb_backontop.width + images_separation_horizontally, border_height_top))
+            # mat.paste(gradcams_str[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120))
+            # mat.paste(gradcams_str[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
 
-            draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35), str("[ACC] Attention Maps"),
+            draw_mat.text((330 + rgb_backontop.width, border_height_top + cams[0].height + 35), view_titles[1],
                           fill=(255, 255, 255), font=font)
-            mat.paste(gradcams_acc[0], (rgb_backontop.width+10, 120+cams[0].height+80))
-            mat.paste(gradcams_acc[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
-            mat.paste(gradcams_acc[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
+            mat.paste(bottoml_gradcam[0], (rgb_backontop.width + images_separation_horizontally,
+                                        border_height_top + cams[0].height + images_separation_vertically))
+            # mat.paste(gradcams_acc[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
+            # mat.paste(gradcams_acc[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
+
+            if g_conf.CMD_SPD_TOKENS:
+                # Get the command [CMD] attention map
+                grayscale_cam_cmd = get_grayscale_attn_map(self.attn_weights, 0, 900, 300, one_seq=True)
+                topr_gradcam = blend_gradcam_cameraimg(grayscale_cam_cmd, self.cmap_2, cams, 0, 0.5)
+
+                # Get the speed [SPD] attention map
+                grayscale_cam_spd = get_grayscale_attn_map(self.attn_weights, 1, 900, 300, one_seq=True)
+                bottomr_gradcam = blend_gradcam_cameraimg(grayscale_cam_spd, self.cmap_2, cams, 0, 0.5)
+
+                # Paste them
+                draw_mat.text((330 + rgb_backontop.width + cams[0].width, 80), view_titles[2], fill=(255, 255, 255), font=font)
+                mat.paste(topr_gradcam[0], (rgb_backontop.width + 2*images_separation_horizontally + cams[0].width, border_height_top))
+
+                draw_mat.text((330 + rgb_backontop.width + cams[0].width, border_height_top + cams[0].height + 35), view_titles[3], fill=(255, 255, 255), font=font)
+                mat.paste(bottomr_gradcam[0], (rgb_backontop.width + 2*images_separation_horizontally + cams[0].width,
+                                            border_height_top + cams[0].height + images_separation_vertically))
 
             # command
-            draw_mat.text((rgb_backontop.width, 120 + rgb_backontop.height + 15),
-                          str("Command"),
-                          fill=(255, 255, 255),
-                          font=font)
+            draw_mat.text((rgb_backontop.width, border_height_top + rgb_backontop.height + 15),
+                          "Command", fill=(255, 255, 255), font=font)
             draw_mat.text((rgb_backontop.width+25, 120 + rgb_backontop.height + 45),
-                          str("Input"),
-                          fill=(255, 255, 255),
-                          font=font)
-            mat.paste(command_sign, (120 + rgb_backontop.width + 35, 120+rgb_backontop.height + 30))
+                          "Input", fill=(255, 255, 255), font=font)
+            mat.paste(command_sign, (120 + rgb_backontop.width + 35, border_height_top + rgb_backontop.height + 30))
 
             # speed
-            draw_mat.text((140 + rgb_backontop.width + command_sign.width + 110, 120+rgb_backontop.height + 15), str("Speed " + "(m/s)"),
+            draw_mat.text((140 + rgb_backontop.width + command_sign.width + 110,
+                           border_height_top + rgb_backontop.height + 15), "Speed (m/s)",
                           fill=(255, 255, 255), font=font)
-            draw_mat.text((140 + rgb_backontop.width + command_sign.width + 120, 120+rgb_backontop.height + 45), str("Input "),
+            draw_mat.text((140 + rgb_backontop.width + command_sign.width + 120,
+                           border_height_top + rgb_backontop.height + 45), "Input",
                           fill=(255, 255, 255), font=font)
             speed_gauge = go.Figure(go.Indicator(
                 mode="gauge+number",
@@ -492,14 +571,13 @@ class CILv2_agent(object):
             speed_gauge = Image.open(buf)
             speed_gauge = speed_gauge.resize((202, 144))
             speed_gauge = speed_gauge.crop((20, 20, 182, 124))
-            mat.paste(speed_gauge, (140 + rgb_backontop.width + command_sign.width + 280, 120+rgb_backontop.height+5))
-            draw_mat.text((1760, 120 + rgb_backontop.height + 75), str("0"), fill=(255, 255, 255), font=font_3)
-            draw_mat.text((1955, 120 + rgb_backontop.height + 75),
-                          str("12"), fill=(255, 255, 255), font=font_3)
+            mat.paste(speed_gauge, (140 + rgb_backontop.width + command_sign.width + 280, border_height_top + rgb_backontop.height + 5))
+            draw_mat.text((1760, border_height_top + rgb_backontop.height + 75), "0", fill=(255, 255, 255), font=font_3)
+            draw_mat.text((1955, border_height_top + rgb_backontop.height + 75), "12", fill=(255, 255, 255), font=font_3)
 
             # steer
-            draw_mat.text((60, 120 + rgb_backontop.height + 15),
-                          str("Steering Prediction  "+ "%.3f" % np.clip(self.steer, -1, 1)),
+            draw_mat.text((60, border_height_top + rgb_backontop.height + 15),
+                          f"Steering Prediction {np.clip(self.steer, -1, 1):.3f}",
                           fill=(255, 255, 255),
                           font=font)
             if self.steer > 0.0:
@@ -522,10 +600,10 @@ class CILv2_agent(object):
                        'steps': step,
                        'threshold': {
                            'line': {'color': "white", 'width': 3},
-                           'thickness': 1.0, 'value': 0},},
+                           'thickness': 1.0, 'value': 0}},
                 domain={'x': [0, 1], 'y': [0, 1]}))
             steer_gauge.update_layout(
-                height = 250,
+                height=250,
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 font={'color': "white", 'family': "Arial", "size": 3})
@@ -535,14 +613,14 @@ class CILv2_agent(object):
             steer_gauge = Image.open(buf)
             steer_gauge = steer_gauge.resize((359, 128))
             steer_gauge = steer_gauge.crop((40, 40, 250, 100))
-            mat.paste(steer_gauge, (110 , 120+rgb_backontop.height + 50))
-            draw_mat.text((65, 120 + rgb_backontop.height + 60), str("-1" ), fill=(255, 255, 255), font=font)
-            draw_mat.text((340, 120 + rgb_backontop.height + 60),
-                          str("1"), fill=(255, 255, 255), font=font)
+            mat.paste(steer_gauge, (110, border_height_top + rgb_backontop.height + 50))
+            draw_mat.text((65, border_height_top + rgb_backontop.height + 60), "-1", fill=(255, 255, 255), font=font)
+            draw_mat.text((340, border_height_top + rgb_backontop.height + 60),
+                          "1", fill=(255, 255, 255), font=font)
 
             # acceleration
-            draw_mat.text((550 , 120 + rgb_backontop.height + 15),
-                          str("Acceleration Prediction  "+ "%.3f" % np.clip(self.acceleration, -1, 1)),
+            draw_mat.text((550, border_height_top + rgb_backontop.height + 15),
+                          f"Acceleration Prediction {np.clip(self.acceleration, -1, 1):.3f}",
                           fill=(255, 255, 255),
                           font=font)
             if self.acceleration > 0.0:
@@ -564,10 +642,10 @@ class CILv2_agent(object):
                        'steps': step,
                        'threshold': {
                            'line': {'color': "white", 'width': 3},
-                           'thickness': 1.0, 'value': 0},},
+                           'thickness': 1.0, 'value': 0}},
                 domain={'x': [0, 1], 'y': [0, 1]}))
             acc_gauge.update_layout(
-                height = 250,
+                height=250,
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 font={'color': "white", 'family': "Arial", "size": 3})
@@ -577,12 +655,12 @@ class CILv2_agent(object):
             acc_gauge = Image.open(buf)
             acc_gauge = acc_gauge.resize((359, 128))
             acc_gauge = acc_gauge.crop((40, 40, 250, 100))
-            mat.paste(acc_gauge, (625 , 120+rgb_backontop.height + 50))
-            draw_mat.text((580, 120 + rgb_backontop.height + 60), str("-1" ), fill=(255, 255, 255), font=font)
-            draw_mat.text((855, 120 + rgb_backontop.height + 60), str("1"), fill=(255, 255, 255), font=font)
+            mat.paste(acc_gauge, (625, border_height_top + rgb_backontop.height + 50))
+            draw_mat.text((580, border_height_top + rgb_backontop.height + 60), "-1", fill=(255, 255, 255), font=font)
+            draw_mat.text((855, border_height_top + rgb_backontop.height + 60), "1", fill=(255, 255, 255), font=font)
             
             if not os.path.exists(self.vision_save_path):
                 os.makedirs(self.vision_save_path)
             if self.datapoint_count % self.save_frequence == 0:
                 mat = mat.resize((int(mat.size[0] / 2), int(mat.size[1] / 2)))   # comment this if you don't want to resize
-                mat.save(os.path.join(self.vision_save_path, str(self.datapoint_count).zfill(6) + '.jpg'))
+                mat.save(os.path.join(self.vision_save_path, f'{self.datapoint_count:06d}.jpg'))

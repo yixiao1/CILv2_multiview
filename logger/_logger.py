@@ -88,51 +88,52 @@ def add_vit_attention_maps_to_disk(process_type: str,
 
     ## For saving validation attention maps of the backbone
     elif process_type == 'Valid':
-        S = len(source_input[0])  # how many frames are in the sequence
-        cam_num = len(source_input[0][0])  # number of views/cameras (default: 3)
-        _, C, H, W = source_input[0][0][0].shape
-
-        attn_weights = model._model.forward_eval(*source_input)[1]
-
-        # Get the steering [STR] attention map
-        grayscale_cam_str = attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
-        grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
-        grayscale_cam_str = cv2.resize(grayscale_cam_str, (H, W))  # cv2 thinks it has multiple channels
-        grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
-        grayscale_cam_str = grayscale_cam_str.reshape((S, cam_num, H, W))
-
-        # Get the acceleration [ACC] attention map
-        grayscale_cam_acc = attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
-        grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
-        grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (H, W))  # cv2 thinks it has multiple channels
-        grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
-        grayscale_cam_acc = grayscale_cam_acc.reshape((S, cam_num, H, W))
-
-        grayscale_cam = [grayscale_cam_str, grayscale_cam_acc]  # 2 * [S, cam, H, W]
-        cam_names = ['STR', 'ACC']
-        for idx, gcam in enumerate(grayscale_cam):
-            Seq = []
-            for s in range(S):
-                cams = []
-                for cam_id in range(cam_num):
-                    att = gcam[s, cam_id, :]
-                    cmap_att = np.delete(cmap(att), 3, 2)
-                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-                    # cams.append(cmap_att)
-                    cams.append(Image.blend(Image.fromarray(((input_rgb_frames[s][cam_id]).transpose(1, 2, 0) * 255).astype(np.uint8)), cmap_att, 0.5))
-                Seq.append(np.concatenate(cams, 1))
-            current_att = np.concatenate(Seq, 0)
-
-            if save_path:
-                if not os.path.exists(os.path.join(save_path, str(epoch), '-1')):
-                    os.makedirs(os.path.join(save_path, str(epoch), '-1'))
-
-                # we save the wanted layers of the backbone to the disk
-                current_att = Image.fromarray(current_att)
-                current_att.save(os.path.join(save_path, str(epoch), '-1', str(batch_id) + f'{cam_names[idx]}.jpg'))
-
-            else:
-                raise RuntimeError('You need to set the save_path')
+        pass
+        # S = len(source_input[0])  # how many frames are in the sequence
+        # cam_num = len(source_input[0][0])  # number of views/cameras (default: 3)
+        # _, C, H, W = source_input[0][0][0].shape
+        #
+        # attn_weights = model._model.forward_eval(*source_input)[1]
+        #
+        # # Get the steering [STR] attention map
+        # grayscale_cam_str = attn_weights[:, 0, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+        # grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
+        # grayscale_cam_str = cv2.resize(grayscale_cam_str, (H, W))  # cv2 thinks it has multiple channels
+        # grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
+        # grayscale_cam_str = grayscale_cam_str.reshape((S, cam_num, H, W))
+        #
+        # # Get the acceleration [ACC] attention map
+        # grayscale_cam_acc = attn_weights[:, 1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+        # grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
+        # grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (H, W))  # cv2 thinks it has multiple channels
+        # grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
+        # grayscale_cam_acc = grayscale_cam_acc.reshape((S, cam_num, H, W))
+        #
+        # grayscale_cam = [grayscale_cam_str, grayscale_cam_acc]  # 2 * [S, cam, H, W]
+        # cam_names = ['STR', 'ACC']
+        # for idx, gcam in enumerate(grayscale_cam):
+        #     Seq = []
+        #     for s in range(S):
+        #         cams = []
+        #         for cam_id in range(cam_num):
+        #             att = gcam[s, cam_id, :]
+        #             cmap_att = np.delete(cmap(att), 3, 2)
+        #             cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
+        #             # cams.append(cmap_att)
+        #             cams.append(Image.blend(Image.fromarray(((input_rgb_frames[s][cam_id]).transpose(1, 2, 0) * 255).astype(np.uint8)), cmap_att, 0.5))
+        #         Seq.append(np.concatenate(cams, 1))
+        #     current_att = np.concatenate(Seq, 0)
+        #
+        #     if save_path:
+        #         if not os.path.exists(os.path.join(save_path, str(epoch), '-1')):
+        #             os.makedirs(os.path.join(save_path, str(epoch), '-1'))
+        #
+        #         # we save the wanted layers of the backbone to the disk
+        #         current_att = Image.fromarray(current_att)
+        #         current_att.save(os.path.join(save_path, str(epoch), '-1', str(batch_id) + f'{cam_names[idx]}.jpg'))
+        #
+        #     else:
+        #         raise RuntimeError('You need to set the save_path')
 
 
 def add_gradCAM_attentions_to_disk(process_type, model, source_input, input_rgb_frames,

@@ -131,11 +131,12 @@ def train_upstream_task(model, optimizer):
                 _logger.add_scalar('Loss_brake', brake_loss.item(), model._current_iteration)
             # Extra logging
             _logger.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], model._current_iteration)
-            # Cosine similarity of the learned [ACC] and [STR] tokens
-            cos_sim = F.cosine_similarity(model._model.tfx_accel_token,  # [ACC], [1, 1, D]
-                                          model._model.tfx_steer_token,  # [STR], [1, 1, D]
-                                          dim=-1).item()  # [1, 1, D] -> [1, 1] -> float
-            _logger.add_scalar('Cosine sim [STR] and [ACC]', cos_sim, model._current_iteration)
+            # Cosine similarity of the learned [ACC] and [STR] tokens, if being used
+            if not g_conf.ONE_ACTION_TOKEN:
+                cos_sim = F.cosine_similarity(model._model.tfx_accel_token,  # [ACC], [1, 1, D]
+                                              model._model.tfx_steer_token,  # [STR], [1, 1, D]
+                                              dim=-1).item()  # [1, 1, D] -> [1, 1] -> float
+                _logger.add_scalar('Cosine sim [STR] and [ACC]', cos_sim, model._current_iteration)
 
             if test_stop(total_iterations * g_conf.BATCH_SIZE, model._current_iteration * g_conf.BATCH_SIZE):
                 print('\nTraining finished !!')

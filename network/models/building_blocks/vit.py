@@ -122,7 +122,7 @@ class Encoder(nn.Module):
         self.layers = nn.Sequential(layers)
         self.ln = norm_layer(hidden_dim)
 
-    def forward(self, input: torch.Tensor, pre_pos_emb: bool = False) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, pre_pos_emb: bool = True) -> torch.Tensor:
         """ Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
          False. """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
@@ -134,7 +134,7 @@ class Encoder(nn.Module):
         return self.ln(input)
 
     def forward_return_attn(self, input: torch.Tensor,
-                            pre_pos_emb: bool = False) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+                            pre_pos_emb: bool = True) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         """
         Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
         True.
