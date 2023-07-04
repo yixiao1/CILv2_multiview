@@ -368,16 +368,23 @@ class CILv2_agent(object):
         if self.vision_save_path:
             # Aux function for getting the images to the desired shape
             def get_grayscale_attn_map(attn_weights: torch.Tensor,
-                                       token_idx: int,
-                                       resize_width: int,
-                                       resize_height: int,
+                                       token_idx: int = None,
+                                       resize_width: int = 300,
+                                       resize_height: int = 300,
                                        one_seq: bool = False) -> np.ndarray:
-                attn_weights = attn_weights[:, token_idx, :, :].detach().cpu().numpy()  # [S, H, cam * W]
-                attn_weights = attn_weights.transpose(1, 2, 0)  # [H, cam * W, S]
-                attn_weights = cv2.resize(attn_weights, (resize_width, resize_height))  # [imgH, cam * imgW]
-                if one_seq:
-                    attn_weights = attn_weights[:, :, None]  # [imgH, cam * imgW, 1]
-                attn_weights = attn_weights.transpose(2, 0, 1)  # [1, imgH, cam * imgW]
+                if token_idx is not None:
+                    attn_weights = attn_weights[:, token_idx, :, :]  # [S, H, cam * W]
+                attn_weights = attn_weights.detach().cpu().numpy()  # [S, H, cam * W] or [S, t+2, t+2]
+                attn_weights = attn_weights.transpose(1, 2, 0)  # [H, cam * W, S] or [t+2, t+2, S]
+
+                # Resize the attention map to the desired shape
+                interp = cv2.INTER_CUBIC if one_seq else cv2.INTER_AREA
+                attn_weights = cv2.resize(attn_weights, (resize_width, resize_height), interpolation=interp)  # [imgH, cam * imgW] or [imgH, imgW]
+
+                # Take it back to the original shape (given S=1)
+                attn_weights = attn_weights[:, :, None]  # [imgH, cam * imgW, 1] or [imgH, imgW, 1]
+                attn_weights = attn_weights.transpose(2, 0, 1)  # [1, imgH, cam * imgW] or [1, imgH, imgW]
+
                 return attn_weights
 
             def blend_gradcam_cameraimg(grayscale_cam: np.ndarray,
@@ -406,11 +413,11 @@ class CILv2_agent(object):
 
                 if not g_conf.ONE_ACTION_TOKEN:
                     # Get the steering [STR] attention map
-                    grayscale_cam_str = get_grayscale_attn_map(self.attn_weights, -2, 900, 300, one_seq=True)
+                    grayscale_cam_str = get_grayscale_attn_map(self.attn_weights[1], -2, 900, 300, one_seq=True)
                     topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
 
                     # Get the acceleration [ACC] attention map
-                    grayscale_cam_acc = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                    grayscale_cam_acc = get_grayscale_attn_map(self.attn_weights[1], -1, 900, 300, one_seq=True)
                     bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
 
                 else:
@@ -418,7 +425,7 @@ class CILv2_agent(object):
                     topl_gradcam = [cams[0]]
 
                     # Get the action [ACT] attention map
-                    grayscale_cam_act = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                    grayscale_cam_act = get_grayscale_attn_map(self.attn_weights[1], -1, 900, 300, one_seq=True)
                     bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_act, self.cmap_2, cams, 0, 0.5)
 
             else:
@@ -461,6 +468,7 @@ class CILv2_agent(object):
                     gcstr = Image.blend(cams[cam_id], cmap_att, 0.5)
                     gradcams_str.append(gcstr)
 
+            # Get the 3rd person view
             rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
 
             # Get the command
@@ -487,11 +495,14 @@ class CILv2_agent(object):
             images_separation_horizontally = 10  # how many pixels between images (horizontally)
             images_separation_vertically = rgb_backontop.height - 2 * cams[0].height  # how many pixels between images (vertically)
 
-            # Backgroud image (black)
-            l = 2 if g_conf.CMD_SPD_TOKENS else 1
-            mat = Image.new('RGB', (rgb_backontop.width + l * len(cams) * (cams[0].width + images_separation_horizontally),
-                                    border_height_top + rgb_backontop.height + border_height_bottom), (0, 0, 0))
+            # Background image (black)
+            l = 4/3 if g_conf.CMD_SPD_TOKENS else 1
+            mat_width = int(rgb_backontop.width + l * len(cams) * (cams[0].width + images_separation_horizontally))
+            mat_height = int(border_height_top + rgb_backontop.height + border_height_bottom)
+            mat = Image.new('RGB', (mat_width, mat_height), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
+
+            # Set fonts
             font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
             font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
             font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
@@ -501,9 +512,6 @@ class CILv2_agent(object):
                 'RGB Cameras Input' if g_conf.ONE_ACTION_TOKEN else '[STR] Attention Maps',
                 '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
             ]
-            # We will have some extra attention maps if we use command and speed tokens in the sequence
-            if g_conf.CMD_SPD_TOKENS:
-                view_titles.extend(['[CMD] Attention Maps', '[SPD] Attention Maps'])
 
             # third person
             draw_mat.text((260, 40), "Third Person Perspective", fill=(255, 255, 255), font=font_2)
@@ -523,22 +531,15 @@ class CILv2_agent(object):
             # mat.paste(gradcams_acc[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
 
             if g_conf.CMD_SPD_TOKENS:
-                # Get the command [CMD] attention map
-                grayscale_cam_cmd = get_grayscale_attn_map(self.attn_weights, 0, 900, 300, one_seq=True)
-                topr_gradcam = blend_gradcam_cameraimg(grayscale_cam_cmd, self.cmap_2, cams, 0, 0.5)
-
-                # Get the speed [SPD] attention map
-                grayscale_cam_spd = get_grayscale_attn_map(self.attn_weights, 1, 900, 300, one_seq=True)
-                bottomr_gradcam = blend_gradcam_cameraimg(grayscale_cam_spd, self.cmap_2, cams, 0, 0.5)
-
+                # Get the token-to-token attention map
+                grayscale_cam_t2t = get_grayscale_attn_map(self.attn_weights[0], resize_width=300, resize_height=300)
+                cmap_att = np.delete(self.cmap_2(grayscale_cam_t2t), 3, 3)[0]
+                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
                 # Paste them
-                draw_mat.text((330 + rgb_backontop.width + cams[0].width, 80), view_titles[2], fill=(255, 255, 255), font=font)
-                mat.paste(topr_gradcam[0], (rgb_backontop.width + 2*images_separation_horizontally + cams[0].width, border_height_top))
-
-                draw_mat.text((330 + rgb_backontop.width + cams[0].width, border_height_top + cams[0].height + 35), view_titles[3], fill=(255, 255, 255), font=font)
-                mat.paste(bottomr_gradcam[0], (rgb_backontop.width + 2*images_separation_horizontally + cams[0].width,
-                                            border_height_top + cams[0].height + images_separation_vertically))
-
+                title = '[CMD] [SPD] [STR] [ACC]' if not g_conf.ONE_ACTION_TOKEN else '[CMD] [SPD] [ACT]'
+                draw_mat.text((rgb_backontop.width + 2*images_separation_horizontally + cams[0].width, 80), title,
+                              fill=(255, 255, 255), font=font_3)
+                mat.paste(cmap_att, (rgb_backontop.width + 2*images_separation_horizontally + cams[0].width, border_height_top))
             # command
             draw_mat.text((rgb_backontop.width, border_height_top + rgb_backontop.height + 15),
                           "Command", fill=(255, 255, 255), font=font)

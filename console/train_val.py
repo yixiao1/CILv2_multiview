@@ -97,6 +97,8 @@ def train_upstream_task(model, optimizer):
                                                 brake_loss.item)
 
             optimizer.zero_grad()
+            time_start = time.time()
+
             if g_conf.AUTOCAST:
                 # Scale the loss/gradients and call backward
                 scaler.scale(loss).backward()
@@ -114,7 +116,6 @@ def train_upstream_task(model, optimizer):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
 
-            time_start = time.time()
             """
             ################################################
                 Adding tensorboard logs

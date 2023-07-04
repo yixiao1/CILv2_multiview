@@ -7,7 +7,7 @@ from _utils import utils
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 from network.models.building_blocks.fc import FC
 
-from einops import rearrange
+from einops import rearrange, reduce
 from typing import Tuple, List
 
 
@@ -195,26 +195,54 @@ class CIL_multiview_vit_oneseq(nn.Module):
     def action_prediction(self, sequence: torch.Tensor) -> torch.Tensor:
         """Pass in the sequence of the ViT (of shape [B, seq_length, hidden_dim]) and predict the action"""
         # Only use the action tokens [ACT] for the prediction
-        sequence = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
+        sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
         if 'action_output' in self.params:
             if self.params['action_output']['type'] == '2mlp':
-                steering_input = sequence[:, 0] if not g_conf.ONE_ACTION_TOKEN else sequence.squeeze(1)
-                acceleration_input = sequence[:, 1] if not g_conf.ONE_ACTION_TOKEN else sequence.squeeze(1)
-
+                # Pass the ACT tokens through two MLPs, one for steering and one for acceleration
+                steering_input = sequence_act[:, 0] if not g_conf.ONE_ACTION_TOKEN else sequence_act.squeeze(1)
+                acceleration_input = sequence_act[:, 1] if not g_conf.ONE_ACTION_TOKEN else sequence_act.squeeze(1)
                 steering_output = self.steer_output(steering_input)  # [B, D] => [B, 1]
                 acceleration_output = self.accel_output(acceleration_input)  # [B, D] => [B, 1]
-
                 # Concatenate them
                 action_output = torch.cat([steering_output, acceleration_output], dim=1).unsqueeze(1)  # [B, 1, t]
             elif self.params['action_output']['type'] == '1mlp':
-                in_memory = rearrange(sequence, 'B t D -> B (t D)')
+                # Pass the ACT tokens through a MLP
+                in_memory = rearrange(sequence_act, 'B t D -> B (t D)')  # flatten the sequence [B, t, D] => [B, t*D]
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, t*D] => [B, 1, len(TARGETS)]
             elif self.params['action_output']['type'] == 'gap':
-                in_memory = rearrange(sequence, 'B t D -> B D t')  # [B, t, D] => [B, D, t]
-                action_output = torch.mean(in_memory, dim=1, keepdim=True)
+                # Average pooling of the ACT tokens (one per target)
+                action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'avgmult_gap':  # needs lower lr
+                # Average the CMD and SPD tokens and then multiply them by the GAP of the ACT tokens
+                cmd = reduce(sequence[:, 0], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
+                spd = reduce(sequence[:, 1], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
+                action_output = cmd * spd * reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'avgsum_gap':
+                # Average the CMD and SPD tokens and then add them to the GAP of the ACT tokens
+                cmd = reduce(sequence[:, 0], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
+                spd = reduce(sequence[:, 1], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
+                action_output = cmd + spd + reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'dotmult_gap':
+                # Perform the dot product of the CMD and SPD tokens, then multiply them by the GAP of the ACT tokens
+                dot = reduce(sequence[:, 0] * sequence[:, 1], 'B D -> B 1 1', 'sum')  # [B, D] => [B, 1, 1]
+                action_output = dot * reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'dotsum_gap':  # needs lower lr
+                # Perform the dot product of the CMD and SPD tokens, then add them to the GAP of the ACT tokens
+                dot = reduce(sequence[:, 0] * sequence[:, 1], 'B D -> B 1 1', 'sum')  # [B, D] => [B, 1, 1]
+                action_output = dot + reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'add_gap':
+                # Add the CMD and SPD tokens individually to the ACT tokens, then perform a GAP  (same as avgsum_gap)
+                cmd = sequence[:, 0].unsqueeze(1)  # [B, 1, D]
+                spd = sequence[:, 1].unsqueeze(1)  # [B, 1, D]
+                action_output = reduce(sequence_act + cmd + spd, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'addmult_gap':
+                # Add the CMD and SPD tokens individually to the ACT tokens, then multiply them by the GAP
+                cmd = sequence[:, 0].unsqueeze(1)  # [B, 1, D]
+                spd = sequence[:, 1].unsqueeze(1)  # [B, 1, D]
+                action_output = reduce((cmd + spd) * sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
         else:
             # GAP is default behavior, if not specified
-            in_memory = rearrange(sequence, 'B t D -> B D t')  # [B, t, D] => [B, D, t]
+            in_memory = rearrange(sequence_act, 'B t D -> B D t')  # [B, t, D] => [B, D, t]
             action_output = torch.mean(in_memory, dim=1, keepdim=True)  # [B, D, t] -> [B, 1, len(TARGETS)]
 
         return action_output
@@ -252,7 +280,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
                      s: List[List[torch.Tensor]],
                      s_d: List[torch.Tensor],
                      s_s: List[torch.Tensor],
-                     attn_rollout: bool = False):
+                     attn_rollout: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size; will change if using multiple GPUs
         cam = len(g_conf.DATA_USED)  # Number of cameras
@@ -280,15 +308,15 @@ class CIL_multiview_vit_oneseq(nn.Module):
         # Get the attention weights in the right shape
         if g_conf.CMD_SPD_TOKENS:
             # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens
-            attn_weights_cmdspd = attn_weights[2][:, [0, 1], -self.tfx_num_patches*S*cam:]  # [B, 2, S*cam*(H//P)^2]
+            attn_weights_t2t = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, :self.act_tokens_pos[-1]+1]  # [B, t+2, t+2]
             attn_weights_stracc = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches*S*cam:]  # [B, t, S*cam*(H//P)^2]
-            # Normalize the attention weights to be in the range [0, 1]
-            attn_weights_cmdspd = (attn_weights_cmdspd - attn_weights_cmdspd.min()) / (attn_weights_cmdspd.max() - attn_weights_cmdspd.min())  # [B, 2, S*cam*(H//P)^2]
+            # Normalize the attention weights to be in the range [0, 1], row-wise
+            attn_weights_t2t = attn_weights_t2t / attn_weights_t2t.sum(dim=2, keepdim=True)  # [B, t+2, t+2]
             attn_weights_stracc = (attn_weights_stracc - attn_weights_stracc.min()) / (attn_weights_stracc.max() - attn_weights_stracc.min())  # [B, t, S*cam*(H//P)^2]
-            # Concatenate them
-            attn_weights = torch.cat([attn_weights_cmdspd, attn_weights_stracc], dim=1)  # [B, t+2, S*cam*(H//P)^2]
-            # Rearrange the attention weights to be in the right shape
-            attn_weights = rearrange(attn_weights, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.tfx_num_patches_h)  # [B, t+2, H//P, S*cam*W//P]
+            attn_weights_stracc = rearrange(attn_weights_stracc, 'B T (S cam h w) -> B T h (S cam w)',
+                                            S=S, cam=cam, h=self.tfx_num_patches_h)
+            # Give as a tuple
+            attn_weights = (attn_weights_t2t, attn_weights_stracc)  # [B, t+2, t+2], [B, t+2, H//P, S*cam*W//P]
         else:
             # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
             attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches*S*cam:]  # [B, t, S*cam*(H//P)^2]
