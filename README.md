@@ -6,7 +6,7 @@
 ### Publications
 This is the official code release of the paper:
 
-Yi Xiao, Felipe Codevilla, Diego Porres and Antonio M. Lopez. [Scaling Self-Supervised End-to-End Driving with Multi-View Attention Learning]().
+Yi Xiao, Felipe Codevilla, Diego Porres and Antonio M. Lopez. [Scaling Vision-based End-to-End Driving with Multi-View Attention Learning]().
 
 Please cite our paper if you find this work useful:
 
