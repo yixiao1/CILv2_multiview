@@ -83,8 +83,8 @@ The goal is to submit for [CoRL 2023](https://www.corl2023.org/), so the deadlin
   * *Disadvantage:* the sequence length is now `S*cam*(H//P)**2 + 1`, whereas before it was only `(H//P)**2 + 1` per camera view
   * *Disadvantage:* We are forcing it to see like a human, which is in itself limiting
 * [x] Log the attention maps during training and validation
-  * [ ] Extract the attention map of any token in the sequence (as there will be more than one)
-* [ ] Recreate Figure 11 of the ViT paper) i.e., the size of attended area by head and network depth/layer; code [here](https://github.com/google-research/vision_transformer/issues/162)
+  * [x] Extract the attention map of any token in the sequence (as there will be more than one)
+* [ ] Recreate Figure 11 of the ViT paper, i.e., the size of attended area by head and network depth/layer; code [here](https://github.com/google-research/vision_transformer/issues/162)
 
 ### CIL-ViT V1: Multitokens
 
@@ -108,7 +108,7 @@ The idea is simple: add more tokens to the sequence, and the token-patch and pat
 * Add the `[CAM]` token to the sequence (pass each camera/view characteristics $\text{cam}_i$ to an MLP to get `[CAM]_i` and then concatenate (?) `[CAM]_i` to the sequence)
 * The final action can be the same as before, or let the model decide which camera/view to use (i.e., use the `[CAM]` token as a "gate" or weight to perform the action)
   * This way, we could access **which camera** has the most influence in the model's decision, though this may not happen at all
-  * In essence: $\mathbf{a}_{t} = \sum_{i=1}^{C} w_{i,t} \cdot f(\mathbf{z}_{\texttt{[CMD]}^{L,t,i}, \mathbf{z}_{\texttt{[SPD]}^{L,t,i}, \mathbf{z}_{\texttt{[ACT]}^{L,t,i})$, with $w_{i,t} = \text{softmax}(g(\mathbf{z}_{\texttt{[CAM]}^{L,t,i}})$
+  * In essence: $\mathbf{a}_{t} = \sum_{i=1}^{C} w_{i,t} \cdot f(\mathbf{z}_{\texttt{[CMD]}}^{L,t,i}, \mathbf{z}_{\texttt{[SPD]}}^{L,t,i}, \mathbf{z}_{\texttt{[ACT]}}^{L,t,i})$, with $w_{i,t} = \text{softmax}(g(\mathbf{z}_{\texttt{[CAM]}^{L,t,i}}))$
 * (?) Different feature encoding/patchification of the input image/sequence as done in [VIOLA](https://openreview.net/pdf?id=L8hCfhPbFho) (Figure 2)
   * From VIOLA, we could only add the Top K token patches in the whole sequence (w.r.t. the `[ACC]` and `[SPD]` tokens for example) or, as they do, with a Region Proposal Network to get the set of object-related regions in an image, before passing the (shorter) sequence to the Encoder
 * (?) Add other type of information as special tokens (e.g., `[SSG]` for the semantic segmentation ground truth, `[LID]` for the LiDAR point cloud, `[DPT]` for the depth, etc.)
