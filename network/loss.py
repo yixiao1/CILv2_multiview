@@ -7,10 +7,12 @@ def Action_nospeed_L1(params: dict) -> Tuple[torch.Tensor, ...]:
     B = params['action_output'].shape[0]  # batch_size
 
     # SingleFrame model - we only take into account the last frame's action
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
     actions_loss_mat = torch.abs(params['action_output'][:, -1, :] - params['targets_action'][-1])  # (B, 2)
 
     steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
-    steer_loss = torch.sum(steer_loss) / B
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
 
     if g_conf.ACCELERATION_AS_ACTION:
         acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
@@ -38,3 +40,79 @@ def Loss(loss: str):
 
     else:
         raise NotImplementedError("The loss of this model type has not yet defined ")
+
+
+def Action_nospeed_LN(params):
+    B = params['action_output'].shape[0]  # batch_size
+
+    # SingleFrame model - we only take into account the last frame's action
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
+    actions_loss_mat = torch.abs(torch.pow(params['action_output'][:, -1, :] - params['targets_action'][-1], g_conf.LOSS_POW))  # (B, 2)
+
+    steer_loss = mask_steer * actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
+
+    if g_conf.ACCELERATION_AS_ACTION:
+        acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
+        acceleration_loss = torch.sum(acceleration_loss) / B
+
+        loss = steer_loss + acceleration_loss
+
+        return loss, steer_loss, acceleration_loss
+
+    else:
+        throttle_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['throttle']
+        brake_loss = actions_loss_mat[:, 2] * params['variable_weights']['actions']['brake']
+        throttle_loss = torch.sum(throttle_loss) / B
+        brake_loss = torch.sum(brake_loss) / B
+
+        loss = steer_loss + throttle_loss + brake_loss
+
+        return loss, steer_loss, throttle_loss, brake_loss
+
+
+def Action_nospeed_SL(params):
+    B = params['action_output'].shape[0]  # batch_size
+
+    # SingleFrame model - we only take into account the last frame's action
+    a = 10.0
+    c = 0.2
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
+
+    actions_loss_mat_l1 = torch.abs(params['action_output'][:, -1, :] - params['targets_action'][-1])  # (B, 2)
+    actions_loss_mat_l2 = torch.pow(actions_loss_mat_l1, 2)  # (B, 2)
+    actions_loss_mat = actions_loss_mat_l2 / (1.0 + torch.exp(a * (c - actions_loss_mat_l1)))
+
+    steer_loss = mask_steer * actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
+
+    if g_conf.ACCELERATION_AS_ACTION:
+        acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
+        acceleration_loss = torch.sum(acceleration_loss) / B
+
+        loss = steer_loss + acceleration_loss
+
+        return loss, steer_loss, acceleration_loss
+
+    else:
+        throttle_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['throttle']
+        brake_loss = actions_loss_mat[:, 2] * params['variable_weights']['actions']['brake']
+        throttle_loss = torch.sum(throttle_loss) / B
+        brake_loss = torch.sum(brake_loss) / B
+
+        loss = steer_loss + throttle_loss + brake_loss
+
+        return loss, steer_loss, throttle_loss, brake_loss
+
+
+def Loss(loss):
+    if loss == 'Action_nospeed_L1':
+        return Action_nospeed_L1
+    elif loss == 'Action_nospeed_LN':
+        return Action_nospeed_LN
+    elif loss == 'Action_nospeed_SL':
+        return Action_nospeed_SL
+    else:
+        raise NotImplementError(" The loss of this model type has not yet defined ")

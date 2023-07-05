@@ -1,6 +1,7 @@
 # The main file to show how to use the vision algorithms here.
 import os
 import argparse
+import torch.distributed as dist
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -54,13 +55,18 @@ if __name__ == "__main__":
     else:
         raise ValueError('You need to define the ids of GPU you want to use by adding: --gpus')
 
+    if len(args.gpus) > 1:
+        dist.init_process_group("nccl")
+        rank = dist.get_rank()
+    else:
+        rank = 0
 
     from console import execute_train_val, execute_val
     if args.process_type is not None:
         if args.process_type == 'train_val':
             if args.exp is None:
                 raise ValueError("You should set the exp alias")
-            execute_train_val(gpus_list=args.gpus, exp_batch=args.folder, exp_alias=args.exp)
+            execute_train_val(gpus_list=args.gpus, exp_batch=args.folder, exp_alias=args.exp, rank=rank)
 
         elif args.process_type == 'val_only':
             if args.exp is None:

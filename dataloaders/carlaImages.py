@@ -8,7 +8,6 @@ from dataloaders.transforms import train_transform, val_transform, canbus_normal
 
 from configs import g_conf
 
-
 class carlaImages(data.Dataset):
 
     def __init__(self, model_name, base_dir, dataset_list, split="train"):
@@ -26,7 +25,8 @@ class carlaImages(data.Dataset):
         for dataset_name in dataset_list:
             self.images_base = os.path.join(self.root, dataset_name)
             #### For different models, we set different strategy for loading data, and we save the npy file for next time better loading
-            canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
+            canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix=g_conf.GT_DATA_USED, suffix='.json')
+            # canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
             all_cam_paths_dict = {}
             for camera_type in g_conf.DATA_USED:
                 img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
@@ -34,8 +34,8 @@ class carlaImages(data.Dataset):
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 
             # with multiple frames input we also need to ensure the frames are from the same episode
-            self.data_in_chunk = self.get_episode_chunk(self.data_in_chunk, rootdir=self.images_base,
-                                                        prefix='cmd_fix', suffix='.json')
+            self.data_in_chunk = self.get_episode_chunk(self.data_in_chunk, rootdir=self.images_base, prefix=g_conf.GT_DATA_USED, suffix='.json')
+            # self.data_in_chunk = self.get_episode_chunk(self.data_in_chunk, rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
 
         index_list = list(range(0, len(self.data)))
         index_chunks = []
@@ -77,12 +77,27 @@ class carlaImages(data.Dataset):
         # Besides, we also make these frames to come from the same episode, which means that they need to be sequential
         index = self.analyze_index(index)
 
+        if np.random.rand() > (1.0 - g_conf.SPEED_AUGMENTATION_PROB) and g_conf.SPEED_AUGMENTATION:
+            factor_speed = ((np.random.rand() * (1.0 - g_conf.SPEED_AUGMENTATION_MIN_PERC)) + g_conf.SPEED_AUGMENTATION_MIN_PERC)
+        else:
+            factor_speed = 1.0
+
         data_vec = {'current': [], 'future': []}
         for n in range(g_conf.ENCODER_INPUT_FRAMES_NUM):
             datapoint = self.data[index - (g_conf.ENCODER_INPUT_FRAMES_NUM - 1 - n) * g_conf.ENCODER_STEP_INTERVAL]
+
+            if datapoint['can_bus']['speed'] > 0.0 and factor_speed < 1.0:
+                datapoint['can_bus']['steer'] = -1000.0
+                datapoint['can_bus']['speed'] = datapoint['can_bus']['speed'] * factor_speed
+
+            if factor_speed < 1.0 and datapoint['can_bus']['acceleration'] < g_conf.SPEED_AUGMENTATION_MIN_ACC:
+                datapoint['can_bus']['acceleration'] = g_conf.SPEED_AUGMENTATION_MIN_ACC
+
             sample = {'can_bus': datapoint['can_bus']}
             for camera_type in g_conf.DATA_USED:
-                img = Image.open(datapoint[camera_type]).convert('RGB')
+                img = Image.open(datapoint[camera_type]).convert('RGB').resize(g_conf.IMAGE_SHAPE[1:])
+                if np.random.rand() > (1.0 - g_conf.ERROR_CAM_AUGMENTATION_PROB) and g_conf.ERROR_CAM_AUGMENTATION and camera_type in g_conf.ERROR_LIST_CAM_AUGMENTATION:
+                    img = Image.fromarray(np.asarray(img, dtype=np.uint8) * 0)
                 sample.update({camera_type: img})
 
             if self.split == 'train':
@@ -100,19 +115,7 @@ class carlaImages(data.Dataset):
                             g_conf.ENCODER_INPUT_FRAMES_NUM - 1 - o - g_conf.ENCODER_OUTPUT_STEP_DELAY) * g_conf.ENCODER_STEP_INTERVAL]
                 sample_future = {'can_bus_future': datapoint_future['can_bus']}
                 data_vec['future'].append(sample_future)
-                ### We comment the future image to speed up training
-                # img_future = Image.open(datapoint_future['image']).convert('RGB')
-                # sample_future = {'image_future': img_future, 'can_bus_future': datapoint_future['can_bus']}
-                # if self.split == 'train':
-                #     one_frame_data_future = self.transform_tr(sample_future)
-                #     data_vec['future'].append(one_frame_data_future)
 
-                # elif self.split == 'val':
-                #     one_frame_data_future = self.transform_val(sample_future)
-                #     data_vec['future'].append(one_frame_data_future)
-
-                # del one_frame_data_future
-                # del img_future
             del sample_future
             del datapoint_future
 
@@ -142,8 +145,10 @@ class carlaImages(data.Dataset):
             datapoint['can_bus'] = dict()
             f = open(canbus_paths[i], 'r')
             canbus_data = json.loads(f.read())
+
             for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
                 datapoint['can_bus'][value] = canbus_data[value]
+
             datapoint['can_bus'] = canbus_normalization(datapoint['can_bus'], g_conf.DATA_NORMALIZATION)
             for camera_type, img_paths in img_paths_dict.items():
                 datapoint[camera_type] = img_paths[i]
@@ -176,4 +181,3 @@ class carlaImages(data.Dataset):
 
     def transform_val(self, sample):
         return val_transform(sample, g_conf.IMAGE_SHAPE)
-

@@ -4,6 +4,7 @@
 """
 
 from .models import CILv2_multiview_attention
+from .models import CILv2_multiview_tokens_attention
 
 
 def Models(configuration):

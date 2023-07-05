@@ -3,6 +3,7 @@ import random
 import torch
 import glob
 from torch.nn import DataParallel
+from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
 
 from .utils import sort_nicely
@@ -10,6 +11,17 @@ from configs import g_conf
 
 
 class DataParallelWrapper(DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+    def __len__(self):
+        return len(self.module)
+
+
+class DataParallelDPPWrapper(DDP):
     def __getattr__(self, name):
         try:
             return super().__getattr__(name)

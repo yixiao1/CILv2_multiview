@@ -22,9 +22,9 @@ class CILv2_multiview_attention(nn.Module):
             self._current_iteration = 0
             self._done_epoch = 0
             self._criterion = Loss(g_conf.LOSS)
-            self._train_loader, self._val_loaders = make_data_loader(self.name, os.environ["DATASET_PATH"],
-                                                                     g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
-                                                                     g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE)
+            self._train_loader, self._val_loaders= \
+                make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
+                                 g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'], num_process=params['num_process'])
 
             print('\n================================= Dataset Info ========================================')
             print(f"\nUsing {len(g_conf.TRAIN_DATASET_NAME)} Training Dataset:")
