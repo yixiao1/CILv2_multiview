@@ -59,7 +59,7 @@ def execute(gpus_list, exp_batch, exp_name, rank=0):
                                  g_conf.VALID_DATASET_NAME,
                         eval_checkpoint.split('_')[-2]):
                     checkpoint = torch.load(eval_checkpoint)
-                    if isinstance(model, torch.nn.DataParallel):
+                    if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
                         model.module.load_state_dict(checkpoint['model'])
                     else:
                         model.load_state_dict(checkpoint['model'])
