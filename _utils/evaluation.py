@@ -17,7 +17,7 @@ from network.models.architectures.CIL_multiview.evaluator import CIL_multiview_E
 
 def get_model_state(model: nn.Module) -> OrderedDict:
     """ Get the state of a model """
-    if isinstance(model, torch.nn.DataParallel):
+    if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
         return model.module.state_dict()
     return model.state_dict()
 

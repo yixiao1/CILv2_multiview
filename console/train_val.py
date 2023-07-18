@@ -124,6 +124,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                                                         acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
             else:
                 action_outputs = model.forward(src_images, src_directions, src_s)
+                if isinstance(action_outputs, tuple):
+                    action_output_patches, action_output_tokens = action_outputs
                 loss_params = {
                     'action_output': action_outputs,
                     'targets_action': tgt_a,
@@ -168,7 +170,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                  # Extra logging
                 _logger.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], model._current_iteration)
                 # Cosine similarity of the learned [ACC] and [STR] tokens, if being used
-                if not g_conf.ONE_ACTION_TOKEN:
+                if not g_conf.ONE_ACTION_TOKEN and not g_conf.NO_ACT_TOKENS:
                     cos_sim = F.cosine_similarity(model._model.tfx_accel_token,  # [ACC], [1, 1, D]
                                                   model._model.tfx_steer_token,  # [STR], [1, 1, D]
                                                   dim=-1).item()  # [1, 1, D] -> [1, 1] -> float
@@ -198,7 +200,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
 
 
 # The main function maybe we could call it with a default name
-def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank:int = 0):
+def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
     """
         The main training function for decoder.
     Args:
@@ -215,18 +217,22 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank:int = 0):
 
     # Copy yaml config file and architecture file to the results folder
     results_folder = os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME)
-    shutil.copy2(os.path.join('configs', exp_batch, f'{exp_name}.yaml'), results_folder)
-    shutil.copy2(os.path.join('network', 'models', 'architectures', 'CIL_multiview', f'{g_conf.MODEL_TYPE}.py'), results_folder)
+    if rank == 0:
+        shutil.copy2(os.path.join('configs', exp_batch, f'{exp_name}.yaml'), results_folder)
+        shutil.copy2(os.path.join('network', 'models', 'architectures', 'CIL_multiview', f'{g_conf.MODEL_TYPE}.py'), results_folder)
 
-    # Flush stdout to a log.txt file
+        # Flush stdout to a log.txt file
     StdoutLogger(os.path.join(results_folder, 'log.txt'), file_mode='a', should_flush=True)
+
+    torch.distributed.barrier()
     
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
-    print(torch.cuda.device_count(), 'GPUs to be used: ', gpus_list)
+    if rank == 0:
+        print(torch.cuda.device_count(), 'GPUs to be used: ', gpus_list)
 
     # Final setup
-    set_type_of_process('train_val', root=os.environ["TRAINING_RESULTS_ROOT"])
+    set_type_of_process('train_val', root=os.environ["TRAINING_RESULTS_ROOT"], rank=rank)
     seed_everything(seed=g_conf.MAGICAL_SEED)
     torch.backends.cudnn.benchmark = True
     # torch.backends.cuda.matmul.allow_tf32 = True
@@ -247,29 +253,22 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank:int = 0):
         g_conf.MODEL_CONFIGURATION['num_process'] = 1
 
     model = Models(g_conf.MODEL_CONFIGURATION)
-    # print("===================== Model Configuration =====================")
-    # print("")
-    # print(model)
 
-    num_params = 0
-    for param in model.parameters():
-        num_params += param.numel()
-    print('model params: ', num_params)
+    if rank == 0:
+        print("===================== Model Configuration =====================")
+        num_params = 0
+        for param in model.parameters():
+            num_params += param.numel()
+        print(f'Total params in model: {num_params}')
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=g_conf.LEARNING_RATE)
-    if len(gpus_list) > 1 and g_conf.DATA_PARALLEL:
-        print("Using multiple GPUs parallel! ")
+    if (len(gpus_list) > 1 and g_conf.DATA_PARALLEL):
+        if rank == 0:
+            print("Using multiple GPUs parallel! ")
         # model = DataParallelWrapper(model)
         # gpus_list_int = [int(el) for el in gpus_list]
         model.to(device_id)
         model = DataParallelDPPWrapper(model, device_ids=[device_id], find_unused_parameters=True)
-
-    num_params = 0
-    for param in model.parameters():
-        num_params += param.numel()
-    print(f'Total params in model: {num_params}')
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=g_conf.LEARNING_RATE)
 
     # To load a specific checkpoint
     if g_conf.LOAD_CHECKPOINT:
@@ -283,13 +282,14 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank:int = 0):
         finetune_checkpoint = torch.load(g_conf.FINETUNE_MODEL)
         pretrained_dict = finetune_checkpoint['model']
 
-        if isinstance(model, torch.nn.DataParallel):
+        if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model.module.load_state_dict(pretrained_dict)
         else:
             model.load_state_dict(pretrained_dict)
 
-        print('')
-        print('    Finetunning model from -> ', g_conf.FINETUNE_MODEL)
+        if rank == 0:
+            print('')
+            print('    Finetunning model from -> ', g_conf.FINETUNE_MODEL)
     else:
         latest_checkpoint = None
 
@@ -298,7 +298,7 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank:int = 0):
         checkpoint = torch.load(latest_checkpoint)
         pretrained_dict = checkpoint['model']
 
-        if isinstance(model, torch.nn.DataParallel):
+        if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model.module.load_state_dict(pretrained_dict)
         else:
             model.load_state_dict(pretrained_dict)
@@ -311,27 +311,29 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank:int = 0):
                         state[k]=v.to(f'cuda:{model.device_ids[0]}')
                     else:
                         state[k]=v.cuda()
-        for param_group in optimizer.param_groups:
+        if rank == 0:
+            for param_group in optimizer.param_groups:
+                print('')
+                print('    Resume training from epoch -> ', checkpoint['epoch'])
+                print('    Resume the latest learning rate -> ', param_group['lr'])
+                if g_conf.LEARNING_RATE_DECAY and g_conf.LEARNING_RATE_SCHEDULE == 'step':
+                    print('      - learning rate decay at epoch', g_conf.LEARNING_RATE_DECAY_EPOCHES, ', minimum lr:', g_conf.LEARNING_RATE_MINIMUM)
+                print('')
+                print('=======================================================================================')
+                print('')
+
+        model._current_iteration = checkpoint['iteration'] + 1
+        model._done_epoch = checkpoint['epoch']
+    else:
+        if rank == 0:
             print('')
-            print('    Resume training from epoch -> ', checkpoint['epoch'])
-            print('    Resume the latest learning rate -> ', param_group['lr'])
+            print('    Training from scratch')
+            print('    Initial learning rate -> ', g_conf.LEARNING_RATE)
             if g_conf.LEARNING_RATE_DECAY and g_conf.LEARNING_RATE_SCHEDULE == 'step':
                 print('      - learning rate decay at epoch', g_conf.LEARNING_RATE_DECAY_EPOCHES, ', minimum lr:', g_conf.LEARNING_RATE_MINIMUM)
             print('')
             print('=======================================================================================')
             print('')
-
-        model._current_iteration = checkpoint['iteration'] + 1
-        model._done_epoch = checkpoint['epoch']
-    else:
-        print('')
-        print('    Training from scratch')
-        print('    Initial learning rate -> ', g_conf.LEARNING_RATE)
-        if g_conf.LEARNING_RATE_DECAY and g_conf.LEARNING_RATE_SCHEDULE == 'step':
-            print('      - learning rate decay at epoch', g_conf.LEARNING_RATE_DECAY_EPOCHES, ', minimum lr:', g_conf.LEARNING_RATE_MINIMUM)
-        print('')
-        print('=======================================================================================')
-        print('')
 
     if len(gpus_list) > 1:
         # model.to(f'cuda:{model.device_ids[0]}')

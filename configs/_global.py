@@ -4,6 +4,9 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from ast import literal_eval
+
+import torch.distributed
+
 from configs.attribute_dict import AttributeDict
 import copy
 import numpy as np
@@ -79,6 +82,7 @@ _g_conf.LOAD_CHECKPOINT = ''
 _g_conf.LEARNABLE_POS_EMBED = False
 _g_conf.ONE_ACTION_TOKEN = False
 _g_conf.PRETRAINED_ACC_STR_TOKENS = False # If two action tokens are used, we can use start them from the pre-trained CLS token
+_g_conf.NO_ACT_TOKENS = False  # No tokens will be used for the action prediction
 _g_conf.PRETRAINED_ACT_TOKENS = False  # If only one action token is used, we can start it from the pre-trained CLS token
 _g_conf.CMD_SPD_TOKENS = False  # Instead of adding the speed and action embeddings to the sequence, we can concatenate them to the sequence as tokens
 _g_conf.FREEZE_CLS_TOKEN = False  # freeze the classification token
@@ -164,13 +168,13 @@ def set_type_of_process(process_type, root, rank=0):
 
     if process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only' or process_type == 'drive':
         _g_conf.PROCESS_NAME = process_type
-        if not os.path.exists(os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME,
-                                           _g_conf.EXPERIMENT_NAME,
+        if not os.path.exists(os.path.join(root, '_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME,
                                            'checkpoints')) and rank == 0:
-            os.mkdir(os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME,
+            os.mkdir(os.path.join(root, '_results', _g_conf.EXPERIMENT_BATCH_NAME,
                                   _g_conf.EXPERIMENT_NAME,
                                   'checkpoints'))
-
+        if process_type != 'drive':
+            torch.distributed.barrier()
         _g_conf.EXP_SAVE_PATH = os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME)
 
     else:

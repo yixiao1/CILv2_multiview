@@ -99,13 +99,15 @@ def print_train_info(log_frequency, final_epoch, batch_size, model,
         minutes = int(rem_time / 60) - hours * 60
         seconds = int(rem_time) - hours * 60 * 60 - minutes * 60
 
+        msg = f"Training epoch {epoch:{digits_total_epochs}.2f}, iteration {model._current_iteration:{digits_total_iters}d}, Loss {loss_data:.4f},"
         if brake_loss_data is not None:
-            print(f"Training epoch {epoch:{digits_total_epochs}.2f}, iteration {model._current_iteration:{digits_total_iters}d}, Loss {loss_data:.4f}, "
-                  f"Steer Loss {steer_loss_data:.4f}, Throttle Loss {acc_loss_data:.4f}, Brake Loss {brake_loss_data:.4f}, {log_frequency / acc_time:.2f} "
-                  f"steps/s, ETA: {hours:0>2d}H:{minutes:0>2d}M:{seconds:0>2d}S")
+            msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Throttle Loss {acc_loss_data:.4f},"
         else:
-            print(f"Training epoch {epoch:{digits_total_epochs}.2f}, iteration {model._current_iteration:{digits_total_iters}d}, Loss {loss_data:.4f}, "
-                  f"Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f}, {log_frequency / acc_time:.2f} steps/s, ETA: {hours:0>2d}H:{minutes:0>2d}M:{seconds:0>2d}S")
+            msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f},"
+        msg = f"{msg} {log_frequency / acc_time:.2f} steps/s, ETA: {hours:0>2d}H:{minutes:0>2d}M:{seconds:0>2d}S"
+        print(msg)
+
+        acc_time = 0
 
     return acc_time
 
