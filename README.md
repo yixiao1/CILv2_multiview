@@ -31,7 +31,7 @@ In this repository, you could find materials in order to:
 
 * Python version: 3.8
 * Cuda version: 11.6
-* Please find more information about the packages in our requirements.txt
+* Please find more information about the packages in our [requirements.txt](https://github.com/yixiao1/CILv2_multiview/blob/main/requirements.txt)
 
 1. Set up the conda environment for the experiments:
 
