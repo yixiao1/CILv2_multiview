@@ -44,10 +44,10 @@ In this repository, you could find materials in order to:
         cd $ROOTDIR
         export CARLAPATH=$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/:$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg
 
-   For using CARLA docker, you can either directly pull or build up by yourselves:
+   For using CARLA docker, you can either pull or build up the container:
 
-        pull down: docker pull carlasim/carla:0.9.13
-        build up the CARLA docker: docker image build -f $ROOTDIR/CARLA_0.9.13/Dockerfile -t CARLA0913 $ROOTDIR/CARLA_0.9.13/
+        To pull, run: docker pull carlasim/carla:0.9.13
+        To build up, run: docker image build -f $ROOTDIR/CARLA_0.9.13/Dockerfile -t CARLA0913 $ROOTDIR/CARLA_0.9.13/
 
 Download the repository in your root directory:
  * cd $ROOTDIR
