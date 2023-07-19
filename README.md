@@ -72,7 +72,7 @@ In this repository, you could find materials in order to:
 -------------------------------------------------------------
 ### Dataset Collection with Roach RL expert
 
-To obtain datasets for training and offline evaluation, ...
+Our code used for dataset collection is built based on the framework from [this repository](https://github.com/zhejz/carla-roach):
 
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new trained CIL++ models
@@ -100,6 +100,18 @@ and `--exp` is the [configuration yaml file](https://github.com/yixiao1/CILv2_mu
 
 * run ./scripts/run_evaluation/CILv2/leaderboard_Town05_test.sh
 
+
+-------------------------------------------------------------
+### License
+This software is released under a XXX license, which allows personal and research use only.
+For a commercial license, please contact the authors.
+
+Portions of source code taken from external sources are annotated with links to original files and their corresponding licenses.
+
 -------------------------------------------------------------
 ### Acknowledgements
 * TBA
+
+
+
+
