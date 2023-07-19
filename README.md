@@ -58,8 +58,8 @@ In this repository, you could find materials in order to:
 4. Define environment variables
 
         export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview
-        export TRAINING_RESULTS_ROOT=<Path to the directory where the results are saved>
-        export DATASET_PATH=<Path to the directory where the datasets download>
+        export TRAINING_RESULTS_ROOT=<Path to the directory where the results to be saved>
+        export DATASET_PATH=<Path to the directory where the datasets are stored>
 
 5. Install the required packages:
 
