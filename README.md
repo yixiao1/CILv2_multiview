@@ -33,7 +33,7 @@ In this repository, you could find materials in order to:
 * Cuda version: 11.6
 * Please find more information about the packages in our requirements.txt
 
-Set up the conda environment for the experiments:
+1. Set up the conda environment for the experiments:
 
         conda create --name CILv2Env python=3.8
         conda activate CILv2Env
