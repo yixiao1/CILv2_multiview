@@ -77,7 +77,7 @@ Our code used for dataset collection is built based on the framework from [this 
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new trained CIL++ models
 
- * You need to define a configuration file for training. Please refer to [this file](https://https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
+ * You need to define a configuration file for training. Please refer to [this file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
 
  * Run the main.py file:
 
