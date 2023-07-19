@@ -3,7 +3,7 @@
 #### Training Related Parameters ####
 MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
-BATCH_SIZE: 120
+BATCH_SIZE: 60
 NUM_WORKER: 10
 NUMBER_EPOCH: 30
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
