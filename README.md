@@ -49,18 +49,21 @@ In this repository, you could find materials in order to:
         To pull, run: docker pull carlasim/carla:0.9.13
         To build up, run: docker image build -f $ROOTDIR/CARLA_0.9.13/Dockerfile -t CARLA0913 $ROOTDIR/CARLA_0.9.13/
 
-Download the repository in your root directory:
- * cd $ROOTDIR
- * git clone https://github.com/yixiao1/CILv2_multiview.git
- * cd $ROOTDIR/CILv2_multiview
+3. Download the CIL++ repository in your root directory:
 
-Define environment variables
- * export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview
- * export TRAINING_RESULTS_ROOT=<Path to the directory where the results are saved>
- * export DATASET_PATH=<Path to the directory where the datasets download>
+        cd $ROOTDIR
+        git clone https://github.com/yixiao1/CILv2_multiview.git
+        cd $ROOTDIR/CILv2_multiview
 
-Install the required packages:
- * conda install --file requirements.txt
+4. Define environment variables
+
+        export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview
+        export TRAINING_RESULTS_ROOT=<Path to the directory where the results are saved>
+        export DATASET_PATH=<Path to the directory where the datasets download>
+
+5. Install the required packages:
+
+        conda install --file requirements.txt
 
 -------------------------------------------------------------
 ### Benchmark our trained CIL++
