@@ -35,8 +35,8 @@ In this repository, you could find materials in order to:
 
 Set up the conda environment for the experiments:
 
- * conda create --name CILv2Env python=3.8
- * conda activate CILv2Env
+        conda create --name CILv2Env python=3.8
+        conda activate CILv2Env
 
 Download CARLA 0.9.13 and build up CARLA docker:
  * export ROOTDIR=<Path to your root directory>
