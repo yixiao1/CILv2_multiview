@@ -47,6 +47,7 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
         export CARLAPATH=$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/:$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg
 
 * For using CARLA docker, you can either pull or build up the container:
+
     To pull, run:
 
         docker pull carlasim/carla:0.9.13
