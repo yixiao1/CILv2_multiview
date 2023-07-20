@@ -55,15 +55,16 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
 
         cd $ROOTDIR
         git clone https://github.com/yixiao1/CILv2_multiview.git
-        cd $ROOTDIR/CILv2_multiview
 
 * Define environment variables:
 
-        export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview:$ROOTDIR/CILv2_multiview/run_CARLA_driving:$ROOTDIR/CILv2_multiview/scenario_runner
+        export TRAINING_ROOT=$ROOTDIR/CILv2_multiview
+        export DRIVING_TEST_ROOT=$TRAINING_ROOT/run_CARLA_driving/
+        export SCENARIO_RUNNER_ROOT=$TRAINING_ROOT/scenario_runner/
+        export PYTHONPATH=$CARLAPATH:$TRAINING_ROOT:$DRIVING_TEST_ROOT:$SCENARIO_RUNNER_ROOT
         export TRAINING_RESULTS_ROOT=<Path to the directory where the results to be saved>
         export DATASET_PATH=<Path to the directory where the datasets are stored>
         export SENSOR_SAVE_PATH=<Path to the directory where the driving test frames are stored>
-        export DRIVING_TEST_ROOT=$ROOTDIR/CILv2_multiview/run_CARLA_driving/
 
 * Install the required packages:
 
@@ -72,7 +73,8 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
 -------------------------------------------------------------
 ### Benchmark our trained CIL++
 
-* Download our trained CIL++ models [_results.tar.gz](https://drive.google.com/file/d/1GLo5mVrmyNsb5pLqksYnjR8fN1-ZptHE/view?usp=sharing) to your `TRAINING_RESULTS_ROOT/_results`:
+* Download our trained CIL++ models [_results.tar.gz](https://drive.google.com/file/d/1GLo5mVrmyNsb5pLqksYnjR8fN1-ZptHE/view?usp=sharing)
+to your `TRAINING_RESULTS_ROOT/_results`. The saving pattern should be $TRAINING_RESULTS_ROOT/_results/Ours/TownXX/...:
 
         mkdir -p $TRAINING_RESULTS_ROOT/_results
         tar -zxvf _results.tar.gz -C $TRAINING_RESULTS_ROOT/_results/
