@@ -29,9 +29,9 @@ In this repository, you could find materials in order to:
 -------------------------------------------------------------
 ### Environment Setup
 
-    Python version: 3.8
-    Cuda version: 11.6
-    Please find more information about the packages in our [requirements.txt](https://github.com/yixiao1/CILv2_multiview/blob/main/requirements.txt)
+Python version: 3.8
+Cuda version: 11.6
+Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview/blob/main/requirements.txt)
 
 * Set up the conda environment for the experiments:
 
@@ -55,7 +55,7 @@ In this repository, you could find materials in order to:
         git clone https://github.com/yixiao1/CILv2_multiview.git
         cd $ROOTDIR/CILv2_multiview
 
-* Define environment variables
+* Define environment variables:
 
         export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview:$ROOTDIR/CILv2_multiview/run_CARLA_driving:$ROOTDIR/CILv2_multiview/scenario_runner
         export TRAINING_RESULTS_ROOT=<Path to the directory where the results to be saved>
