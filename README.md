@@ -80,7 +80,7 @@ In this repository, you could find materials in order to:
 2. Benchmark our trained CIL++:
 
         cd $DRIVING_TEST_ROOT
-        ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02_cilv2.sh
+        run ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02.sh
 
 -------------------------------------------------------------
 ### Dataset Collection with Roach RL expert
@@ -103,9 +103,18 @@ and `--exp` is the [configuration yaml file](https://github.com/yixiao1/CILv2_mu
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator
 
-        cd $DRIVING_TEST_ROOT
-        run ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02_lbc.sh
+1. Please make sure that your model is saved in the `TRAINING_RESULTS_ROOT` directory with the same saving pattern as the downloaded CIL++ model
+($TRAINING_RESULTS_ROOT/_results/../checkpoints/..pth):
 
+2. Define a [config file]() for the benchmarking
+        {
+            "agent_name": "CILv2",
+            "checkpoint": 45,
+            "yaml": "CILv2.yaml"
+        }
+where `checkpoint` indicates the checkpoint to be tested, `yaml` is the training configuration file which was automatically generated during training
+
+3.
 
 -------------------------------------------------------------
 ### License
