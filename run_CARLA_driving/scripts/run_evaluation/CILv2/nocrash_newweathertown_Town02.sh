@@ -2,7 +2,7 @@
 
 # * To run nocrash benchmark for trained agent
 
-nocrash_newweathertown_empty () {
+nocrash_newweathertown_empty_cilv2 () {
     python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_empty_Town02_lbc.json  \
@@ -12,7 +12,7 @@ nocrash_newweathertown_empty () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town1_2/config198540.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town1_2/config45.json \
     --docker=carlasim/carla:0.9.13 \
     --gpus=0 \
     --fps=20 \
@@ -22,7 +22,7 @@ nocrash_newweathertown_empty () {
 }
 
 
-nocrash_newweathertown_regular () {
+nocrash_newweathertown_regular_cilv2 () {
     python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_regular_Town02_lbc.json  \
@@ -32,7 +32,7 @@ nocrash_newweathertown_regular () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town1_2/config198540.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town1_2/config45.json \
     --docker=carlasim/carla:0.9.13 \
     --gpus=0 \
     --fps=20 \
@@ -41,7 +41,7 @@ nocrash_newweathertown_regular () {
     --save-driving-vision
 }
 
-nocrash_newweathertown_busy () {
+nocrash_newweathertown_busy_cilv2 () {
     python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_busy_Town02_lbc.json  \
@@ -51,7 +51,7 @@ nocrash_newweathertown_busy () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town1_2/config198540.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town1_2/config45.json \
     --docker=carlasim/carla:0.9.13 \
     --gpus=0 \
     --fps=20 \
@@ -61,9 +61,9 @@ nocrash_newweathertown_busy () {
 }
 
 function_array=(
-"nocrash_newweathertown_empty"
-"nocrash_newweathertown_regular"
-"nocrash_newweathertown_busy" )
+"nocrash_newweathertown_empty_cilv2"
+"nocrash_newweathertown_regular_cilv2"
+"nocrash_newweathertown_busy_cilv2")
 
 
 # resume benchmark in case carla is crashed, until the benchmark is finished
