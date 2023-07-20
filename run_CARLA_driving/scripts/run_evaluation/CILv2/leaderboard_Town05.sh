@@ -2,7 +2,7 @@
 
 # To run Town05 test for trained agent
 driving_test_Town05 () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
+    python ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/leaderboard/leaderboard_Town05.json  \
     --routes=${DRIVING_TEST_ROOT}/data/leaderboard \

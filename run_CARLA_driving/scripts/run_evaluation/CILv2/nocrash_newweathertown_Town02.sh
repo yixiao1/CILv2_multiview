@@ -3,7 +3,7 @@
 # * To run nocrash benchmark for trained agent
 
 nocrash_newweathertown_empty_cilv2 () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
+    python ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_empty_Town02_lbc.json  \
     --routes=${DRIVING_TEST_ROOT}/data/nocrash \
@@ -23,7 +23,7 @@ nocrash_newweathertown_empty_cilv2 () {
 
 
 nocrash_newweathertown_regular_cilv2 () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
+    python ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_regular_Town02_lbc.json  \
     --routes=${DRIVING_TEST_ROOT}/data/nocrash \
@@ -42,7 +42,7 @@ nocrash_newweathertown_regular_cilv2 () {
 }
 
 nocrash_newweathertown_busy_cilv2 () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
+    python ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_busy_Town02_lbc.json  \
     --routes=${DRIVING_TEST_ROOT}/data/nocrash \
