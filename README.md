@@ -141,9 +141,8 @@ For training models, you can either
 -------------------------------------------------------------
 ### License
 This software is released under a XXX license, which allows personal and research use only.
-For a commercial license, please contact the authors.
-
-Portions of source code taken from external sources are annotated with links to original files and their corresponding licenses.
+For a commercial license, please contact the authors. Portions of source code taken from external sources
+are annotated with links to original files and their corresponding licenses.
 
 -------------------------------------------------------------
 ### Acknowledgements
