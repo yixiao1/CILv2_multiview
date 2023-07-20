@@ -72,10 +72,10 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
 -------------------------------------------------------------
 ### Benchmark our trained CIL++
 
-* Download our trained [CIL++ model]() to your `TRAINING_RESULTS_ROOT` directory:
+* Download our trained CIL++ models [_results.tar.gz](https://drive.google.com/file/d/1GLo5mVrmyNsb5pLqksYnjR8fN1-ZptHE/view?usp=sharing) to your `TRAINING_RESULTS_ROOT/_results`:
 
-        cd $TRAINING_RESULTS_ROOT
-        wget "TBA"
+        mkdir -p $TRAINING_RESULTS_ROOT/_results
+        tar -zxvf _results.tar.gz -C $TRAINING_RESULTS_ROOT/_results/
 
 * Benchmark our trained CIL++:
 
