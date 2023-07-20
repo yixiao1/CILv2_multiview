@@ -57,9 +57,13 @@ In this repository, you could find materials in order to:
 
 4. Define environment variables
 
-        export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview
+        export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview:$ROOTDIR/CILv2_multiview/run_CARLA_driving:$ROOTDIR/CILv2_multiview/scenario_runner
         export TRAINING_RESULTS_ROOT=<Path to the directory where the results to be saved>
         export DATASET_PATH=<Path to the directory where the datasets are stored>
+        export SENSOR_SAVE_PATH=<Path to the directory where the driving test frames are stored>
+        export DRIVING_TEST_ROOT=$ROOTDIR/CILv2_multiview/run_CARLA_driving/
+
+* cd $DRIVING_TEST_ROOT
 
 5. Install the required packages:
 
@@ -67,7 +71,16 @@ In this repository, you could find materials in order to:
 
 -------------------------------------------------------------
 ### Benchmark our trained CIL++
-* TBA
+
+1. Download our trained [CIL++ model]() to your `TRAINING_RESULTS_ROOT` directory:
+
+        cd $TRAINING_RESULTS_ROOT
+        wget "TBA"
+
+2. Benchmark our trained CIL++:
+
+        cd $DRIVING_TEST_ROOT
+        ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02_cilv2.sh
 
 -------------------------------------------------------------
 ### Dataset Collection with Roach RL expert
@@ -90,15 +103,8 @@ and `--exp` is the [configuration yaml file](https://github.com/yixiao1/CILv2_mu
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator
 
-* export PYTHONPATH=/home/yxiao/CARLA_0.9.13/PythonAPI/carla/:/home/yxiao/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/home/yxiao/CILv2_multiview/run_CARLA_driving:/home/yxiao/CILv2_multiview/scenario_runner:/home/yxiao/CILv2_multiview
-
-* export SENSOR_SAVE_PATH=/datatmp/Datasets/yixiao/CARLA/driving_record/
-
-* export DRIVING_TEST_ROOT=/home/yxiao/CILv2_multiview/run_CARLA_driving/
-
-* cd $DRIVING_TEST_ROOT
-
-* run ./scripts/run_evaluation/CILv2/leaderboard_Town05_test.sh
+        cd $DRIVING_TEST_ROOT
+        run ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02_lbc.sh
 
 
 -------------------------------------------------------------
