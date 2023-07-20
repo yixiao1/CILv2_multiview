@@ -11,7 +11,7 @@ driving_test_Town05 () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/leaderboard  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town12346_5/config256560.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/Ours/Town12346_5/config40.json \
     --docker=carlasim/carla:0.9.13 \
     --gpus=0 \
     --fps=20 \
