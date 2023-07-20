@@ -106,27 +106,26 @@ Your results will be saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp
 
         cd $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
 
-where `folder_name` the the experiment folder name, and `exp_name` is the configuration file name.
-Your models are all saved in ./checkpoints/
+    where `folder_name` the the experiment folder name, and `exp_name` is the configuration file name.
+    Your models are all saved in ./checkpoints/
 
 2. Define a config file for the benchmarking.
 
         cd $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>
         > config45.json
 
-In the json file, you need to define the model/checkpoint to be tested:
+    In the json file, you need to define the model/checkpoint to be tested:
 
-        {
-            "agent_name": "CILv2",
-            "checkpoint": 45,
-            "yaml": "CILv2.yaml"
-        }
-
-where `checkpoint` indicates the checkpoint to be tested, `yaml` is the training configuration file which was automatically generated during training
+            {
+                "agent_name": "CILv2",
+                "checkpoint": 45,
+                "yaml": "CILv2.yaml"
+            }
+    where `checkpoint` indicates the checkpoint to be tested, `yaml` is the training configuration file which was automatically generated during training
 
 3. Benchmark your model:
 
-Notice that to benchmark your own trained models, you need to modify the [script]() by changing the `--agent-config`
+    Notice that to benchmark your own trained models, you need to modify the [script]() by changing the `--agent-config`
 
         cd $DRIVING_TEST_ROOT
         run ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02.sh
