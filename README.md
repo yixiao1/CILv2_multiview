@@ -102,7 +102,7 @@ Our code used for dataset collection is built based on the framework from [this 
     Your results will be saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
 
 -------------------------------------------------------------
-### Test your models on CARLA simulator
+### Test your own trained models on CARLA simulator
 
 * Please make sure that your models are saved in the proper pattern as the downloaded CIL++ model:
 
@@ -111,7 +111,7 @@ Our code used for dataset collection is built based on the framework from [this 
     where `folder_name` the the experiment folder name, and `exp_name` is the configuration file name.
     Your models are all saved in ./checkpoints/
 
-* Define a config file for the benchmarking.
+* Define a config file for the benchmarking:
 
         cd $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>
         > config45.json
