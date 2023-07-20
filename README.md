@@ -33,29 +33,29 @@ In this repository, you could find materials in order to:
     Cuda version: 11.6
     Please find more information about the packages in our [requirements.txt](https://github.com/yixiao1/CILv2_multiview/blob/main/requirements.txt)
 
-    * Set up the conda environment for the experiments:
+* Set up the conda environment for the experiments:
 
         conda create --name CILv2Env python=3.8
         conda activate CILv2Env
 
-    * Download [CARLA 0.9.13](https://github.com/carla-simulator/carla/releases/tag/0.9.13/) to your root directory and build up CARLA docker:
+* Download [CARLA 0.9.13](https://github.com/carla-simulator/carla/releases/tag/0.9.13/) to your root directory and build up CARLA docker:
 
         export ROOTDIR=<Path to your root directory>
         cd $ROOTDIR
         export CARLAPATH=$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/:$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg
 
-    * For using CARLA docker, you can either pull or build up the container:
+* For using CARLA docker, you can either pull or build up the container:
 
         To pull, run: docker pull carlasim/carla:0.9.13
         To build up, run: docker image build -f $ROOTDIR/CARLA_0.9.13/Dockerfile -t CARLA0913 $ROOTDIR/CARLA_0.9.13/
 
-    * Download the CIL++ repository in your root directory:
+* Download the CIL++ repository in your root directory:
 
         cd $ROOTDIR
         git clone https://github.com/yixiao1/CILv2_multiview.git
         cd $ROOTDIR/CILv2_multiview
 
-    * Define environment variables
+* Define environment variables
 
         export PYTHONPATH=$CARLAPATH:$ROOTDIR/CILv2_multiview:$ROOTDIR/CILv2_multiview/run_CARLA_driving:$ROOTDIR/CILv2_multiview/scenario_runner
         export TRAINING_RESULTS_ROOT=<Path to the directory where the results to be saved>
@@ -63,7 +63,7 @@ In this repository, you could find materials in order to:
         export SENSOR_SAVE_PATH=<Path to the directory where the driving test frames are stored>
         export DRIVING_TEST_ROOT=$ROOTDIR/CILv2_multiview/run_CARLA_driving/
 
-    * Install the required packages:
+* Install the required packages:
 
         conda install --file requirements.txt
 
