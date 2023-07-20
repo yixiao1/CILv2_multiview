@@ -125,7 +125,8 @@ Our code used for dataset collection is built based on the framework from [this 
                 "checkpoint": 45,
                 "yaml": "CILv2.yaml"
             }
-    where `checkpoint` indicates the checkpoint to be tested, `yaml` is the training configuration file which was automatically generated during training
+    where `checkpoint` indicates the checkpoint to be tested, `yaml` is the training configuration file which was
+    automatically generated during training. Please refer to the json file in the downloaded [_results.tar.gz](https://drive.google.com/file/d/1GLo5mVrmyNsb5pLqksYnjR8fN1-ZptHE/view?usp=sharing)
 
 * Benchmark your model:
 
