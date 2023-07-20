@@ -48,9 +48,11 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
 
 * For using CARLA docker, you can either pull or build up the container:
     To pull, run:
+
         docker pull carlasim/carla:0.9.13
 
     To build up, run:
+
         docker image build -f $ROOTDIR/CARLA_0.9.13/Dockerfile -t CARLA0913 $ROOTDIR/CARLA_0.9.13/
 
 * Download the CIL++ repository in your root directory:
