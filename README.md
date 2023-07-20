@@ -127,7 +127,7 @@ Our code used for dataset collection is built based on the framework from [this 
 
 * Benchmark your model:
 
-    Notice that to benchmark your own trained models, you need to modify the [script]() by changing the `--agent-config`
+    Notice that to benchmark your own trained models, you need to modify the [script](https://github.com/yixiao1/CILv2_multiview/blob/main/run_CARLA_driving/scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02_lbc.sh) by changing the `--agent-config`
 
         cd $DRIVING_TEST_ROOT
         run ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02.sh
