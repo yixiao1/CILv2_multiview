@@ -23,8 +23,8 @@ In this repository, you could find materials in order to:
 
  * Benchmark the trained CIL++ model proposed in our paper
  * Collect datasets using Roach RL expert driver from [this paper](https://arxiv.org/abs/2108.08265)
- * Train/evaluate (offline) on your own trained CIL++ models
- * Test your own trained CIL++ models on CARLA 0.9.13
+ * Train/evaluate (offline) your own trained CIL++ models
+ * Test your models on CARLA 0.9.13
 
 -------------------------------------------------------------
 ### Environment Setup
@@ -100,14 +100,14 @@ and `--exp` is the [configuration yaml file name](https://github.com/yixiao1/CIL
 Your results will be saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
 
 -------------------------------------------------------------
-### Online driving test on CIL++ models in CARLA simulator
+### Test your models on CARLA simulator
 
 1. Please make sure that your models are saved in the proper pattern as the downloaded CIL++ model:
 
         cd $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
 
 where `folder_name` the the experiment folder name, and `exp_name` is the configuration file name.
-Your models are all saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/checkpoints
+Your models are all saved in ./checkpoints/
 
 2. Define a config file for the benchmarking.
 
