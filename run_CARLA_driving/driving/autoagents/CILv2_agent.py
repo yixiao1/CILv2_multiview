@@ -45,7 +45,7 @@ def checkpoint_parse_configuration_file(filename):
         configuration_dict = json.loads(f.read())
 
     return configuration_dict['yaml'], configuration_dict['checkpoint'], \
-           configuration_dict['agent_name'], configuration_dict['lens_circle_set']
+           configuration_dict['agent_name']
 
 def load_entry_point(name):
     mod_name, attr_name = name.split(":")
@@ -99,8 +99,7 @@ class CILv2_agent(object):
         """
 
         exp_dir = os.path.join('/', os.path.join(*path_to_conf_file.split('/')[:-1]))
-        yaml_conf, checkpoint_number, _, self.lens_circle_setting = checkpoint_parse_configuration_file(path_to_conf_file)
-        self.lens_circle_setting = (self.lens_circle_setting == "True")
+        yaml_conf, checkpoint_number, _ = checkpoint_parse_configuration_file(path_to_conf_file)
         g_conf.immutable(False)
         merge_with_yaml(os.path.join(exp_dir, yaml_conf), process_type='drive')
         set_type_of_process('drive', root=os.environ["TRAINING_RESULTS_ROOT"])
@@ -186,13 +185,13 @@ class CILv2_agent(object):
                  'width': 1088, 'height': 680, 'fov': 120, 'id': 'rgb_backontop', 'lens_circle_setting': False},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': False},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': False},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': False},
 
                 {'type': 'sensor.other.gnss', 'id': 'GPS'},
 
@@ -206,13 +205,13 @@ class CILv2_agent(object):
         else:
             sensors = [
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': False},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': False},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': False},
 
                 {'type': 'sensor.other.gnss', 'id': 'GPS'},
 

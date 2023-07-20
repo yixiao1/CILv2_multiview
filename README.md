@@ -63,8 +63,6 @@ In this repository, you could find materials in order to:
         export SENSOR_SAVE_PATH=<Path to the directory where the driving test frames are stored>
         export DRIVING_TEST_ROOT=$ROOTDIR/CILv2_multiview/run_CARLA_driving/
 
-* cd $DRIVING_TEST_ROOT
-
 5. Install the required packages:
 
         conda install --file requirements.txt
@@ -94,27 +92,44 @@ Our code used for dataset collection is built based on the framework from [this 
 
  * Run the main.py file:
 
-        python3 main.py --process-type train_val --gpus 0 --folder CILv2 --exp CILv2_3cam_smalltest
+        python main.py --process-type train_val --gpus 0 --folder CILv2 --exp CILv2_3cam_smalltest
 
 where `--process-type` defines the process type (could be either train_val or val_only), `--gpus` defines the gpus to be used,
-`--folder` is the experiment folder defined inside [configs folder](https://github.com/yixiao1/CILv2_multiview/tree/main/configs/CILv2),
-and `--exp` is the [configuration yaml file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) defined for training.
+`--folder` is the [configuration folder name](https://github.com/yixiao1/CILv2_multiview/tree/main/configs/CILv2),
+and `--exp` is the [configuration yaml file name](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml).
+Your results will be saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
 
 -------------------------------------------------------------
 ### Online driving test on CIL++ models in CARLA simulator
 
-1. Please make sure that your model is saved in the `TRAINING_RESULTS_ROOT` directory with the same saving pattern as the downloaded CIL++ model
-($TRAINING_RESULTS_ROOT/_results/../checkpoints/..pth):
+1. Please make sure that your models are saved in the proper pattern as the downloaded CIL++ model:
 
-2. Define a [config file]() for the benchmarking
+        cd $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
+
+where `folder_name` the the experiment folder name, and `exp_name` is the configuration file name.
+Your models are all saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/checkpoints
+
+2. Define a config file for the benchmarking.
+
+        cd $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>
+        > config45.json
+
+In the json file, you need to define the model/checkpoint to be tested:
+
         {
             "agent_name": "CILv2",
             "checkpoint": 45,
             "yaml": "CILv2.yaml"
         }
+
 where `checkpoint` indicates the checkpoint to be tested, `yaml` is the training configuration file which was automatically generated during training
 
-3.
+3. Benchmark your model:
+
+Notice that to benchmark your own trained models, you need to modify the [script]() by changing the `--agent-config`
+
+        cd $DRIVING_TEST_ROOT
+        run ./scripts/run_evaluation/CILv2/nocrash_newweathertown_Town02.sh
 
 -------------------------------------------------------------
 ### License
