@@ -147,7 +147,14 @@ Portions of source code taken from external sources are annotated with links to 
 
 -------------------------------------------------------------
 ### Acknowledgements
-* TBA
+This research is supported as a part of the project TED2021-132802B-I00 funded by MCIN/AEI/10.13039/501100011033
+and the European Union NextGenerationEU/PRTR.
+Yi Xiao acknowledges the support to her PhD studies provided by the Chinese Scholarship Council (CSC), Grant No.201808390010.
+Diego Porres acknowledges the support to his PhD studies provided by Grant PRE2018-083417 funded by MCIN/AEI /10.13039/501100011033
+and FSE invierte en tu futuro.
+Antonio M. López acknowledges the financial support to his general research activities given by ICREA under the ICREA Academia Program.
+Antonio thanks the synergies, in terms of research ideas, arising from the project PID2020-115734RB-C21 funded by MCIN/AEI/10.13039/501100011033.
+The authors acknowledge the support of the Generalitat de Catalunya CERCA Program and its ACCIO agency to CVC’s general activities.
 
 
 
