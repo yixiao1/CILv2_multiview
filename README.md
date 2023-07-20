@@ -87,7 +87,10 @@ to your `TRAINING_RESULTS_ROOT/_results`. The saving pattern should be $TRAINING
 -------------------------------------------------------------
 ### Dataset Collection with Roach RL expert
 
-Our code used for dataset collection is built based on the framework from [this repository](https://github.com/zhejz/carla-roach):
+For training models, you can either
+
+* Download our two datasets ([single-lane towns](), [multi-lane towns]())
+* Collect new datasets. The code we used for data collection was built on the framework from [this repository](https://github.com/zhejz/carla-roach):
 
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new trained CIL++ models
