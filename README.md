@@ -96,8 +96,8 @@ For training models, you can either
 
 * Download our two datasets (will be released soon):
 
-        [single-lane towns]()
-        [multi-lane towns]()
+    [single-lane towns]()
+    [multi-lane towns]()
 
 * Collect new datasets. The code we used for data collection was built on the framework from [this repository](https://github.com/zhejz/carla-roach)
 
