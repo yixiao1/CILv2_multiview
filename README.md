@@ -14,7 +14,7 @@ Please cite our paper if you find this work useful:
          }
 
 ### Video
-Please check our online [video]()
+Please watch our online [video](https://youtu.be/JIhH1lJMziw?si=pmgO74JOlA7um9mp) for more interesting scenario demonstrations
 
 -------------------------------------------------------------
 ### Summary
@@ -94,8 +94,12 @@ to your `TRAINING_RESULTS_ROOT/_results`. The saving pattern should be $TRAINING
 
 For training models, you can either
 
-* Download our two datasets ([single-lane towns](), [multi-lane towns]())
-* Collect new datasets. The code we used for data collection was built on the framework from [this repository](https://github.com/zhejz/carla-roach):
+* Download our two datasets (will be released soon):
+
+        [single-lane towns]()
+        [multi-lane towns]()
+
+* Collect new datasets. The code we used for data collection was built on the framework from [this repository](https://github.com/zhejz/carla-roach)
 
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new trained CIL++ models
@@ -145,7 +149,7 @@ For training models, you can either
 
 -------------------------------------------------------------
 ### License
-This software is released under a XXX license, which allows personal and research use only.
+The code is released under a CC-BY-NC 4.0 license, which only allows personal and research use.
 For a commercial license, please contact the authors. Portions of source code taken from external sources
 are annotated with links to original files and their corresponding licenses.
 

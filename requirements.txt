@@ -83,7 +83,7 @@ networkx==2.5.1
 numpy==1.24.3
 nvidia-ml-py==12.535.77
 oauthlib==3.2.2
-omegaconf==2.2.2
+omegaconf==2.2.0
 opencv-python==4.2.0.34
 opt-einsum==3.3.0
 packaging==21.3
@@ -164,3 +164,6 @@ yacs==0.1.8
 yarl==1.7.2
 zipp==3.6.0
 zope.interface==4.7.1
+hydra-core==1.0.3
+wandb
+stable_baselines3
