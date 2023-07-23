@@ -14,7 +14,7 @@ Please cite our paper if you find this work useful:
          }
 
 ### Video
-Please watch our online [video](https://youtu.be/JIhH1lJMziw?si=pmgO74JOlA7um9mp) for more interesting scenario demonstrations
+Please watch our online [video](https://youtu.be/fY56Gliz_Rw?si=VfXa-_b6TgdVgLZD) for more interesting scenario demonstrations
 
 -------------------------------------------------------------
 ### Summary
