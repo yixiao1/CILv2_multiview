@@ -8,7 +8,7 @@ This is the official code release of the paper:
 
 Yi Xiao, Felipe Codevilla, Diego Porres and Antonio M. Lopez. [Scaling Vision-based End-to-End Driving with Multi-View Attention Learning](https://arxiv.org/abs/2302.03198).
 
-Please cite our paper if you find this work useful (will be update soon):
+Please cite our paper if you find this work useful (will be soon updated with the IROS citation):
 
          @misc{xiao2023scaling,
          title={Scaling Vision-based End-to-End Driving with Multi-View Attention Learning},
