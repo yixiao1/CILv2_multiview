@@ -118,7 +118,7 @@ For training models, you can either
     where `--process-type` defines the process type (could be either train_val or val_only), `--gpus` defines the gpus to be used,
     `--folder` is the [configuration folder name](https://github.com/yixiao1/CILv2_multiview/tree/main/configs/CILv2),
     and `--exp` is the [configuration yaml file name](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml).
-    Your results will be saved in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
+    Your results will be stored in $TRAINING_RESULTS_ROOT/_results/<folder_name>/<exp_name>/
 
 -------------------------------------------------------------
 ### Test your own trained models on CARLA simulator
