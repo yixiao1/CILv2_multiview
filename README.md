@@ -109,7 +109,7 @@ For training models, you can either
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new trained CIL++ models
 
-* You need to define a configuration file for training. Please refer to [this file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
+* You need to define a configuration file for training. Please refer to [this file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as an example
 
 * Run the main.py file:
 
