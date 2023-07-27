@@ -70,7 +70,7 @@ class CILv2_agent(object):
     Autonomous agent base class. All user agents have to be derived from this class
     """
 
-    def __init__(self, path_to_conf_file, save_driving_vision, save_driving_measurement, save_to_hdf5, plug_in_expert=False):
+    def __init__(self, path_to_conf_file, save_driving_vision, save_driving_measurement, plug_in_expert=False):
         self.track = Track.SENSORS
         #  current global plans to reach a destination
         self._global_plan = None
@@ -81,6 +81,7 @@ class CILv2_agent(object):
         self.waypointer = None
         self.attn_weights = None
         self.vision_save_path = save_driving_vision
+        self.save_measurement = save_driving_measurement
         self.plug_in_expert=plug_in_expert
 
         # agent's initialization
@@ -262,9 +263,9 @@ class CILv2_agent(object):
 
         actions_outputs, _, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed)
 
-        last_action_outputs = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
+        action_outputs = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 
-        self.steer, self.throttle, self.brake = last_action_outputs
+        self.steer, self.throttle, self.brake = action_outputs
         self.control.steer = float(self.steer)
         self.control.throttle = float(self.throttle)
         self.control.brake = float(self.brake)
@@ -350,22 +351,21 @@ class CILv2_agent(object):
                 rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
                 cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
 
-            target_layers = [self._model._model.encoder_embedding_perception.layer4[-1]]
-            cam = GradCAM(model=self._model._model, target_layers=target_layers)
+            # target_layers = [self._model._model.encoder_embedding_perception.layer4[-1]]
+            # cam = GradCAM(model=self._model._model, target_layers=target_layers)
+            #
+            # input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]
+            # with torch.enable_grad():
+            #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
+            #
+            # grayscale_cam = grayscale_cam.reshape((1, len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))
+            # gradcams = []
+            # for cam_id in range(len(g_conf.DATA_USED)):
+            #     att = grayscale_cam[0, cam_id, :]
+            #     cmap_att = np.delete(self.cmap_2(att), 3, 2)
+            #     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
+            #     gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
 
-            input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]
-            with torch.enable_grad():
-                grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
-
-            grayscale_cam = grayscale_cam.reshape((1, len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))
-            gradcams = []
-            for cam_id in range(len(g_conf.DATA_USED)):
-                att = grayscale_cam[0, cam_id, :]
-                cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-                gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
-
-            # last_input_ontop = Image.fromarray(current_input_data['rgb_ontop'][1])
             rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
 
             if g_conf.DATA_COMMAND_ONE_HOT:
@@ -393,9 +393,9 @@ class CILv2_agent(object):
             else:
                 raise RuntimeError()
 
-            command_sign = command_sign.resize((280, 70))
+            command_sign = command_sign.resize((280, 71))
 
-            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10), 120+ rgb_backontop.height+120), (0, 0, 0))
+            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10), 120+ rgb_backontop.height), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
             font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
             font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
@@ -415,30 +415,20 @@ class CILv2_agent(object):
             mat.paste(cams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
 
             # activation maps
-            draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35),
-                          str("Activation Maps"),
-                          fill=(255, 255, 255),
-                          font=font)
-            mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
-            mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
-            mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
+            # draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35),
+            #               str("Activation Maps"),
+            #               fill=(255, 255, 255),
+            #               font=font)
+            # mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
+            # mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
+            # mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
 
             # command
-            draw_mat.text((rgb_backontop.width, 120 + rgb_backontop.height + 15),
-                          str("Command"),
-                          fill=(255, 255, 255),
-                          font=font)
-            draw_mat.text((rgb_backontop.width+25, 120 + rgb_backontop.height + 45),
-                          str("Input"),
-                          fill=(255, 255, 255),
-                          font=font)
-            mat.paste(command_sign, (120 + rgb_backontop.width + 35, 120+rgb_backontop.height + 30))
+            draw_mat.text((rgb_backontop.width+125, int(rgb_backontop.height/2)+130), str("Command Input"), fill=(255, 255, 255), font=font)
+            mat.paste(command_sign, (rgb_backontop.width+100, int(rgb_backontop.height/2) + 170))
 
             # speed
-            draw_mat.text((140 + rgb_backontop.width + command_sign.width + 110, 120+rgb_backontop.height + 15), str("Speed " + "(m/s)"),
-                          fill=(255, 255, 255), font=font)
-            draw_mat.text((140 + rgb_backontop.width + command_sign.width + 120, 120+rgb_backontop.height + 45), str("Input "),
-                          fill=(255, 255, 255), font=font)
+            draw_mat.text((rgb_backontop.width+580, int(rgb_backontop.height/2)+130), str("Speed Input (m/s)"), fill=(255, 255, 255), font=font)
             speed_gauge = go.Figure(go.Indicator(
                 mode="gauge+number",
                 gauge={'axis': {'range': [0, 12], 'visible': False},
@@ -454,15 +444,14 @@ class CILv2_agent(object):
             speed_gauge.write_image(buf, format='png')
             buf.seek(0)
             speed_gauge = Image.open(buf)
-            speed_gauge = speed_gauge.resize((202, 144))
-            speed_gauge = speed_gauge.crop((20, 20, 182, 124))
-            mat.paste(speed_gauge, (140 + rgb_backontop.width + command_sign.width + 280, 120+rgb_backontop.height+5))
-            draw_mat.text((1760, 120 + rgb_backontop.height + 75), str("0" ), fill=(255, 255, 255), font=font_3)
-            draw_mat.text((1955, 120 + rgb_backontop.height + 75),
-                          str("12"), fill=(255, 255, 255), font=font_3)
+            speed_gauge = speed_gauge.resize((162, 117))
+            speed_gauge = speed_gauge.crop((10, 20, 182, 124))
+            mat.paste(speed_gauge, (rgb_backontop.width + 630, int(rgb_backontop.height/2)+170))
+            draw_mat.text((rgb_backontop.width+610, int(rgb_backontop.height/2) + 215), str("0" ), fill=(255, 255, 255), font=font_3)
+            draw_mat.text((rgb_backontop.width+775, int(rgb_backontop.height/2) + 215), str("12"), fill=(255, 255, 255), font=font_3)
 
             # steer
-            draw_mat.text((60, 120 + rgb_backontop.height + 15),
+            draw_mat.text((rgb_backontop.width + 50, 120 + int(rgb_backontop.height/2) + 180),
                           str("Steering Prediction  "+ "%.3f" % np.clip(self.steer, -1, 1)),
                           fill=(255, 255, 255),
                           font=font)
@@ -498,13 +487,12 @@ class CILv2_agent(object):
             steer_gauge = Image.open(buf)
             steer_gauge = steer_gauge.resize((359, 128))
             steer_gauge = steer_gauge.crop((40, 40, 250, 100))
-            mat.paste(steer_gauge, (110 , 120+rgb_backontop.height + 50))
-            draw_mat.text((65, 120 + rgb_backontop.height + 60), str("-1" ), fill=(255, 255, 255), font=font)
-            draw_mat.text((340, 120 + rgb_backontop.height + 60),
-                          str("1"), fill=(255, 255, 255), font=font)
+            mat.paste(steer_gauge, (rgb_backontop.width+120 , 120 + int(rgb_backontop.height/2) + 230))
+            draw_mat.text((rgb_backontop.width+70, 120 + int(rgb_backontop.height/2) + 240), str("-1" ), fill=(255, 255, 255), font=font)
+            draw_mat.text((rgb_backontop.width+360, 120 + int(rgb_backontop.height/2) + 240), str("1"), fill=(255, 255, 255), font=font)
 
             # acceleration
-            draw_mat.text((550 , 120 + rgb_backontop.height + 15),
+            draw_mat.text((rgb_backontop.width+500 , 120 + int(rgb_backontop.height/2) + 180),
                           str("Acceleration Prediction  "+ "%.3f" % np.clip(self.acceleration, -1, 1)),
                           fill=(255, 255, 255),
                           font=font)
@@ -540,12 +528,29 @@ class CILv2_agent(object):
             acc_gauge = Image.open(buf)
             acc_gauge = acc_gauge.resize((359, 128))
             acc_gauge = acc_gauge.crop((40, 40, 250, 100))
-            mat.paste(acc_gauge, (625 , 120+rgb_backontop.height + 50))
-            draw_mat.text((580, 120 + rgb_backontop.height + 60), str("-1" ), fill=(255, 255, 255), font=font)
-            draw_mat.text((855, 120 + rgb_backontop.height + 60), str("1"), fill=(255, 255, 255), font=font)
+            mat.paste(acc_gauge, (rgb_backontop.width+580 , 120 + int(rgb_backontop.height/2) + 230))
+            draw_mat.text((rgb_backontop.width+530, 120 + int(rgb_backontop.height/2) + 240), str("-1" ), fill=(255, 255, 255), font=font)
+            draw_mat.text((rgb_backontop.width+820, 120 + int(rgb_backontop.height/2) + 240), str("1"), fill=(255, 255, 255), font=font)
             
             if not os.path.exists(self.vision_save_path):
                 os.makedirs(self.vision_save_path)
             if self.datapoint_count % self.save_frequence == 0:
-                mat = mat.resize((int(mat.size[0] / 2), int(mat.size[1] / 2)))   # comment this if you don't want to resize
+                mat = mat.resize((int(mat.size[0] / 3), int(mat.size[1] / 3)))   # comment this if you don't want to resize
                 mat.save(os.path.join(self.vision_save_path, str(self.datapoint_count).zfill(6) + '.jpg'))
+                if self.save_measurement:
+                    # we record the driving measurement data
+                    data = current_input_data['can_bus'][1]
+                    data.update({'steer': np.nan_to_num(self.control.steer)})
+                    data.update({'throttle': np.nan_to_num(self.control.throttle)})
+                    data.update({'brake': np.nan_to_num(self.control.brake)})
+                    data.update({'hand_brake': self.control.hand_brake})
+                    data.update({'reverse': self.control.reverse})
+                    data.update({'speed': current_input_data['SPEED'][1]['speed']})
+                    data.update({'direction': float(cmd)})
+                    with open(os.path.join(self.vision_save_path,
+                                           'can_bus' + str(self.datapoint_count).zfill(6) + '.json'), 'w') as fo:
+                        jsonObj = {}
+                        jsonObj.update(data)
+                        fo.seek(0)
+                        fo.write(json.dumps(jsonObj, sort_keys=True, indent=4))
+                        fo.close()
