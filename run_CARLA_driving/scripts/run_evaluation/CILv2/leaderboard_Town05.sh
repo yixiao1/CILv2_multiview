@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# To run Town05 test for trained agent
-driving_test_Town05 () {
+# To run Town05 leaderboard driving test for trained CIL++ agent
+
+leaderboard_Town05_cilv2 () {
     python ${DRIVING_TEST_ROOT}/driving/evaluator.py \
     --debug=0 \
     --scenarios=${DRIVING_TEST_ROOT}/data/leaderboard/leaderboard_Town05.json  \
@@ -20,7 +21,7 @@ driving_test_Town05 () {
     --save-driving-vision
 }
 
-function_array=("driving_test_Town05")
+function_array=("leaderboard_Town05_cilv2")
 
 
 # resume benchmark in case carla is crashed, until the benchmark is finished

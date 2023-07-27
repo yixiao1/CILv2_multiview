@@ -154,10 +154,10 @@ class ObsManager(ObsManagerBase):
             = self._get_history_masks(M_warp)
 
         # road_mask, lane_mask
-        road_mask = cv.warpAffine(self._road, M_warp, (self._width, self._width)).astype(np.bool)
-        lane_mask_all = cv.warpAffine(self._lane_marking_all, M_warp, (self._width, self._width)).astype(np.bool)
+        road_mask = cv.warpAffine(self._road, M_warp, (self._width, self._width)).astype(np.bool_)
+        lane_mask_all = cv.warpAffine(self._lane_marking_all, M_warp, (self._width, self._width)).astype(np.bool_)
         lane_mask_broken = cv.warpAffine(self._lane_marking_white_broken, M_warp,
-                                         (self._width, self._width)).astype(np.bool)
+                                         (self._width, self._width)).astype(np.bool_)
 
         # route_mask
         route_mask = np.zeros([self._width, self._width], dtype=np.uint8)
@@ -165,7 +165,7 @@ class ObsManager(ObsManagerBase):
                                    for wp, _ in self._global_route[0:80]])
         route_warped = cv.transform(route_in_pixel, M_warp)
         cv.polylines(route_mask, [np.round(route_warped).astype(np.int32)], False, 1, thickness=16)
-        route_mask = route_mask.astype(np.bool)
+        route_mask = route_mask.astype(np.bool_)
         self._truncate_global_route_till_local_target(ev_loc)
 
         # ev_mask
@@ -246,7 +246,7 @@ class ObsManager(ObsManagerBase):
             stopline_warped = cv.transform(stopline_in_pixel, M_warp)
             cv.line(mask, tuple(stopline_warped[0, 0]), tuple(stopline_warped[1, 0]),
                     color=1, thickness=6)
-        return mask.astype(np.bool)
+        return mask.astype(np.bool_)
 
     def _get_mask_from_actor_list(self, actor_list, M_warp):
         mask = np.zeros([self._width, self._width], dtype=np.uint8)
@@ -264,7 +264,7 @@ class ObsManager(ObsManagerBase):
             corners_warped = cv.transform(corners_in_pixel, M_warp)
 
             cv.fillConvexPoly(mask, np.round(corners_warped).astype(np.int32), 1)
-        return mask.astype(np.bool)
+        return mask.astype(np.bool_)
 
     @staticmethod
     def _get_surrounding_actors(bbox_list, criterium, scale=None, actor_list=None):

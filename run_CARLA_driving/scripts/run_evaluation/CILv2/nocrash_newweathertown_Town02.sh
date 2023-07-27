@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# * To run nocrash benchmark for trained agent
+# To run Town02 nocrash benchmark for trained CIL++ agent
 
 nocrash_newweathertown_empty_cilv2 () {
     python ${DRIVING_TEST_ROOT}/driving/evaluator.py \
