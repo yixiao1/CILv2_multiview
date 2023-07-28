@@ -11,31 +11,32 @@ from .architectures.CIL_multiview.evaluator import CIL_multiview_Evaluator
 
 
 class CILv2_multiview_attention(nn.Module):
-    def __init__(self, params):
+    def __init__(self, params, rank: int = 0):
         super(CILv2_multiview_attention, self).__init__()
         cil_model = importlib.import_module('network.models.architectures.CIL_multiview')
         cil_model = getattr(cil_model, g_conf.MODEL_TYPE)
-        self._model = cil_model(params)
+        self._model = cil_model(params, rank)
         self.name = g_conf.MODEL_TYPE
 
         if g_conf.PROCESS_NAME == 'train_val':
             self._current_iteration = 0
             self._done_epoch = 0
             self._criterion = Loss(g_conf.LOSS)
-            self._train_loader, self._val_loaders= \
+            self._train_loader, self._val_loaders = \
                 make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
                                  g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'], num_process=params['num_process'])
 
-            print('\n================================= Dataset Info ========================================')
-            print(f"\nUsing {len(g_conf.TRAIN_DATASET_NAME)} Training Dataset:")
-            print(f'   - {g_conf.TRAIN_DATASET_NAME}: Total amount={len(self._train_loader.dataset)}')
+            if rank == 0:
+                print('\n================================= Dataset Info ========================================')
+                print(f"\nUsing {len(g_conf.TRAIN_DATASET_NAME)} Training Dataset:")
+                print(f'   - {g_conf.TRAIN_DATASET_NAME}: Total amount={len(self._train_loader.dataset)}')
 
-            print(f"Using {len(self._val_loaders)} Validation Dataset:")
-            for val_loader in self._val_loaders:
-                print(f'   - {val_loader.dataset.dataset_name}: {len(val_loader.dataset)}')
-            print('')
-            print('=======================================================================================')
-            print('')
+                print(f"Using {len(self._val_loaders)} Validation Dataset:")
+                for val_loader in self._val_loaders:
+                    print(f'   - {val_loader.dataset.dataset_name}: {len(val_loader.dataset)}')
+                print('')
+                print('=======================================================================================')
+                print('')
 
             self._dataloader_iter = iter(self._get_dataloader())
 
@@ -44,9 +45,10 @@ class CILv2_multiview_attention(nn.Module):
                 make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
                                  g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE)
 
-            print("Using {} Validation Dataset:".format(str(len(self._val_loaders))))
-            for val_loader in self._val_loaders:
-                print('   - '+val_loader.dataset.dataset_name+':', str(len(val_loader.dataset)))
+            if rank == 0:
+                print("Using {} Validation Dataset:".format(str(len(self._val_loaders))))
+                for val_loader in self._val_loaders:
+                    print('   - '+val_loader.dataset.dataset_name+':', str(len(val_loader.dataset)))
 
         self._evaluator = CIL_multiview_Evaluator(self.name)
 

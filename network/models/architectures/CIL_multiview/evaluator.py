@@ -70,16 +70,8 @@ class CIL_multiview_Evaluator(object):
         # Plot the accelerations w.r.t. the ground truth on the validation set
         plot_and_save_results(self.accelerations, self.gt_accelerations, f'acc_{dataset_name}_epoch{current_epoch}')
 
-        # Plot the acceleration signs w.r.t. the ground truth on the validation set
-        plot_and_save_results(np.sign(self.accelerations), np.sign(self.gt_accelerations),
-                              f'acc-sign_{dataset_name}_epoch{current_epoch}')
-
         # Plot the steering angles w.r.t. the ground truth on the validation set
         plot_and_save_results(self.steers, self.gt_steers, f'steer_{dataset_name}_epoch{current_epoch}')
-
-        # Plot the acceleration signs w.r.t. the ground truth on the validation set
-        plot_and_save_results(np.sign(self.steers), np.sign(self.gt_steers),
-                              f'steer-sign_{dataset_name}_epoch{current_epoch}')
 
         def save_frame_ids_different_signs(data: Union[list, np.ndarray],
                                            ground_truth_data: Union[list, np.ndarray],

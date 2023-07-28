@@ -123,14 +123,22 @@ class CILv2_agent(object):
         merge_with_yaml(os.path.join(exp_dir, yaml_conf), process_type='drive')
         set_type_of_process('drive', root=os.environ["TRAINING_RESULTS_ROOT"])
         
-        self._model = Models(g_conf.MODEL_CONFIGURATION)
+        self._model = Models(g_conf.MODEL_CONFIGURATION, rank=0)
         if torch.cuda.device_count() > 1 and g_conf.DATA_PARALLEL:
             print("Using multiple GPUs parallel! ")
             print(torch.cuda.device_count(), 'GPUs to be used: ', os.environ["CUDA_VISIBLE_DEVICES"])
             self._model = DataParallelWrapper(self._model)
         self.checkpoint = torch.load(os.path.join(exp_dir, 'checkpoints', f'{self._model.name}_{checkpoint_number}.pth'))
         print(f'{self._model.name}_{checkpoint_number}.pth loaded from {os.path.join(exp_dir, "checkpoints")}')
-        if isinstance(self._model, torch.nn.DataParallel):
+        # Correctly load checkpoint if saved with module. Temporary fix, should be correctly saved during training!
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in self.checkpoint['model'].items():
+            name = k[7:] if k.startswith('module.') else k
+            new_state_dict[name] = v
+        self.checkpoint['model'] = new_state_dict
+
+        if isinstance(self._model, torch.nn.DataParallel) or isinstance(self._model, torch.nn.parallel.DistributedDataParallel):
             self._model.module.load_state_dict(self.checkpoint['model'])
         else:
             self._model.load_state_dict(self.checkpoint['model'])
@@ -411,22 +419,31 @@ class CILv2_agent(object):
                 cams = rearrange(cams, 'c h w C -> h (c w) C')
                 cams = [Image.fromarray(cams).resize((900, 300))]
 
-                if not g_conf.ONE_ACTION_TOKEN:
-                    # Get the steering [STR] attention map
-                    grayscale_cam_str = get_grayscale_attn_map(self.attn_weights[1], -2, 900, 300, one_seq=True)
-                    topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
+                if not g_conf.NO_ACT_TOKENS:
+                    if not g_conf.ONE_ACTION_TOKEN:
+                        # Get the steering [STR] attention map
+                        grayscale_cam_str = get_grayscale_attn_map(self.attn_weights, -2, 900, 300, one_seq=True)  # wtf, why was this self.attn_weights[1] before?
+                        topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
 
-                    # Get the acceleration [ACC] attention map
-                    grayscale_cam_acc = get_grayscale_attn_map(self.attn_weights[1], -1, 900, 300, one_seq=True)
-                    bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
+                        # Get the acceleration [ACC] attention map
+                        grayscale_cam_acc = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
+
+                    else:
+                        # Only one attention map, so leave the top as the input rgb image
+                        topl_gradcam = [cams[0]]
+
+                        # Get the action [ACT] attention map
+                        grayscale_cam_act = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_act, self.cmap_2, cams, 0, 0.5)
 
                 else:
-                    # Only one attention map, so leave the top as the input rgb image
+                    # Let's plot the average attention map from all patches
                     topl_gradcam = [cams[0]]
 
-                    # Get the action [ACT] attention map
-                    grayscale_cam_act = get_grayscale_attn_map(self.attn_weights[1], -1, 900, 300, one_seq=True)
-                    bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_act, self.cmap_2, cams, 0, 0.5)
+                    # Get the attention map
+                    grayscale_cam_patch = get_grayscale_attn_map(self.attn_weights, 0, 900, 300, one_seq=True)
+                    bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_patch, self.cmap_2, cams, 0, 0.5)
 
             else:
                 cams = []
@@ -482,8 +499,8 @@ class CILv2_agent(object):
                 2.0: 'turn_right.png',
                 3.0: 'go_straight.png',
                 4.0: 'follow_lane.png',
-                5.0: 'go_left.png',
-                6.0: 'go_right.png'
+                5.0: 'change_left.png',
+                6.0: 'change_right.png'
             }
 
             command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', command_sign_dict[float(cmd)]))
@@ -508,10 +525,16 @@ class CILv2_agent(object):
             font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
 
             # Texts above each view
-            view_titles = [
-                'RGB Cameras Input' if g_conf.ONE_ACTION_TOKEN else '[STR] Attention Maps',
-                '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
-            ]
+            if not g_conf.NO_ACT_TOKENS:
+                view_titles = [
+                    'RGB Cameras Input' if g_conf.ONE_ACTION_TOKEN else '[STR] Attention Maps',
+                    '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
+                ]
+            else:
+                view_titles = [
+                    'RGB Cameras Input',
+                    'Patch2Patch Attention Maps'
+                ]
 
             # third person
             draw_mat.text((260, 40), "Third Person Perspective", fill=(255, 255, 255), font=font_2)

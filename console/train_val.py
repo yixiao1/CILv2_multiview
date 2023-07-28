@@ -104,7 +104,10 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
             # model.to(f'cuda:{model.device_ids[0]}')
             if g_conf.USE_AUTOCAST:
                 with torch.cuda.amp.autocast():
-                    action_outputs = model.forward(src_images, src_directions, src_s)
+                    if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
+                        action_outputs, (cmd_out, spd_out) = model.forward(src_images, src_directions, src_s)
+                    else:
+                        action_outputs = model.forward(src_images, src_directions, src_s)
 
                     loss_params = {
                         'action_output': action_outputs,
@@ -123,7 +126,10 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                             acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
                                                         acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
             else:
-                action_outputs = model.forward(src_images, src_directions, src_s)
+                if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
+                    action_outputs, (cmd_out, spd_out) = model.forward(src_images, src_directions, src_s)
+                else:
+                    action_outputs = model.forward(src_images, src_directions, src_s)
                 if isinstance(action_outputs, tuple):
                     action_output_patches, action_output_tokens = action_outputs
                 loss_params = {
@@ -224,7 +230,8 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
         # Flush stdout to a log.txt file
     StdoutLogger(os.path.join(results_folder, 'log.txt'), file_mode='a', should_flush=True)
 
-    torch.distributed.barrier()
+    if len(gpus_list) > 1:
+        torch.distributed.barrier()
     
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
@@ -232,7 +239,7 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
         print(torch.cuda.device_count(), 'GPUs to be used: ', gpus_list)
 
     # Final setup
-    set_type_of_process('train_val', root=os.environ["TRAINING_RESULTS_ROOT"], rank=rank)
+    set_type_of_process('train_val', root=os.environ["TRAINING_RESULTS_ROOT"], rank=rank, ddp=len(gpus_list) > 1)
     seed_everything(seed=g_conf.MAGICAL_SEED)
     torch.backends.cudnn.benchmark = True
     # torch.backends.cuda.matmul.allow_tf32 = True
@@ -252,7 +259,7 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
         g_conf.MODEL_CONFIGURATION['rank'] = 0
         g_conf.MODEL_CONFIGURATION['num_process'] = 1
 
-    model = Models(g_conf.MODEL_CONFIGURATION)
+    model = Models(g_conf.MODEL_CONFIGURATION, rank)
 
     if rank == 0:
         print("===================== Model Configuration =====================")

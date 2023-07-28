@@ -38,35 +38,21 @@ def canbus_normalization(can_bus_dict, data_ranges):
             can_bus_dict['direction'] = [can_bus_dict['direction']-1]
     return can_bus_dict
 
-def train_transform(data, image_shape, augmentation=False):
+def train_transform(data, image_shape):
     """
         Apply transformations and augmentations. The
         output is from 0-1 float.
     """
-    if augmentation:
-        for camera_type in g_conf.DATA_USED:
-            image = data[camera_type]
-            height = image_shape[1]
-            width = image_shape[2]
-            image = image.resize((width, height))
-            image = transforms.RandAugment(2, 10)(image)
-            # image = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)(image)
-            # image = transforms.RandomResizedCrop((height, width), scale=(0.4, 1.0),
-            #                                      interpolation=TF.InterpolationMode.BICUBIC)(image)
-            image = TF.to_tensor(image)
-            image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
-            data[camera_type] = image
-
-    else:
-        for camera_type in g_conf.DATA_USED:
-            image = data[camera_type]
-            ## WE ALREADY PRE-PROCESSED IMAGES TO DESIRED SIZE
-            height = image_shape[1]
-            width = image_shape[2]
-            image = image.resize((width, height))
-            image = TF.to_tensor(image)
-            image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
-            data[camera_type] = image
+    for camera_type in g_conf.DATA_USED:
+        image = data[camera_type]
+        height = image_shape[1]
+        width = image_shape[2]
+        image = image.resize((width, height))
+        image = transforms.ColorJitter(brightness=0.3, contrast=0.3, hue=None, saturation=0.2)(image) if g_conf.COLOR_JITTER else image
+        image - transforms.AugMix(severity=3, mixture_width=3, chain_depth=-1, alpha=1.0)(image) if g_conf.AUG_MIX else image
+        image = TF.to_tensor(image)
+        image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
+        data[camera_type] = image
 
     return data
 

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchvision
 import importlib
 
 from configs import g_conf
@@ -12,7 +13,7 @@ from typing import Tuple, List
 
 
 class CIL_multiview_vit_oneseq(nn.Module):
-    def __init__(self, params):
+    def __init__(self, params, rank: int = 0):
         super(CIL_multiview_vit_oneseq, self).__init__()
         self.params = params
 
@@ -23,65 +24,78 @@ class CIL_multiview_vit_oneseq(nn.Module):
         except KeyError:
             module_name = self.params['encoder_embedding']['perception']['res']['name']
         vit_module = getattr(vit_module, module_name)
-        self.encoder_embedding_perception = vit_module(pretrained=g_conf.IMAGENET_PRE_TRAINED)
+        encoder_embedding_perception = vit_module(pretrained=g_conf.IMAGENET_PRE_TRAINED)
 
         self.image_channels, self.image_height, self.image_width = g_conf.IMAGE_SHAPE
 
         # Get the vision transformer characteristics
-        self.tfx_hidden_dim = self.encoder_embedding_perception.hidden_dim  # D
-        self.tfx_patch_size = self.encoder_embedding_perception.patch_size  # P
+        self.tfx_hidden_dim = encoder_embedding_perception.hidden_dim  # D
+        self.tfx_patch_size = encoder_embedding_perception.patch_size  # P
         self.tfx_num_patches_h = self.image_height // self.tfx_patch_size  # H/P
         self.tfx_num_patches_w = self.image_width // self.tfx_patch_size  # W/P
         self.tfx_num_patches = self.tfx_num_patches_h * self.tfx_num_patches_w  # (H/P)*(W/P), per image
 
         # Network pieces
-        self.tfx_conv_projection = self.encoder_embedding_perception.conv_proj
-        self.tfx_encoder = self.encoder_embedding_perception.encoder
+        self.tfx_conv_projection = encoder_embedding_perception.conv_proj
+        self.tfx_encoder = encoder_embedding_perception.encoder
 
         # Select the number of layers to use
         num_layers = self.params['encoder_embedding']['perception']['vit'].get('num_layers', None)
-        if num_layers is not None:
+        if num_layers is not None and (num_layers != 'all' or num_layers != len(self.tfx_encoder.layers)):
             # Sanity check
             num_layers = int(num_layers)
             num_layers = max(min(num_layers, len(self.tfx_encoder.layers)), 1)
             self.tfx_encoder.num_layers = num_layers
-            print(f'Using the first {num_layers} layers of the ViT model (originally {len(self.tfx_encoder.layers)})...')
+            if rank == 0:
+                print(f'Using the first {num_layers} layers of the ViT model (originally {len(self.tfx_encoder.layers)})...')
             layers = []
             for i in range(int(num_layers)):
                 layers.append(self.tfx_encoder.layers[i])
             self.tfx_encoder.layers = nn.Sequential(*layers)
 
-        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)
-        self.speed = nn.Linear(1, self.tfx_hidden_dim)
+        if not g_conf.NEW_COMMAND_SPEED_FC:
+            self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)
+            self.speed = nn.Linear(1, self.tfx_hidden_dim)
+        else:
+            self.command = FC(params={'neurons': [g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim],
+                                      'dropouts': self.params['command']['fc']['dropouts'],
+                                      'end_layer': False},
+                              norm=g_conf.FC_LAYER_NORM, activate=False)  # No sense in using ReLU here
+            self.speed = FC(params={'neurons': [1, self.tfx_hidden_dim],
+                                    'dropouts': self.params['speed']['fc']['dropouts'],
+                                    'end_layer': False},
+                            norm=g_conf.FC_LAYER_NORM, activate=False)  # No sense in using ReLU here
 
         if g_conf.NO_ACT_TOKENS:
             # Don't use any extra tokens in the sequence, so skip this
             self.tfx_seq_length = 0
         else:
             # Additional tokens
-            self.tfx_class_token = self.encoder_embedding_perception.class_token
+            self.tfx_class_token = encoder_embedding_perception.class_token
 
             if g_conf.ONE_ACTION_TOKEN:
                 self.tfx_seq_length = 2  # Including the CLS token
                 if g_conf.PRETRAINED_ACT_TOKENS or g_conf.PRETRAINED_ACC_STR_TOKENS:
                     # Start from the [CLS] token of the pretrained model
-                    print('Initializing the action ([ACT]) token with the [CLS] token...')
+                    print('Initializing the action ([ACT]) token with the [CLS] token...') if rank == 0 else None
                     self.tfx_action_token = nn.Parameter(self.tfx_class_token.detach().clone())
                 else:
                     # Start from scratch
-                    print('Randomly initializing the action ([ACT]) token...')
+                    print('Randomly initializing the action ([ACT]) token...') if rank == 0 else None
                     self.tfx_action_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
 
             else:
                 self.tfx_seq_length = 3  # Including the CLS token
                 if g_conf.PRETRAINED_ACT_TOKENS or g_conf.PRETRAINED_ACC_STR_TOKENS:
                     # Start from the [CLS] token of the pretrained model
-                    print('Initializing the acceleration ([ACC]) and steering ([STR]) tokens with the [CLS] token...')
+                    if rank == 0:
+                        print('Initializing the acceleration ([ACC]) and steering ([STR]) tokens with the [CLS] token...')
                     self.tfx_accel_token = nn.Parameter(self.tfx_class_token.detach().clone())
                     self.tfx_steer_token = nn.Parameter(self.tfx_class_token.detach().clone())
                 else:
                     # Start from scratch
-                    print('Randomly initializing the acceleration ([ACC]) and steering ([STR]) tokens...')
+                    if rank == 0:
+                        print('Randomly initializing the acceleration ([ACC]) and steering ([STR]) tokens...')
                     self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
                     self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, self.tfx_hidden_dim).normal_(std=0.02))
 
@@ -89,25 +103,44 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
             # Remove the [CLS] token if needed
             if g_conf.REMOVE_CLS_TOKEN:
-                print('Removing the [CLS] token from the sequence...')
+                if rank == 0:
+                    print('Removing the [CLS] token from the sequence...')
                 self.tfx_seq_length -= 1  # K=2
                 del self.tfx_class_token
 
             # Add the command and speed as tokens to the sequence
             if g_conf.CMD_SPD_TOKENS:
-                print('Adding the command and speed tokens to the sequence...')
+                if rank == 0:
+                    print('Adding the command and speed tokens to the sequence...')
                 self.tfx_seq_length += 2
                 self.act_tokens_pos = [_ + 2 for _ in self.act_tokens_pos]
 
         # Sequence length
         self.tfx_seq_length += int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * self.tfx_num_patches
 
-        # Fixed Positional Encoding to give an order to the sequence
-        del self.tfx_encoder.pos_embedding  # A nn.Parameter, so it most go
-        self.pos_embedding = PositionalEncoding(d_model=self.tfx_hidden_dim, max_len=self.tfx_seq_length)
+        if g_conf.LEARNABLE_POS_EMBED and not g_conf.IMAGENET_PRE_TRAINED:
+            self.tfx_encoder.pos_embedding = nn.Parameter(
+                torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))  # From BERT
+        elif g_conf.LEARNABLE_POS_EMBED and g_conf.IMAGENET_PRE_TRAINED:
+            if self.tfx_seq_length == encoder_embedding_perception.seq_length:
+                # Sequence length is the same as the pretrained one, so we can use the pretrained one
+                pass
+            else:
+                # TODO: Is there a way to interpolate from [1, S, hidden_dim] to [1, new_S, hidden_dim]?
+                if rank == 0:
+                    print('Warning: current sequence length is different from the pretrained one. Starting '
+                          'Positional Encoding from scratch...')
+                self.tfx_encoder.pos_embedding = nn.Parameter(
+                    torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))
+
+        else:
+            del self.tfx_encoder.pos_embedding  # A nn.Parameter, so it most go
+
+            self.pos_embedding = PositionalEncoding(d_model=self.tfx_hidden_dim, max_len=self.tfx_seq_length)
 
         if g_conf.SENSOR_EMBED:
-            print('Using a sensor embedding...')
+            if rank == 0:
+                print('Using a sensor embedding...')
             self.sensor_embedding = nn.Parameter(torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))  # from BERT
 
         if 'action_output' in self.params:
@@ -115,29 +148,47 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 self.steer_output = FC(params={
                     'neurons': [self.tfx_hidden_dim] + self.params['action_output']['fc']['neurons'] + [1],
                     'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
-                    'end_layer': True
-                })
+                    'end_layer': True},
+                    norm=g_conf.FC_LAYER_NORM, activate=True)  # Uses ReLU by default and on by default
                 self.accel_output = FC(params={
                     'neurons': [self.tfx_hidden_dim] + self.params['action_output']['fc']['neurons'] + [1],
                     'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
-                    'end_layer': True
-                })
+                    'end_layer': True},
+                    norm=g_conf.FC_LAYER_NORM, activate=True)  # Uses ReLU by default and on by default
             elif self.params['action_output']['type'] == '1mlp':
                 join_dim = self.tfx_hidden_dim * len(g_conf.TARGETS) if not g_conf.ONE_ACTION_TOKEN else self.tfx_hidden_dim
                 self.action_output = FC(params={
                     'neurons': [join_dim] + self.params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
                     'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
-                    'end_layer': True
-                })
+                    'end_layer': True},
+                    norm=g_conf.FC_LAYER_NORM, activate=True)  # Uses ReLU by default and on by default
             elif self.params['action_output']['type'] in ['baseline1_patches2act', 'baseline3_patches2act_gap_avg', 'baseline4_patches2act_gap_diff']:
                 self.action_output = FC(params={
                     'neurons': [self.tfx_hidden_dim] + self.params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
                     'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
-                    'end_layer': True
-                })
+                    'end_layer': True},
+                    norm=g_conf.FC_LAYER_NORM, activate=True)  # Uses ReLU by default and on by default
             else:
                 # It's a GAP, so do nothing
                 pass
+
+        # Extra regularization: predict the input speed and command
+        if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
+            print('Adding the speed and command prediction...') if rank == 0 else None
+            self.speed_output = FC(params={
+                'neurons': [self.tfx_hidden_dim] + self.params['speed_output']['fc']['neurons'] + [1],
+                'dropouts': self.params['speed_output']['fc']['dropouts'] + [0.0],
+                'end_layer': True},
+                norm=g_conf.FC_LAYER_NORM, activate=True)
+            self.command_output = FC(params={
+                'neurons': [self.tfx_hidden_dim] + self.params['command_output']['fc']['neurons'] + [g_conf.DATA_COMMAND_CLASS_NUM],
+                'dropouts': self.params['command_output']['fc']['dropouts'] + [0.0],
+                'end_layer': True},
+                norm=g_conf.FC_LAYER_NORM, activate=True)
+
+        # Legacy
+        if g_conf.SAVE_FULL_STATE:
+            self.encoder_embedding_perception = encoder_embedding_perception
 
         # We don't want to undo the pretrained weights of the ViT!
         for name, module in self.named_modules():
@@ -237,48 +288,64 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 # Pass the ACT tokens through a MLP
                 in_memory = rearrange(sequence_act, 'B t D -> B (t D)')  # flatten the sequence [B, t, D] => [B, t*D]
                 action_output = self.action_output(in_memory).unsqueeze(1)  # [B, t*D] => [B, 1, len(TARGETS)]
-            elif self.params['action_output']['type'] == 'gap' and not g_conf.ONE_ACTION_TOKEN:
+            elif self.params['action_output']['type'] == 'gap' and not g_conf.NO_ACT_TOKENS:  # too basic
                 # Average pooling of the ACT tokens (one per target)
                 action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'avgmult_gap' and not g_conf.ONE_ACTION_TOKEN:  # needs lower lr
+            elif self.params['action_output']['type'] == 'avgmult_gap' and not g_conf.NO_ACT_TOKENS:  # Makes no sense
                 # Average the CMD and SPD tokens and then multiply them by the GAP of the ACT tokens
                 cmd = reduce(sequence[:, 0], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
                 spd = reduce(sequence[:, 1], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
                 action_output = cmd * spd * reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'avgsum_gap' and not g_conf.ONE_ACTION_TOKEN:
+            elif self.params['action_output']['type'] == 'avgsum_gap' and not g_conf.NO_ACT_TOKENS:  # makes no sense
                 # Average the CMD and SPD tokens and then add them to the GAP of the ACT tokens
                 cmd = reduce(sequence[:, 0], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
                 spd = reduce(sequence[:, 1], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
                 action_output = cmd + spd + reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'dotmult_gap' and not g_conf.ONE_ACTION_TOKEN:
+            elif self.params['action_output']['type'] == 'dotmult_gap' and not g_conf.NO_ACT_TOKENS:  # makes no sense
                 # Perform the dot product of the CMD and SPD tokens, then multiply them by the GAP of the ACT tokens
                 dot = reduce(sequence[:, 0] * sequence[:, 1], 'B D -> B 1 1', 'sum')  # [B, D] => [B, 1, 1]
                 action_output = dot * reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'dotsum_gap' and not g_conf.ONE_ACTION_TOKEN:  # needs lower lr
+            elif self.params['action_output']['type'] == 'dotsum_gap' and not g_conf.NO_ACT_TOKENS:  # makes no sense
                 # Perform the dot product of the CMD and SPD tokens, then add them to the GAP of the ACT tokens
                 dot = reduce(sequence[:, 0] * sequence[:, 1], 'B D -> B 1 1', 'sum')  # [B, D] => [B, 1, 1]
                 action_output = dot + reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'add_gap' and not g_conf.ONE_ACTION_TOKEN:
+            elif self.params['action_output']['type'] == 'add_gap' and not g_conf.NO_ACT_TOKENS:  # More sense; modifies too much the attention maps tho
                 # Add the CMD and SPD tokens individually to the ACT tokens, then perform a GAP  (same as avgsum_gap)
-                cmd = sequence[:, 0].unsqueeze(1)  # [B, 1, D]
-                spd = sequence[:, 1].unsqueeze(1)  # [B, 1, D]
+                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 action_output = reduce(sequence_act + cmd + spd, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'add_avg_gap' and not g_conf.ONE_ACTION_TOKEN:
+            elif self.params['action_output']['type'] == 'add_avg_gap' and not g_conf.NO_ACT_TOKENS:  # summing is not the best; perhaps multiplication?
                 # Add the CMD and SPD tokens individually to the ACT tokens, then perform a GAP  (same as avgsum_gap)
-                cmd = sequence[:, 0].unsqueeze(1)  # [B, 1, D]
-                spd = sequence[:, 1].unsqueeze(1)  # [B, 1, D]
+                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 new_seq_act = (sequence_act + cmd + spd) / 3  # [B, t, D]; get the average vector before the GAP
                 action_output = reduce(new_seq_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]; GAP_D
-            elif self.params['action_output']['type'] == 'addmult_gap' and not g_conf.ONE_ACTION_TOKEN:
+            elif self.params['action_output']['type'] == 'addmult_gap' and not g_conf.NO_ACT_TOKENS:  # almost, but not quite
                 # Add the CMD and SPD tokens individually to the ACT tokens, then multiply them by the GAP
-                cmd = sequence[:, 0].unsqueeze(1)  # [B, 1, D]
-                spd = sequence[:, 1].unsqueeze(1)  # [B, 1, D]
+                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 action_output = reduce((cmd + spd) * sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'add_patches_avg_gap' and not g_conf.ONE_ACTION_TOKEN:
-                cmd = sequence[:, 0].unsqueeze(1)  # [B, 1, D]
-                spd = sequence[:, 1].unsqueeze(1)  # [B, 1, D]
+            elif self.params['action_output']['type'] == 'add_patches_avg_gap' and not g_conf.NO_ACT_TOKENS:
+                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
                 action_output = reduce((sequence_act + cmd + spd + patches)/4, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'elem_mult_gap' and not g_conf.NO_ACT_TOKENS:
+                # Element-wise multiplication of the final representations of all available tokens, then do a GAP.
+                # We want the attention maps to really focus on important patches, so the element-wise multiplication
+                # should work better than the addition
+                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
+                action_output = reduce(cmd * spd * sequence_act * patches, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif self.params['action_output']['type'] == 'elem_mult_map' and not g_conf.NO_ACT_TOKENS:
+                # Element-wise multiplication of the final representations of all available tokens, then do a MAP.
+                # We want the attention maps to really focus on important patches, so the element-wise multiplication
+                # should work better than the addition
+                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
+                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
+                action_output = reduce(cmd * spd * sequence_act * patches, 'B t D -> B 1 t', 'max')  # [B, t, D] => [B, 1, t]
             elif self.params['action_output']['type'] == 'baseline1_patches2act':
                 # Get the patch representation at the final layer
                 patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
@@ -330,18 +397,26 @@ class CIL_multiview_vit_oneseq(nn.Module):
         encoded_obs = self.encode_observations(s, s_d, s_s)  # [B, S*cam*H*W/P^2 + K, D]
 
         # Add positional encoding
-        encoded_obs = self.pos_embedding(encoded_obs)  # [B, S*cam*H*W/P^2 + K, D]]
+        encoded_obs = self.pos_embedding(encoded_obs) if not g_conf.LEARNABLE_POS_EMBED else encoded_obs + self.tfx_encoder.pos_embedding # [B, S*cam*H*W/P^2 + K, D]]
 
         # Add learnable sensor embedding
         if g_conf.SENSOR_EMBED:
             encoded_obs = encoded_obs + self.sensor_embedding  # [B, S*cam*H*W/P^2 + K, D]
 
         # Pass on to the Transformer encoder
-        in_memory = self.tfx_encoder.forward(encoded_obs)  # [B, S*cam*H*W/P^2 + K, D]
+        # Do Stochastic Depth if specified
+        if self.params['encoder_embedding']['perception']['vit'].get('stochastic_depth', False):
+            in_memory = torchvision.ops.StochasticDepth(p=0.1, mode='row')(self.tfx_encoder.forward(encoded_obs))
+        else:
+            in_memory = self.tfx_encoder.forward(encoded_obs)  # [B, S*cam*H*W/P^2 + K, D]
 
         # Get the action output
         action_output = self.action_prediction(in_memory)  # [B, t=2]
 
+        if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
+            command_prediction = self.command_output(in_memory[:, 0])  # [B, 1]
+            speed_prediction = self.speed_output(in_memory[:, 1])  # [B, 1]
+            return action_output, (command_prediction, speed_prediction)
         return action_output
 
     def forward_eval(self,
@@ -356,7 +431,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
         encoded_obs = self.encode_observations(s, s_d, s_s)  # [B, S*cam*H*W/P^2 + K, D]
 
         # Add positional encoding
-        encoded_obs = self.pos_embedding(encoded_obs)  # [B, S*cam*H*W/P^2 + K, D]]
+        encoded_obs = self.pos_embedding(encoded_obs) if not g_conf.LEARNABLE_POS_EMBED else encoded_obs + self.tfx_encoder.pos_embedding  # [B, S*cam*H*W/P^2 + K, D]]
 
         # Add learnable sensor embedding
         if g_conf.SENSOR_EMBED:
@@ -393,5 +468,11 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, t+2, S*cam*(H//P)^2]
                 # Rearrange the attention weights to be in the right shape
                 attn_weights = rearrange(attn_weights, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.tfx_num_patches_h)  # [B, t, H//P, S*cam*W//P]
+
+        else:
+            # We don't have any extra tokens, so let's just return the average attention weights of the last layer
+            attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
+            attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, S*cam*(H//P)^2] or [B, N]
+            attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam, h=self.tfx_num_patches_h)  # [B, 1, H//P, S*cam*W//P]
 
         return action_output, attn_weights

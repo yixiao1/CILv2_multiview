@@ -173,7 +173,7 @@ class carlaImages(data.Dataset):
         return data
 
     def transform_tr(self, sample):
-        return train_transform(sample, g_conf.IMAGE_SHAPE, augmentation=g_conf.AUGMENTATION)
+        return train_transform(sample, g_conf.IMAGE_SHAPE)
 
     def transform_val(self, sample):
         return val_transform(sample, g_conf.IMAGE_SHAPE)

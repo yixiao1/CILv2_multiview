@@ -171,7 +171,7 @@ class VisionTransformer(nn.Module):
     ):
         super().__init__()
         _log_api_usage_once(self)
-        torch._assert(image_size % patch_size == 0, "Input shape indivisible by patch size!")
+        torch._assert(image_size % patch_size == 0, f"Input shape indivisible by patch size! ({image_size}, {patch_size})")
         self.image_size = image_size
         self.patch_size = patch_size
         self.hidden_dim = hidden_dim
@@ -336,7 +336,7 @@ def _vision_transformer(
 # This all works only for torchvision == 0.12 (0.11 doesn't have vit models!)
 
 
-def vit_c_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
+def vit_c_30(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VisionTransformer:
     """
     Constructs a vit_c_32 architecture based on
     `"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" <https://arxiv.org/abs/2010.11929>`_.
@@ -346,12 +346,12 @@ def vit_c_32(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
         progress (bool): If True, displays a progress bar of the download to stderr
     """
     return _vision_transformer(
-        arch="vit_c_32",
-        patch_size=32,
+        arch="vit_c_30",
+        patch_size=30,
         num_layers=4,
         num_heads=4,
-        hidden_dim=256,
-        mlp_dim=1024,
+        hidden_dim=512,
+        mlp_dim=2048,
         pretrained=False,  # No pretrained weights
         progress=progress,
         **kwargs,

@@ -43,6 +43,8 @@ _g_conf.ENCODER_STEP_INTERVAL = 1     # the pace step of frame you want to use. 
 _g_conf.ENCODER_OUTPUT_STEP_DELAY = 0  # whether we want to predict the future data points or just the current point
 _g_conf.DECODER_OUTPUT_FRAMES_NUM = 1
 _g_conf.AUGMENTATION = False
+_g_conf.COLOR_JITTER = False
+_g_conf.AUG_MIX = False
 _g_conf.DATA_FPS = 10
 _g_conf.DATA_COMMAND_CLASS_NUM = 4
 _g_conf.DATA_COMMAND_ONE_HOT = True
@@ -54,7 +56,8 @@ _g_conf.ERROR_CAM_AUGMENTATION = False
 _g_conf.ERROR_LIST_CAM_AUGMENTATION = ['conti_front']
 _g_conf.ERROR_CAM_AUGMENTATION_PROB = 0.1  # max = 1.0
 _g_conf.DATA_NORMALIZATION = {}
-_g_conf.IMG_NORMALIZATION = {'mean':[0.485, 0.456, 0.406], 'std':[0.229, 0.224, 0.225]}   # ImageNet by default
+_g_conf.IMG_NORMALIZATION = {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]}   # ImageNet by default
+_g_conf.FC_LAYER_NORM = False  # Use LayerNorm on the FC layers
 _g_conf.EXP_SAVE_PATH = '_results'
 _g_conf.TARGETS = ['steer', 'throttle', 'brake']  # From the float data, the ones that the network should estimate
 _g_conf.ACCELERATION_AS_ACTION = False
@@ -73,6 +76,7 @@ _g_conf.LEARNING_RATE_MINIMUM = 0.00001
 _g_conf.LEARNING_RATE_DECAY_EPOCHES = []    # we adjust learning rate for each 1000 iterations
 _g_conf.LEARNING_RATE_POLICY = {'name': 'normal', 'level': 0.5, 'momentum': 0, 'weight_decay': 0}   # lr multiply by 0.5 for each LEARNING_RATE_STEP
 _g_conf.AUTOCAST = False
+_g_conf.SAVE_FULL_STATE = True
 
 """#### Network Related Parameters ####"""
 _g_conf.MODEL_TYPE = ''
@@ -90,6 +94,7 @@ _g_conf.REMOVE_CLS_TOKEN = False  # remove the classification token from the seq
 _g_conf.SENSOR_EMBED = False  # whether to use sensor embedding as in InterFuser/ReasonNet
 _g_conf.EXTRA_POS_EMBED = False  # A final positional embedding at the output of the encoder
 _g_conf.OLD_TOKEN_ORDER = True  # Originally had mixed the order of the [STR] and [ACC]; should be set explicitly
+_g_conf.NEW_COMMAND_SPEED_FC = False  # Originally had a FC layer for the command and speed embeddings; should be set explicitly
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder
@@ -151,7 +156,7 @@ def create_exp_path(root, experiment_batch, experiment_name):
         os.makedirs(os.path.join(root_path, experiment_batch, experiment_name))
 
 
-def set_type_of_process(process_type, root, rank=0):
+def set_type_of_process(process_type, root, rank=0, ddp=False):
     """
     This function is used to set which is the type of the current process, test, train or val
     and also the details of each since there could be many vals and tests for a single
@@ -173,7 +178,7 @@ def set_type_of_process(process_type, root, rank=0):
             os.mkdir(os.path.join(root, '_results', _g_conf.EXPERIMENT_BATCH_NAME,
                                   _g_conf.EXPERIMENT_NAME,
                                   'checkpoints'))
-        if process_type != 'drive':
+        if process_type != 'drive' and ddp:
             torch.distributed.barrier()
         _g_conf.EXP_SAVE_PATH = os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME)
 
