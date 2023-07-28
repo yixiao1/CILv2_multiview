@@ -25,7 +25,7 @@ class Waypointer:
         self.latest_turn_cmd = None
         self.within_intersection = False
         self.next_turn_loc, self.next_turn_cmd = self._get_next_turn_loc(self._global_route)
-        print(self.latest_turn_cmd, self.next_turn_cmd)
+        # print(self.latest_turn_cmd, self.next_turn_cmd)
 
     def tick_nc(self, gnss_data, imu_data):
         next_gps, _ = self._global_plan_gps[self.current_idx + 1]
@@ -94,8 +94,8 @@ class Waypointer:
                 else: # loc_in_ev.x < 0.0
                     # get next new junction command
                     self.latest_turn_cmd = self.next_turn_cmd
-                    print('Get into intersection: ', self.latest_turn_cmd)
-                    print('Update the next junction command')
+                    # print('Get into intersection: ', self.latest_turn_cmd)
+                    # print('Update the next junction command')
                     self.next_turn_loc, self.next_turn_cmd = self._get_next_turn_loc(self._global_route)
                     candidate = self.latest_turn_cmd
                     self.within_intersection = True
@@ -271,12 +271,12 @@ class Waypointer:
                 if point[1] in [RoadOption.LANEFOLLOW, RoadOption.CHANGELANELEFT, RoadOption.CHANGELANERIGHT]:
                     continue
                 else:
-                    print('Got the next junction command:', point[1], point[0].location)
+                    # print('Got the next junction command:', point[1], point[0].location)
                     return point[0].location, point[1]
-            print('Got to the end point:', global_route[-1][1])
+            # print('Got to the end point:', global_route[-1][1])
             return global_route[-1][0].location, global_route[-1][1]
 
-        print('Got to the end point:', global_route[-1][1])
+        # print('Got to the end point:', global_route[-1][1])
         return global_route[-1][0].location, global_route[-1][1]
 
     def reset_route(self, global_plan_gps, global_route):
