@@ -104,7 +104,7 @@ For training models, you can either
 
     [single-lane towns](), [multi-lane towns]()
 
-* Collect new datasets. The code we used for data collection was built on the framework from [this repository](https://github.com/zhejz/carla-roach)
+* Collect new datasets. The RL expert driver we used for data collection is from [this work](https://github.com/zhejz/carla-roach)
 
 -------------------------------------------------------------
 ### Training & performing offline evaluation on new trained CIL++ models
