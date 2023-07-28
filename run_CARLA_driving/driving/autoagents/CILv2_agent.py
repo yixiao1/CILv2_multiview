@@ -271,7 +271,9 @@ class CILv2_agent(object):
         self.control.brake = float(self.brake)
         self.control.hand_brake = False
 
-        self.record_driving(self.input_data)
+        if self.vision_save_path:
+            self.record_driving(self.input_data)
+
         self.datapoint_count += 1
 
         return self.control
@@ -345,212 +347,211 @@ class CILv2_agent(object):
             return encode_directions_6(cmd.value), cmd.value
 
     def record_driving(self, current_input_data):
-        if self.vision_save_path:
-            cams = []
-            for i in range(len(g_conf.DATA_USED)):
-                rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
-                cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
+        cams = []
+        for i in range(len(g_conf.DATA_USED)):
+            rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
+            cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
 
-            # target_layers = [self._model._model.encoder_embedding_perception.layer4[-1]]
-            # cam = GradCAM(model=self._model._model, target_layers=target_layers)
-            #
-            # input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]
-            # with torch.enable_grad():
-            #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
-            #
-            # grayscale_cam = grayscale_cam.reshape((1, len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))
-            # gradcams = []
-            # for cam_id in range(len(g_conf.DATA_USED)):
-            #     att = grayscale_cam[0, cam_id, :]
-            #     cmap_att = np.delete(self.cmap_2(att), 3, 2)
-            #     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-            #     gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
+        # target_layers = [self._model._model.encoder_embedding_perception.layer4[-1]]
+        # cam = GradCAM(model=self._model._model, target_layers=target_layers)
+        #
+        # input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]
+        # with torch.enable_grad():
+        #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
+        #
+        # grayscale_cam = grayscale_cam.reshape((1, len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))
+        # gradcams = []
+        # for cam_id in range(len(g_conf.DATA_USED)):
+        #     att = grayscale_cam[0, cam_id, :]
+        #     cmap_att = np.delete(self.cmap_2(att), 3, 2)
+        #     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
+        #     gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
 
-            rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
+        rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
 
-            if g_conf.DATA_COMMAND_ONE_HOT:
-                cmd = decode_directions_6(self.direction[-1].detach().cpu().numpy().squeeze(0))
-            else:
-                cmd = self.direction[-1].detach().cpu().numpy().squeeze(0) + 1
-            if float(cmd) == 1.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'turn_left.png'))
+        if g_conf.DATA_COMMAND_ONE_HOT:
+            cmd = decode_directions_6(self.direction[-1].detach().cpu().numpy().squeeze(0))
+        else:
+            cmd = self.direction[-1].detach().cpu().numpy().squeeze(0) + 1
+        if float(cmd) == 1.0:
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'turn_left.png'))
 
-            elif float(cmd) == 2.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'turn_right.png'))
+        elif float(cmd) == 2.0:
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'turn_right.png'))
 
-            elif float(cmd) == 3.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'go_straight.png'))
+        elif float(cmd) == 3.0:
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'go_straight.png'))
 
-            elif float(cmd) == 4.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'follow_lane.png'))
+        elif float(cmd) == 4.0:
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'follow_lane.png'))
 
-            elif float(cmd) == 5.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'change_left.png'))
+        elif float(cmd) == 5.0:
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'change_left.png'))
 
-            elif float(cmd) == 6.0:
-                command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'change_right.png'))
+        elif float(cmd) == 6.0:
+            command_sign = Image.open(os.path.join(os.getcwd(), 'signs', '6_directions', 'change_right.png'))
 
-            else:
-                raise RuntimeError()
+        else:
+            raise RuntimeError()
 
-            command_sign = command_sign.resize((280, 71))
+        command_sign = command_sign.resize((280, 71))
 
-            mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10), 120+ rgb_backontop.height), (0, 0, 0))
-            draw_mat = ImageDraw.Draw(mat)
-            font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
-            font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
-            font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
+        mat = Image.new('RGB', (rgb_backontop.width+len(cams)*(cams[0].width + 10), 120+ rgb_backontop.height), (0, 0, 0))
+        draw_mat = ImageDraw.Draw(mat)
+        font = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 30)
+        font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
+        font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
 
-            # third person
-            draw_mat.text((260 , 40), str("Third Person Perspective"), fill=(255, 255, 255), font=font_2)
-            mat.paste(rgb_backontop, (0, 120))
+        # third person
+        draw_mat.text((260 , 40), str("Third Person Perspective"), fill=(255, 255, 255), font=font_2)
+        mat.paste(rgb_backontop, (0, 120))
 
-            # RGB
-            draw_mat.text((330 + rgb_backontop.width, 30), str("RGB Cameras Input"), fill=(255, 255, 255), font=font)
-            draw_mat.text((120 + rgb_backontop.width, 80), str("-60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
-            draw_mat.text((435 + rgb_backontop.width, 80), str("0.0"+'\u00b0'), fill=(255, 255, 255), font=font)
-            draw_mat.text((735 + rgb_backontop.width, 80), str("60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
-            mat.paste(cams[0], (rgb_backontop.width+10, 120))
-            mat.paste(cams[1], (rgb_backontop.width+10 +int(cams[0].width) + 10, 120))
-            mat.paste(cams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
+        # RGB
+        draw_mat.text((330 + rgb_backontop.width, 30), str("RGB Cameras Input"), fill=(255, 255, 255), font=font)
+        draw_mat.text((120 + rgb_backontop.width, 80), str("-60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
+        draw_mat.text((435 + rgb_backontop.width, 80), str("0.0"+'\u00b0'), fill=(255, 255, 255), font=font)
+        draw_mat.text((735 + rgb_backontop.width, 80), str("60.0"+'\u00b0'), fill=(255, 255, 255), font=font)
+        mat.paste(cams[0], (rgb_backontop.width+10, 120))
+        mat.paste(cams[1], (rgb_backontop.width+10 +int(cams[0].width) + 10, 120))
+        mat.paste(cams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
 
-            # activation maps
-            # draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35),
-            #               str("Activation Maps"),
-            #               fill=(255, 255, 255),
-            #               font=font)
-            # mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
-            # mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
-            # mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
+        # activation maps
+        # draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35),
+        #               str("Activation Maps"),
+        #               fill=(255, 255, 255),
+        #               font=font)
+        # mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
+        # mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
+        # mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
 
-            # command
-            draw_mat.text((rgb_backontop.width+125, int(rgb_backontop.height/2)+130), str("Command Input"), fill=(255, 255, 255), font=font)
-            mat.paste(command_sign, (rgb_backontop.width+100, int(rgb_backontop.height/2) + 170))
+        # command
+        draw_mat.text((rgb_backontop.width+125, int(rgb_backontop.height/2)+130), str("Command Input"), fill=(255, 255, 255), font=font)
+        mat.paste(command_sign, (rgb_backontop.width+100, int(rgb_backontop.height/2) + 170))
 
-            # speed
-            draw_mat.text((rgb_backontop.width+580, int(rgb_backontop.height/2)+130), str("Speed Input (m/s)"), fill=(255, 255, 255), font=font)
-            speed_gauge = go.Figure(go.Indicator(
-                mode="gauge+number",
-                gauge={'axis': {'range': [0, 12], 'visible': False},
-                       'bordercolor': "white",
-                       'borderwidth': 3},
-                value= round(current_input_data['SPEED'][1]['speed'], 3),
-                domain={'x': [0, 1], 'y': [0, 1]},))
-            speed_gauge.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font={'color': "white", 'family': "Arial", "size": 3})
-            buf = io.BytesIO()
-            speed_gauge.write_image(buf, format='png')
-            buf.seek(0)
-            speed_gauge = Image.open(buf)
-            speed_gauge = speed_gauge.resize((162, 117))
-            speed_gauge = speed_gauge.crop((10, 20, 182, 124))
-            mat.paste(speed_gauge, (rgb_backontop.width + 630, int(rgb_backontop.height/2)+170))
-            draw_mat.text((rgb_backontop.width+610, int(rgb_backontop.height/2) + 215), str("0" ), fill=(255, 255, 255), font=font_3)
-            draw_mat.text((rgb_backontop.width+775, int(rgb_backontop.height/2) + 215), str("12"), fill=(255, 255, 255), font=font_3)
+        # speed
+        draw_mat.text((rgb_backontop.width+580, int(rgb_backontop.height/2)+130), str("Speed Input (m/s)"), fill=(255, 255, 255), font=font)
+        speed_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            gauge={'axis': {'range': [0, 12], 'visible': False},
+                   'bordercolor': "white",
+                   'borderwidth': 3},
+            value= round(current_input_data['SPEED'][1]['speed'], 3),
+            domain={'x': [0, 1], 'y': [0, 1]},))
+        speed_gauge.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font={'color': "white", 'family': "Arial", "size": 3})
+        buf = io.BytesIO()
+        speed_gauge.write_image(buf, format='png')
+        buf.seek(0)
+        speed_gauge = Image.open(buf)
+        speed_gauge = speed_gauge.resize((162, 117))
+        speed_gauge = speed_gauge.crop((10, 20, 182, 124))
+        mat.paste(speed_gauge, (rgb_backontop.width + 630, int(rgb_backontop.height/2)+170))
+        draw_mat.text((rgb_backontop.width+610, int(rgb_backontop.height/2) + 215), str("0" ), fill=(255, 255, 255), font=font_3)
+        draw_mat.text((rgb_backontop.width+775, int(rgb_backontop.height/2) + 215), str("12"), fill=(255, 255, 255), font=font_3)
 
-            # steer
-            draw_mat.text((rgb_backontop.width + 50, 120 + int(rgb_backontop.height/2) + 180),
-                          str("Steering Prediction  "+ "%.3f" % np.clip(self.steer, -1, 1)),
-                          fill=(255, 255, 255),
-                          font=font)
-            if self.steer > 0.0:
-                step = [
-                    {'range': [-1, 0], 'color': "black"},
-                    {'range': [0, self.steer], 'color': "yellow"},
-                    {'range': [self.steer, 1], 'color': "black"}]
-            else:
-                step = [
-                    {'range': [-1, self.steer], 'color': "black"},
-                    {'range': [self.steer, 0], 'color': "yellow"},
-                    {'range': [0, 1], 'color': "black"}]
-            steer_gauge = go.Figure(go.Indicator(
-                mode="number+gauge",
-                gauge={'shape': "bullet",
-                       'axis': {'range': [-1, 1], 'visible': False},
-                       'bordercolor': "white",
-                       'borderwidth': 3,
-                       'steps': step,
-                       'threshold': {
-                           'line': {'color': "white", 'width': 3},
-                           'thickness': 1.0, 'value': 0},},
-                domain={'x': [0, 1], 'y': [0, 1]}))
-            steer_gauge.update_layout(
-                height = 250,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font={'color': "white", 'family': "Arial", "size": 3})
-            buf = io.BytesIO()
-            steer_gauge.write_image(buf, format='png')
-            buf.seek(0)
-            steer_gauge = Image.open(buf)
-            steer_gauge = steer_gauge.resize((359, 128))
-            steer_gauge = steer_gauge.crop((40, 40, 250, 100))
-            mat.paste(steer_gauge, (rgb_backontop.width+120 , 120 + int(rgb_backontop.height/2) + 230))
-            draw_mat.text((rgb_backontop.width+70, 120 + int(rgb_backontop.height/2) + 240), str("-1" ), fill=(255, 255, 255), font=font)
-            draw_mat.text((rgb_backontop.width+360, 120 + int(rgb_backontop.height/2) + 240), str("1"), fill=(255, 255, 255), font=font)
+        # steer
+        draw_mat.text((rgb_backontop.width + 50, 120 + int(rgb_backontop.height/2) + 180),
+                      str("Steering Prediction  "+ "%.3f" % np.clip(self.steer, -1, 1)),
+                      fill=(255, 255, 255),
+                      font=font)
+        if self.steer > 0.0:
+            step = [
+                {'range': [-1, 0], 'color': "black"},
+                {'range': [0, self.steer], 'color': "yellow"},
+                {'range': [self.steer, 1], 'color': "black"}]
+        else:
+            step = [
+                {'range': [-1, self.steer], 'color': "black"},
+                {'range': [self.steer, 0], 'color': "yellow"},
+                {'range': [0, 1], 'color': "black"}]
+        steer_gauge = go.Figure(go.Indicator(
+            mode="number+gauge",
+            gauge={'shape': "bullet",
+                   'axis': {'range': [-1, 1], 'visible': False},
+                   'bordercolor': "white",
+                   'borderwidth': 3,
+                   'steps': step,
+                   'threshold': {
+                       'line': {'color': "white", 'width': 3},
+                       'thickness': 1.0, 'value': 0},},
+            domain={'x': [0, 1], 'y': [0, 1]}))
+        steer_gauge.update_layout(
+            height = 250,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font={'color': "white", 'family': "Arial", "size": 3})
+        buf = io.BytesIO()
+        steer_gauge.write_image(buf, format='png')
+        buf.seek(0)
+        steer_gauge = Image.open(buf)
+        steer_gauge = steer_gauge.resize((359, 128))
+        steer_gauge = steer_gauge.crop((40, 40, 250, 100))
+        mat.paste(steer_gauge, (rgb_backontop.width+120 , 120 + int(rgb_backontop.height/2) + 230))
+        draw_mat.text((rgb_backontop.width+70, 120 + int(rgb_backontop.height/2) + 240), str("-1" ), fill=(255, 255, 255), font=font)
+        draw_mat.text((rgb_backontop.width+360, 120 + int(rgb_backontop.height/2) + 240), str("1"), fill=(255, 255, 255), font=font)
 
-            # acceleration
-            draw_mat.text((rgb_backontop.width+500 , 120 + int(rgb_backontop.height/2) + 180),
-                          str("Acceleration Prediction  "+ "%.3f" % np.clip(self.acceleration, -1, 1)),
-                          fill=(255, 255, 255),
-                          font=font)
-            if self.acceleration > 0.0:
-                step = [
-                    {'range': [-1, 0], 'color': "black"},
-                    {'range': [0, self.acceleration], 'color': "orange"},
-                    {'range': [self.acceleration, 1], 'color': "black"}]
-            else:
-                step = [
-                    {'range': [-1, self.acceleration], 'color': "black"},
-                    {'range': [self.acceleration, 0], 'color': "lightgray"},
-                    {'range': [0, 1], 'color': "black"}]
-            acc_gauge = go.Figure(go.Indicator(
-                mode="number+gauge",
-                gauge={'shape': "bullet",
-                       'axis': {'range': [-1, 1], 'visible': False},
-                       'bordercolor': "white",
-                       'borderwidth': 3,
-                       'steps': step,
-                       'threshold': {
-                           'line': {'color': "white", 'width': 3},
-                           'thickness': 1.0, 'value': 0},},
-                domain={'x': [0, 1], 'y': [0, 1]}))
-            acc_gauge.update_layout(
-                height = 250,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font={'color': "white", 'family': "Arial", "size": 3})
-            buf = io.BytesIO()
-            acc_gauge.write_image(buf, format='png')
-            buf.seek(0)
-            acc_gauge = Image.open(buf)
-            acc_gauge = acc_gauge.resize((359, 128))
-            acc_gauge = acc_gauge.crop((40, 40, 250, 100))
-            mat.paste(acc_gauge, (rgb_backontop.width+580 , 120 + int(rgb_backontop.height/2) + 230))
-            draw_mat.text((rgb_backontop.width+530, 120 + int(rgb_backontop.height/2) + 240), str("-1" ), fill=(255, 255, 255), font=font)
-            draw_mat.text((rgb_backontop.width+820, 120 + int(rgb_backontop.height/2) + 240), str("1"), fill=(255, 255, 255), font=font)
-            
-            if not os.path.exists(self.vision_save_path):
-                os.makedirs(self.vision_save_path)
-            if self.datapoint_count % self.save_frequence == 0:
-                mat = mat.resize((int(mat.size[0] / 3), int(mat.size[1] / 3)))   # comment this if you don't want to resize
-                mat.save(os.path.join(self.vision_save_path, str(self.datapoint_count).zfill(6) + '.jpg'))
-                if self.save_measurement:
-                    # we record the driving measurement data
-                    data = current_input_data['can_bus'][1]
-                    data.update({'steer': np.nan_to_num(self.control.steer)})
-                    data.update({'throttle': np.nan_to_num(self.control.throttle)})
-                    data.update({'brake': np.nan_to_num(self.control.brake)})
-                    data.update({'hand_brake': self.control.hand_brake})
-                    data.update({'reverse': self.control.reverse})
-                    data.update({'speed': current_input_data['SPEED'][1]['speed']})
-                    data.update({'direction': float(cmd)})
-                    with open(os.path.join(self.vision_save_path,
-                                           'can_bus' + str(self.datapoint_count).zfill(6) + '.json'), 'w') as fo:
-                        jsonObj = {}
-                        jsonObj.update(data)
-                        fo.seek(0)
-                        fo.write(json.dumps(jsonObj, sort_keys=True, indent=4))
-                        fo.close()
+        # acceleration
+        draw_mat.text((rgb_backontop.width+500 , 120 + int(rgb_backontop.height/2) + 180),
+                      str("Acceleration Prediction  "+ "%.3f" % np.clip(self.acceleration, -1, 1)),
+                      fill=(255, 255, 255),
+                      font=font)
+        if self.acceleration > 0.0:
+            step = [
+                {'range': [-1, 0], 'color': "black"},
+                {'range': [0, self.acceleration], 'color': "orange"},
+                {'range': [self.acceleration, 1], 'color': "black"}]
+        else:
+            step = [
+                {'range': [-1, self.acceleration], 'color': "black"},
+                {'range': [self.acceleration, 0], 'color': "lightgray"},
+                {'range': [0, 1], 'color': "black"}]
+        acc_gauge = go.Figure(go.Indicator(
+            mode="number+gauge",
+            gauge={'shape': "bullet",
+                   'axis': {'range': [-1, 1], 'visible': False},
+                   'bordercolor': "white",
+                   'borderwidth': 3,
+                   'steps': step,
+                   'threshold': {
+                       'line': {'color': "white", 'width': 3},
+                       'thickness': 1.0, 'value': 0},},
+            domain={'x': [0, 1], 'y': [0, 1]}))
+        acc_gauge.update_layout(
+            height = 250,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font={'color': "white", 'family': "Arial", "size": 3})
+        buf = io.BytesIO()
+        acc_gauge.write_image(buf, format='png')
+        buf.seek(0)
+        acc_gauge = Image.open(buf)
+        acc_gauge = acc_gauge.resize((359, 128))
+        acc_gauge = acc_gauge.crop((40, 40, 250, 100))
+        mat.paste(acc_gauge, (rgb_backontop.width+580 , 120 + int(rgb_backontop.height/2) + 230))
+        draw_mat.text((rgb_backontop.width+530, 120 + int(rgb_backontop.height/2) + 240), str("-1" ), fill=(255, 255, 255), font=font)
+        draw_mat.text((rgb_backontop.width+820, 120 + int(rgb_backontop.height/2) + 240), str("1"), fill=(255, 255, 255), font=font)
+
+        if not os.path.exists(self.vision_save_path):
+            os.makedirs(self.vision_save_path)
+        if self.datapoint_count % self.save_frequence == 0:
+            mat = mat.resize((int(mat.size[0] / 3), int(mat.size[1] / 3)))   # comment this if you don't want to resize
+            mat.save(os.path.join(self.vision_save_path, str(self.datapoint_count).zfill(6) + '.jpg'))
+            if self.save_measurement:
+                # we record the driving measurement data
+                data = current_input_data['can_bus'][1]
+                data.update({'steer': np.nan_to_num(self.control.steer)})
+                data.update({'throttle': np.nan_to_num(self.control.throttle)})
+                data.update({'brake': np.nan_to_num(self.control.brake)})
+                data.update({'hand_brake': self.control.hand_brake})
+                data.update({'reverse': self.control.reverse})
+                data.update({'speed': current_input_data['SPEED'][1]['speed']})
+                data.update({'direction': float(cmd)})
+                with open(os.path.join(self.vision_save_path,
+                                       'can_bus' + str(self.datapoint_count).zfill(6) + '.json'), 'w') as fo:
+                    jsonObj = {}
+                    jsonObj.update(data)
+                    fo.seek(0)
+                    fo.write(json.dumps(jsonObj, sort_keys=True, indent=4))
+                    fo.close()
