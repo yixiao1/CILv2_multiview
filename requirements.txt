@@ -167,3 +167,4 @@ zope.interface==4.7.1
 hydra-core==1.0.3
 wandb
 stable_baselines3
+einops

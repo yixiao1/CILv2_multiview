@@ -352,20 +352,6 @@ class CILv2_agent(object):
             rgb_img = inverse_normalize(self.norm_rgb[-1][i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze(0)
             cams.append(Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)))
 
-        # target_layers = [self._model._model.encoder_embedding_perception.layer4[-1]]
-        # cam = GradCAM(model=self._model._model, target_layers=target_layers)
-        #
-        # input_tensor_list = [self.norm_rgb, self.direction, self.norm_speed]
-        # with torch.enable_grad():
-        #     grayscale_cam = cam(input_tensor_list=input_tensor_list)   # [S*cam, H, W]
-        #
-        # grayscale_cam = grayscale_cam.reshape((1, len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))
-        # gradcams = []
-        # for cam_id in range(len(g_conf.DATA_USED)):
-        #     att = grayscale_cam[0, cam_id, :]
-        #     cmap_att = np.delete(self.cmap_2(att), 3, 2)
-        #     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
-        #     gradcams.append(Image.blend(cams[cam_id], cmap_att, 0.5))
 
         rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
 
@@ -414,15 +400,6 @@ class CILv2_agent(object):
         mat.paste(cams[0], (rgb_backontop.width+10, 120))
         mat.paste(cams[1], (rgb_backontop.width+10 +int(cams[0].width) + 10, 120))
         mat.paste(cams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
-
-        # activation maps
-        # draw_mat.text((360 + rgb_backontop.width, 120 + cams[0].height + 35),
-        #               str("Activation Maps"),
-        #               fill=(255, 255, 255),
-        #               font=font)
-        # mat.paste(gradcams[0], (rgb_backontop.width+10, 120+cams[0].height+80))
-        # mat.paste(gradcams[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
-        # mat.paste(gradcams[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
 
         # command
         draw_mat.text((rgb_backontop.width+125, int(rgb_backontop.height/2)+130), str("Command Input"), fill=(255, 255, 255), font=font)
