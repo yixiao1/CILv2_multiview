@@ -107,7 +107,7 @@ For training models, you can either
     `$DATASET_PATH/<dataset_folder_name>`, where the `<dataset_folder_name>` will be defined by `TRAIN_DATASET_NAME`
     in the [exp yaml file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml)
 
-        Small test datasets:
+    * Small test datasets:
             Training:
                 - [part 1](smb://158.109.8.18/synthia-www/CILv2/smalltrain1)
                 - [part 2](smb://158.109.8.18/synthia-www/CILv2/smalltrain2)
