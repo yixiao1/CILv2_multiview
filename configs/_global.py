@@ -45,6 +45,7 @@ _g_conf.DECODER_OUTPUT_FRAMES_NUM = 1
 _g_conf.AUGMENTATION = False
 _g_conf.COLOR_JITTER = False
 _g_conf.AUG_MIX = False
+_g_conf.RAND_AUGMENT = False
 _g_conf.DATA_FPS = 10
 _g_conf.DATA_COMMAND_CLASS_NUM = 4
 _g_conf.DATA_COMMAND_ONE_HOT = True

@@ -107,7 +107,7 @@ class CILv2_agent(object):
         self.cmap_2 = plt.get_cmap('jet')
         self.cmap_1 = plt.get_cmap('Reds')
         self.datapoint_count = 0
-        self.save_frequence = 1
+        self.save_frequence = 5
 
     def setup_model(self, path_to_conf_file):
         """
@@ -287,8 +287,9 @@ class CILv2_agent(object):
                 [torch.cuda.LongTensor([self.process_command(self.input_data['GPS'][1],
                                                              self.input_data['IMU'][1])[1]-1]).unsqueeze(0).cuda()]
 
-        actions_outputs, self.attn_weights = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed,
-                                                                      attn_rollout=False)  # Use Attention Rollout
+        outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed, attn_rollout=False)
+        actions_outputs = outputs[0]
+        self.attn_weights = outputs[-1]
 
         self.steer, self.throttle, self.brake = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 
@@ -407,7 +408,7 @@ class CILv2_agent(object):
                 return [blended_img]
 
             # Do something different according to the model name
-            if self._model.name == 'CIL_multiview_vit_oneseq':
+            if self._model.name == 'CIL_multiview_vit_oneseq' or self._model.name == 'CIL_multiview':
                 cams = []
                 for i in range(len(g_conf.DATA_USED)):
                     rgb_img = inverse_normalize(self.norm_rgb[-1][i],
@@ -533,7 +534,7 @@ class CILv2_agent(object):
             else:
                 view_titles = [
                     'RGB Cameras Input',
-                    'Patch2Patch Attention Maps'
+                    'P2P Attention Maps'
                 ]
 
             # third person

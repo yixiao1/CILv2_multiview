@@ -141,7 +141,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
         if g_conf.SENSOR_EMBED:
             if rank == 0:
                 print('Using a sensor embedding...')
-            self.sensor_embedding = nn.Parameter(torch.empty(1, self.tfx_seq_length, self.tfx_hidden_dim).normal_(std=0.02))  # from BERT
+            self.sensor_embedding = nn.Parameter(torch.zeros(1, self.tfx_seq_length, self.tfx_hidden_dim))
 
         if 'action_output' in self.params:
             if self.params['action_output']['type'] == '2mlp':
@@ -270,7 +270,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         return encoded_obs
 
-    def action_prediction(self, sequence: torch.Tensor) -> torch.Tensor:
+    def action_prediction(self, sequence: torch.Tensor, cam: int) -> torch.Tensor:
         """Pass in the sequence of the ViT (of shape [B, seq_length, hidden_dim]) and predict the action"""
         # Only use the action tokens [ACT] for the prediction
         if not g_conf.NO_ACT_TOKENS:
@@ -328,7 +328,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
             elif self.params['action_output']['type'] == 'add_patches_avg_gap' and not g_conf.NO_ACT_TOKENS:
                 cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
+                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
                 action_output = reduce((sequence_act + cmd + spd + patches)/4, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
             elif self.params['action_output']['type'] == 'elem_mult_gap' and not g_conf.NO_ACT_TOKENS:
                 # Element-wise multiplication of the final representations of all available tokens, then do a GAP.
@@ -336,7 +336,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 # should work better than the addition
                 cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
+                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
                 action_output = reduce(cmd * spd * sequence_act * patches, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
             elif self.params['action_output']['type'] == 'elem_mult_map' and not g_conf.NO_ACT_TOKENS:
                 # Element-wise multiplication of the final representations of all available tokens, then do a MAP.
@@ -344,11 +344,11 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 # should work better than the addition
                 cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
                 spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
+                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
                 action_output = reduce(cmd * spd * sequence_act * patches, 'B t D -> B 1 t', 'max')  # [B, t, D] => [B, 1, t]
             elif self.params['action_output']['type'] == 'baseline1_patches2act':
                 # Get the patch representation at the final layer
-                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
                 # Pass the patch representation through an MLP
                 action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
             elif self.params['action_output']['type'] == 'baseline2_gap' and not g_conf.ONE_ACTION_TOKEN:
@@ -356,7 +356,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
             elif self.params['action_output']['type'] == 'baseline3_patches2act_gap_avg' and not g_conf.ONE_ACTION_TOKEN:
                 # Get the patch representation at the final layer
-                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
                 # Pass the patch representation through an MLP
                 action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
                 # Average pooling of the ACT tokens (one per target)
@@ -365,7 +365,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 action_output = (action_output_patches + action_output_tokens) / 2
             elif self.params['action_output']['type'] == 'baseline4_patches2act_gap_diff' and not g_conf.ONE_ACTION_TOKEN:
                 # Get the patch representation at the final layer
-                patches = reduce(sequence[:, -self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
                 # Pass the patch representation through an MLP
                 action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
                 # Average pooling of the ACT tokens (one per target)
@@ -411,7 +411,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
             in_memory = self.tfx_encoder.forward(encoded_obs)  # [B, S*cam*H*W/P^2 + K, D]
 
         # Get the action output
-        action_output = self.action_prediction(in_memory)  # [B, t=2]
+        action_output = self.action_prediction(in_memory, cam)  # [B, t=2]
 
         if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
             command_prediction = self.command_output(in_memory[:, 0])  # [B, 1]
@@ -442,7 +442,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
         in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs)
 
         # Get the action output
-        action_output = self.action_prediction(in_memory)  # [B, t=2]
+        action_output = self.action_prediction(in_memory, cam)  # [B, t=2]
 
         # Attention stuff
         if attn_rollout:

@@ -50,7 +50,7 @@ def train_transform(data, image_shape):
         image = image.resize((width, height))
         image = transforms.RandAugment(2, 10)(image) if g_conf.RAND_AUGMENT else image
         image - transforms.AugMix(severity=3, mixture_width=3, chain_depth=-1, alpha=1.0)(image) if g_conf.AUG_MIX else image
-        image = transforms.ColorJitter(brightness=0.3, contrast=0.3, hue=None, saturation=0.2)(image) if g_conf.COLOR_JITTER else image
+        image = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2)(image) if g_conf.COLOR_JITTER else image
         image = TF.to_tensor(image)
         image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
         data[camera_type] = image

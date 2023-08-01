@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
+from einops import rearrange,reduce
 import importlib
 
 from configs import g_conf
+from _utils import utils
 from network.models.building_blocks import FC
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 from network.models.building_blocks.Transformer.TransformerEncoder import TransformerEncoder
@@ -13,17 +15,39 @@ class CIL_multiview(nn.Module):
     def __init__(self, params, rank: int = 0):
         super(CIL_multiview, self).__init__()
         self.params = params
+        self.act_tokens_pos = None
 
         resnet_module = importlib.import_module('network.models.building_blocks.resnet_FM')
         resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
         self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
-                                                          layer_id = params['encoder_embedding']['perception']['res'][ 'layer_id'])
+                                                          layer_id=params['encoder_embedding']['perception']['res']['layer_id'])
         _, self.res_out_dim, self.res_out_h, self.res_out_w = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] + g_conf.IMAGE_SHAPE)[params['encoder_embedding']['perception']['res'][ 'layer_id']]
 
+        # Get the sequence length
+        self.sequence_length = len(g_conf.DATA_USED) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
+
+        if not g_conf.NO_ACT_TOKENS:
+            # Add the STR and ACC tokens as parameters
+            self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, params['TxEncoder']['d_model']).normal_(std=0.02))
+            self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, params['TxEncoder']['d_model']).normal_(std=0.02))
+            self.sequence_length += 2
+            self.act_tokens_pos = [0, 1]
+
+        if g_conf.CMD_SPD_TOKENS:
+            self.sequence_length += 2
+            if self.act_tokens_pos is not None:
+                self.act_tokens_pos = [2, 3]
+
+
         if params['TxEncoder']['learnable_pe']:
-            self.positional_encoding = nn.Parameter(torch.zeros(1, len(g_conf.DATA_USED)*g_conf.ENCODER_INPUT_FRAMES_NUM*self.res_out_h*self.res_out_w, params['TxEncoder']['d_model']))
+            self.positional_encoding = nn.Parameter(torch.zeros(1, self.sequence_length, params['TxEncoder']['d_model']))
         else:
-            self.positional_encoding = PositionalEncoding(d_model=params['TxEncoder']['d_model'], dropout=0.0, max_len=len(g_conf.DATA_USED)*g_conf.ENCODER_INPUT_FRAMES_NUM*self.res_out_h*self.res_out_w)
+            self.positional_encoding = PositionalEncoding(d_model=params['TxEncoder']['d_model'], dropout=0.0,
+                                                          max_len=self.sequence_length)
+
+        # Sensor embedding is useful when adding different sensors to the sequence
+        if g_conf.SENSOR_EMBED:
+            self.sensor_embedding = nn.Parameter(torch.empty(1, self.sequence_length, self.tfx_hidden_dim).normal_(std=0.02))  # from BERT
 
         join_dim = params['TxEncoder']['d_model']
         self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, params['TxEncoder']['d_model'])
@@ -41,6 +65,27 @@ class CIL_multiview(nn.Module):
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
                                  'end_layer': True})
 
+        # if 'action_output' in params:
+        #     act_output_type = params['action_output'].get('type', None)
+        #     if act_output_type is None:
+        #         # Default value
+        #         pass
+        #     elif act_output_type in ['baseline1_patches2act', 'baseline3_patches2act_gap_avg',
+        #                              'baseline4_patches2act_gap_diff']:
+        #         self.action_output = FC(
+        #             params={'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
+        #                     'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
+        #                     'end_layer': True})
+        #     else:
+        #         # A GAP, so no need for a FC layer
+        #         pass
+        # else:
+        #     # Not specified, so we treat the GAP_N -> MLP as the default, so:
+        #     self.action_output = FC(
+        #         params={'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
+        #                 'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
+        #                 'end_layer': True})
+
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
@@ -48,26 +93,97 @@ class CIL_multiview(nn.Module):
 
         self.train()
 
-    def forward(self, s, s_d, s_s):
+    def encode_observations(self, s, s_d, s_s):
+        """ Encode the observations into the representation space """
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
+        cam = len(g_conf.DATA_USED)  # Number of cameras
 
         x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1) # [B, S, cam, 3, H, W]
-        x = x.view(B*S*len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[0], g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2])  # [B*S*cam, 3, H, W]
+        x = rearrange(x, 'B S cam C H W -> (B S cam) C H W')
         d = s_d[-1]  # [B, 4]
         s = s_s[-1]  # [B, 1]
 
-        # image embedding
-        e_p, _ = self.encoder_embedding_perception(x)    # [B*S*cam, dim, h, w]
-        encoded_obs = e_p.view(B, S*len(g_conf.DATA_USED), self.res_out_dim, self.res_out_h*self.res_out_w)  # [B, S*cam, dim, h*w]
-        encoded_obs = encoded_obs.transpose(2, 3).reshape(B, -1, self.res_out_dim)  # [B, S*cam*h*w, 512]
-        e_d = self.command(d).unsqueeze(1)     # [B, 1, 512]
-        e_s = self.speed(s).unsqueeze(1)       # [B, 1, 512]
+        # Image encoding into tokens for the Encoder input sequence
+        e_p, resnet_inter = self.encoder_embedding_perception(x)  # [B*S*cam, dim, h, w]
+        e_p = rearrange(e_p, '(B S cam) dim h w -> B (S cam h w) dim', S=S, cam=cam)  # [B, S*cam*h*w, D]
 
-        encoded_obs = encoded_obs + e_d + e_s
+        # Add extra tokens, if sppecified
+        if not g_conf.NO_ACT_TOKENS:
+            n = e_p.shape[0]  # B
+            first_tokens = [self.tfx_steer_token.expand(n, -1, -1),
+                            self.tfx_accel_token.expand(n, -1, -1)][::-2 * g_conf.OLD_TOKEN_ORDER + 1]
+        else:
+            first_tokens = []
 
+        # Concatenate the first tokens to the image embeddings
+        e_p = torch.cat([*first_tokens, e_p], dim=1)  # [B, S*cam*h*w + K, D], K = 2 if tokens are used
+
+        # Embed the commands and speed
+        e_d = self.command(d).unsqueeze(1)  # [B, 1, D]
+        e_s = self.speed(s).unsqueeze(1)  # [B, 1, D]
+
+        # Add the embeddings to the image embeddings
+        if g_conf.CMD_SPD_TOKENS and not g_conf.NO_ACT_TOKENS:
+            encoded_obs = torch.cat([e_d, e_s, e_p], dim=1)  # [B, S*cam*H*W/P^2 + K, D]; K = 4 w/tokens else 2
+        else:
+            encoded_obs = e_p + e_d + e_s  # [B, S*cam*H*W/P^2 + K), D]; K = 2 w/tokens else 0
+
+        return encoded_obs, resnet_inter
+
+    def action_prediction(self, sequence: torch.Tensor, cam: int) -> torch.Tensor:
+        """ Predict the action from the encoded sequence """
+        # Only use the action tokens [ACT] for the prediction
+        if not g_conf.NO_ACT_TOKENS:
+            sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
+        if 'action_output' in self.params and self.params['action_output'].get('type', None) is not None:
+            action_output_type = self.params['action_output']['type']
+            if action_output_type == 'baseline1_patches2act':
+                # Get the patch representation at the final layer
+                patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+                # Pass the patch representation through an MLP
+                action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
+            elif action_output_type == 'baseline2_gapd' and not g_conf.ONE_ACTION_TOKEN:
+                # Average pooling of the ACT tokens (one per target)
+                action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+            elif action_output_type == 'baseline3_patches2act_gap_avg' and not g_conf.ONE_ACTION_TOKEN:
+                # Get the patch representation at the final layer
+                patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+                # Pass the patch representation through an MLP
+                action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
+                # Average pooling of the ACT tokens (one per target)
+                action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+                # Final action will be the average of both of these
+                action_output = (action_output_patches + action_output_tokens) / 2
+            elif action_output_type == 'baseline4_patches2act_gap_diff' and not g_conf.ONE_ACTION_TOKEN:
+                # Get the patch representation at the final layer
+                patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+                # Pass the patch representation through an MLP
+                action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
+                # Average pooling of the ACT tokens (one per target)
+                action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
+                # Return tuple of both actions (difference will be part of the loss)
+                action_output = (action_output_patches, action_output_tokens)
+            else:
+                raise ValueError(f'Invalid action_output type: {self.params["action_output"]["type"]}')
+
+        else:
+            # Get the patch representation at the final layer
+            patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
+            # Pass the patch representation through an MLP
+            action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
+
+        return action_output
+
+    def forward(self, s, s_d, s_s):
+        S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
+        B = s_d[0].shape[0]
+        cam = len(g_conf.DATA_USED)  # Number of cameras
+
+        encoded_obs, _ = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
+
+        # Add positional embedding (fixed or learnable)
         if self.params['TxEncoder']['learnable_pe']:
-            # positional encoding
             pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w, 512]
         else:
             pe = self.positional_encoding(encoded_obs)
@@ -75,29 +191,17 @@ class CIL_multiview(nn.Module):
         # Transformer encoder multi-head self-attention layers
         in_memory, _ = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
 
-        in_memory = torch.mean(in_memory, dim=1)  # [B, 512]
-
-        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        # Get the action output
+        action_output = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
 
         return action_output         # (B, 1, 1), (B, 1, len(TARGETS))
 
     def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
+        cam = len(g_conf.DATA_USED)  # Number of cameras
 
-        x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1)  # [B, S, cam, 3, H, W]
-        x = x.view(B * S * len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[0], g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2])  # [B*S*cam, 3, H, W]
-        d = s_d[-1]  # [B, 4]
-        s = s_s[-1]  # [B, 1]
-
-        # image embedding
-        e_p, resnet_inter = self.encoder_embedding_perception(x)  # [B*S*cam, dim, h, w]
-        encoded_obs = e_p.view(B, S * len(g_conf.DATA_USED), self.res_out_dim,  self.res_out_h * self.res_out_w)  # [B, S*cam, dim, h*w]
-        encoded_obs = encoded_obs.transpose(2, 3).reshape(B, -1, self.res_out_dim)  # [B, S*cam*h*w, 512]
-        e_d = self.command(d).unsqueeze(1)  # [B, 1, 512]
-        e_s = self.speed(s).unsqueeze(1)  # [B, 1, 512]
-
-        encoded_obs = encoded_obs + e_d + e_s   # [B, S*cam*h*w, 512]
+        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
 
         if self.params['TxEncoder']['learnable_pe']:
             # positional encoding
@@ -107,9 +211,41 @@ class CIL_multiview(nn.Module):
 
         # Transformer encoder multi-head self-attention layers
         in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
-        in_memory = torch.mean(in_memory, dim=1)  # [B, 512]
 
-        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        # Get the action output
+        action_output = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
+
+        # Attention stuff
+        if attn_rollout:
+            attn_weights = utils.attn_rollout(attn_weights)
+
+        # Get the attention weights in the right shape
+        if not g_conf.NO_ACT_TOKENS:
+            if g_conf.CMD_SPD_TOKENS:
+                # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens
+                attn_weights_t2t = attn_weights[-1][:, :self.act_tokens_pos[-1] + 1, :self.act_tokens_pos[-1] + 1]  # [B, t+2, t+2]
+                attn_weights_stracc = attn_weights[-1][:, self.act_tokens_pos, -self.res_out_h * self.res_out_w * S * cam:]  # [B, t, S*cam*(H//P)^2]
+                # Normalize the attention weights to be in the range [0, 1], row-wise
+                attn_weights_t2t = attn_weights_t2t / attn_weights_t2t.sum(dim=2, keepdim=True)  # [B, t+2, t+2]
+                attn_weights_stracc = (attn_weights_stracc - attn_weights_stracc.min()) / (attn_weights_stracc.max() - attn_weights_stracc.min())  # [B, t, S*cam*(H//P)^2]
+                attn_weights_stracc = rearrange(attn_weights_stracc, 'B T (S cam h w) -> B T h (S cam w)',
+                                                S=S, cam=cam, h=self.res_out_h)
+                # Give as a tuple
+                attn_weights = (attn_weights_t2t, attn_weights_stracc)  # [B, t+2, t+2], [B, t+2, H//P, S*cam*W//P]
+            else:
+                # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
+                attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.res_out_h * self.res_out_w * S * cam:]  # [B, t, S*cam*(H//P)^2]
+                # Normalize the attention weights to be in the range [0, 1]
+                attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, t+2, S*cam*(H//P)^2]
+                # Rearrange the attention weights to be in the right shape
+                attn_weights = rearrange(attn_weights, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.res_out_h)  # [B, t, H//P, S*cam*W//P]
+
+        else:
+            # We don't have any extra tokens, so let's just return the average attention weights of the last layer
+            attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
+            attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, S*cam*(H//P)^2] or [B, N]
+            attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
+                                     h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
 
         return action_output, resnet_inter, attn_weights
 
