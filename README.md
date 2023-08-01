@@ -104,28 +104,36 @@ For training models, you can either
 
     For easy downloading, the folders are divided into several parts and all compressed in zip files.
     For model training, please unzip them into your `DATASET_PATH`. The dataloader will access to the full paths of
-    `$DATASET_PATH/<dataset_folder_name>`, where the `<dataset_folder_name>` will be defined by `TRAIN_DATASET_NAME`
+    `$DATASET_PATH/<dataset_folder_name>`, where the `<dataset_folder_name>` will be defined by `TRAIN_DATASET_NAME`/`VALID_DATASET_NAME`
     in the [exp yaml file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml)
 
     * Small test datasets:
+
         Training:
+
             - [part 1](smb://158.109.8.18/synthia-www/CILv2/smalltrain1)
             - [part 2](smb://158.109.8.18/synthia-www/CILv2/smalltrain2)
 
         Offline Evaluation:
+
             - [part 3](smb://158.109.8.18/synthia-www/CILv2/smallval1)
 
 
     * Single-lane towns:
+
         Training:
+
             - [part 4](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam)
             - [part 5](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam)
 
         Offline Evaluation:
+
             - [part 6](smb://158.109.8.18/synthia-www/CILv2/Roach_LBCRoutes_3cam_valid)
 
     * Multi-lane towns:
+
         Training:
+
             - [part 7](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_3cam)
             - [part 8](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam)
             - [part 9](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T2_3cam)
@@ -134,7 +142,9 @@ For training models, you can either
             - [part 12](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T4_dense_3cam)
             - [part 13](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T6_3cam)
             - [part 14](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T6_dense_3cam)
+
         Offline Evaluation:
+        
             - same as part 6
 
 * Collect new datasets. The RL expert driver we used for data collection is from [this work](https://github.com/zhejz/carla-roach)
