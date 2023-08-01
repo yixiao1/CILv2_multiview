@@ -104,7 +104,7 @@ For training models, you can either
 
     For easy downloading, the folders are divided into several parts and all compressed in zip files.
     For model training, please unzip them into your `DATASET_PATH`. The dataloader will access to the full paths of
-    `$DATASET_PATH/<dataset_folder_name>`, where the `<dataset_folder_name>` will be defined by `TRAIN_DATASET_NAME`/`VALID_DATASET_NAME`
+    $DATASET_PATH/<dataset_folder_name>, where the `<dataset_folder_name>` will be defined by `TRAIN_DATASET_NAME`/`VALID_DATASET_NAME`
     in the [exp yaml file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml)
 
     * Small test datasets:
