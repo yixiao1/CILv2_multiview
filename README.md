@@ -108,17 +108,20 @@ For training models, you can either
     in the [exp yaml file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml)
 
     * Small test datasets:
+
         Training: [part 1](smb://158.109.8.18/synthia-www/CILv2/smalltrain1), [part 2](smb://158.109.8.18/synthia-www/CILv2/smalltrain2)
 
         Offline Evaluation: [part 3](smb://158.109.8.18/synthia-www/CILv2/smallval1)
 
 
     * Single-lane towns:
+
         Training: [part 4](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam), [part 5](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam)
 
         Offline Evaluation: [part 6](smb://158.109.8.18/synthia-www/CILv2/Roach_LBCRoutes_3cam_valid)
 
     * Multi-lane towns:
+
         Training:
         [part 7](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_3cam),
         [part 8](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam),
