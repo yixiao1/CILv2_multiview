@@ -108,34 +108,28 @@ For training models, you can either
     in the [exp yaml file](https://github.com/yixiao1/CILv2_multiview/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml)
 
     * Small test datasets:
-        Training:
-            [part 1](smb://158.109.8.18/synthia-www/CILv2/smalltrain1)
-            [part 2](smb://158.109.8.18/synthia-www/CILv2/smalltrain2)
+        Training: [part 1](smb://158.109.8.18/synthia-www/CILv2/smalltrain1), [part 2](smb://158.109.8.18/synthia-www/CILv2/smalltrain2)
 
-        Offline Evaluation:
-            [part 3](smb://158.109.8.18/synthia-www/CILv2/smallval1)
+        Offline Evaluation: [part 3](smb://158.109.8.18/synthia-www/CILv2/smallval1)
 
 
     * Single-lane towns:
-        Training:
-            - [part 4](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam)
-            - [part 5](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam)
+        Training: [part 4](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam), [part 5](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam)
 
-        Offline Evaluation:
-            - [part 6](smb://158.109.8.18/synthia-www/CILv2/Roach_LBCRoutes_3cam_valid)
+        Offline Evaluation: [part 6](smb://158.109.8.18/synthia-www/CILv2/Roach_LBCRoutes_3cam_valid)
 
     * Multi-lane towns:
         Training:
-            - [part 7](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_3cam)
-            - [part 8](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam)
-            - [part 9](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T2_3cam)
-            - [part 10](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T3_3cam)
-            - [part 11](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T4_3cam)
-            - [part 12](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T4_dense_3cam)
-            - [part 13](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T6_3cam)
-            - [part 14](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T6_dense_3cam)
-        Offline Evaluation:
-            - same as part 6
+        [part 7](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_3cam),
+        [part 8](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam),
+        [part 9](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T2_3cam),
+        [part 10](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T3_3cam),
+        [part 11](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T4_3cam),
+        [part 12](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T4_dense_3cam),
+        [part 13](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T6_3cam),
+        [part 14](smb://158.109.8.18/synthia-www/CILv2/Roach_carla0913_fps10_dense_normalcamera_T6_dense_3cam)
+
+        Offline Evaluation: same as part 6
 
 * Collect new datasets. The RL expert driver we used for data collection is from [this work](https://github.com/zhejz/carla-roach)
 
