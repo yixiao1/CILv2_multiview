@@ -53,6 +53,18 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 layers.append(self.tfx_encoder.layers[i])
             self.tfx_encoder.layers = nn.Sequential(*layers)
 
+        freeze_layers = self.params['encoder_embedding']['perception']['vit'].get('freeze_layers', None)
+        if freeze_layers is not None:
+            # Sanity check
+            freeze_layers = int(freeze_layers)
+            freeze_layers = max(min(freeze_layers, len(self.tfx_encoder.layers)), 0)
+            if freeze_layers > 0:
+                if rank == 0:
+                    print(f'Freezing the first {freeze_layers} layers of the ViT model (total: {len(self.tfx_encoder.layers)})...')
+                for i in range(freeze_layers):
+                    for param in self.tfx_encoder.layers[i].parameters():
+                        param.requires_grad = False
+
         if not g_conf.NEW_COMMAND_SPEED_FC:
             self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.tfx_hidden_dim)
             self.speed = nn.Linear(1, self.tfx_hidden_dim)

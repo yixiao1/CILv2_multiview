@@ -408,7 +408,7 @@ class CILv2_agent(object):
                 return [blended_img]
 
             # Do something different according to the model name
-            if self._model.name == 'CIL_multiview_vit_oneseq' or self._model.name == 'CIL_multiview':
+            if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
                 cams = []
                 for i in range(len(g_conf.DATA_USED)):
                     rgb_img = inverse_normalize(self.norm_rgb[-1][i],

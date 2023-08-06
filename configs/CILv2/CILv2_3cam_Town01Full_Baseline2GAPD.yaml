@@ -57,7 +57,7 @@ EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
 # Encoder part#
 IMAGENET_PRE_TRAINED: True
 SENSOR_EMBED: False  # Use sensor embedding
-NO_ACT_TOKENS: True  # Remove all [ACT] tokens
+NO_ACT_TOKENS: False  # Remove all [ACT] tokens
 NEW_COMMAND_SPEED_FC: False  # Use a FC layer instead of nn.Linear for command and speed embedding
 FC_LAYER_NORM: False  # Use layer normalization in FC layers
 COLOR_JITTER: False  # Use color jitter for data augmentation

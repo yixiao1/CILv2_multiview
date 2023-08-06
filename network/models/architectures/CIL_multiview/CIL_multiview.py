@@ -111,8 +111,7 @@ class CIL_multiview(nn.Module):
         # Add extra tokens, if sppecified
         if not g_conf.NO_ACT_TOKENS:
             n = e_p.shape[0]  # B
-            first_tokens = [self.tfx_steer_token.expand(n, -1, -1),
-                            self.tfx_accel_token.expand(n, -1, -1)][::-2 * g_conf.OLD_TOKEN_ORDER + 1]
+            first_tokens = [self.tfx_steer_token.expand(n, -1, -1), self.tfx_accel_token.expand(n, -1, -1)]
         else:
             first_tokens = []
 
@@ -124,7 +123,7 @@ class CIL_multiview(nn.Module):
         e_s = self.speed(s).unsqueeze(1)  # [B, 1, D]
 
         # Add the embeddings to the image embeddings
-        if g_conf.CMD_SPD_TOKENS and not g_conf.NO_ACT_TOKENS:
+        if g_conf.CMD_SPD_TOKENS:
             encoded_obs = torch.cat([e_d, e_s, e_p], dim=1)  # [B, S*cam*H*W/P^2 + K, D]; K = 4 w/tokens else 2
         else:
             encoded_obs = e_p + e_d + e_s  # [B, S*cam*H*W/P^2 + K), D]; K = 2 w/tokens else 0
@@ -134,8 +133,6 @@ class CIL_multiview(nn.Module):
     def action_prediction(self, sequence: torch.Tensor, cam: int) -> torch.Tensor:
         """ Predict the action from the encoded sequence """
         # Only use the action tokens [ACT] for the prediction
-        if not g_conf.NO_ACT_TOKENS:
-            sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
         if 'action_output' in self.params and self.params['action_output'].get('type', None) is not None:
             action_output_type = self.params['action_output']['type']
             if action_output_type == 'baseline1_patches2act':
@@ -145,6 +142,7 @@ class CIL_multiview(nn.Module):
                 action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
             elif action_output_type == 'baseline2_gapd' and not g_conf.ONE_ACTION_TOKEN:
                 # Average pooling of the ACT tokens (one per target)
+                sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
                 action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
             elif action_output_type == 'baseline3_patches2act_gap_avg' and not g_conf.ONE_ACTION_TOKEN:
                 # Get the patch representation at the final layer
@@ -152,6 +150,7 @@ class CIL_multiview(nn.Module):
                 # Pass the patch representation through an MLP
                 action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
                 # Average pooling of the ACT tokens (one per target)
+                sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
                 action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
                 # Final action will be the average of both of these
                 action_output = (action_output_patches + action_output_tokens) / 2
@@ -161,6 +160,7 @@ class CIL_multiview(nn.Module):
                 # Pass the patch representation through an MLP
                 action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
                 # Average pooling of the ACT tokens (one per target)
+                sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
                 action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
                 # Return tuple of both actions (difference will be part of the loss)
                 action_output = (action_output_patches, action_output_tokens)
