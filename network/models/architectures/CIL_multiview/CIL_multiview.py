@@ -65,27 +65,6 @@ class CIL_multiview(nn.Module):
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
                                  'end_layer': True})
 
-        # if 'action_output' in params:
-        #     act_output_type = params['action_output'].get('type', None)
-        #     if act_output_type is None:
-        #         # Default value
-        #         pass
-        #     elif act_output_type in ['baseline1_patches2act', 'baseline3_patches2act_gap_avg',
-        #                              'baseline4_patches2act_gap_diff']:
-        #         self.action_output = FC(
-        #             params={'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
-        #                     'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
-        #                     'end_layer': True})
-        #     else:
-        #         # A GAP, so no need for a FC layer
-        #         pass
-        # else:
-        #     # Not specified, so we treat the GAP_N -> MLP as the default, so:
-        #     self.action_output = FC(
-        #         params={'neurons': [join_dim] + params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
-        #                 'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
-        #                 'end_layer': True})
-
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)

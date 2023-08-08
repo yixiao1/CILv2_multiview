@@ -264,11 +264,14 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
     if rank == 0:
         print("===================== Model Configuration =====================")
         num_params = 0
+        num_trainable_params = 0
         for param in model.parameters():
+            if param.requires_grad:
+                num_trainable_params += param.numel()
             num_params += param.numel()
-        print(f'Total params in model: {num_params}')
+        print(f'Total params in model: {num_params}; trainable: {num_trainable_params} ({100 * num_trainable_params / num_params:.2f}%)')
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=g_conf.LEARNING_RATE)
+    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=g_conf.LEARNING_RATE)
     if (len(gpus_list) > 1 and g_conf.DATA_PARALLEL):
         if rank == 0:
             print("Using multiple GPUs parallel! ")
