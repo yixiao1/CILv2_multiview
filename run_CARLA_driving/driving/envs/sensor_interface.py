@@ -224,6 +224,13 @@ class CallBack(object):
         if 'ss' in tag:
             array = image
             #image.save_to_disk('tutorial/new_sem_output/%.6d.jpg' % image.frame, carla.ColorConverter.CityScapesPalette)
+        elif 'depth' in tag:
+            image.convert(carla.ColorConverter.LogarithmicDepth)
+            array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+            array = copy.deepcopy(array)
+            array = np.reshape(array, (image.height, image.width, 4))
+            array = array[:, :, :3]
+            array = array[:, :, ::-1]
         else:
             array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
             array = copy.deepcopy(array)
@@ -305,6 +312,9 @@ class SensorInterface(object):
 
                 sensor_data = self._new_data_buffers.get(True, self._queue_timeout)
                 data_dict[sensor_data[0]] = ((sensor_data[1], sensor_data[2]))
+
+                # print(len(data_dict.keys()), len(self._sensors_objects.keys()))
+                # print(data_dict.keys(), self._sensors_objects.keys())
 
         except Empty:
             raise SensorReceivedNoData("A sensor took too long to send their data")

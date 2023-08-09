@@ -43,6 +43,7 @@ from driving.utils.server_manager import ServerManagerDocker, find_free_port
 
 sensors_to_icons = {
     'sensor.camera.rgb':        'carla_camera',
+    'sensor.camera.depth':      'carla_depth',
     'sensor.camera.semantic_segmentation':  'carla_ss',
     'sensor.lidar.ray_cast':    'carla_lidar',
     'sensor.other.radar':       'carla_radar',

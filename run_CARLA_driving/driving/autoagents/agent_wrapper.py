@@ -22,6 +22,7 @@ MAX_ALLOWED_RADIUS_SENSOR = 100.0
 
 SENSORS_LIMITS = {
     'sensor.camera.rgb': 7,
+    'sensor.camera.depth': 7,
     'sensor.lidar.ray_cast': 1,
     'sensor.other.radar': 2,
     'sensor.other.gnss': 1,
@@ -51,6 +52,7 @@ class AgentWrapper(object):
         'sensor.camera.semantic_segmentation',
         'sensor.speedometer',
         'sensor.camera.rgb',
+        'sensor.camera.depth',
         'sensor.camera',
         'sensor.lidar.ray_cast',
         'sensor.other.radar',
@@ -142,7 +144,6 @@ class AgentWrapper(object):
                     sensor_rotation = carla.Rotation(pitch=sensor_spec['pitch'],
                                                      roll=sensor_spec['roll'],
                                                      yaw=sensor_spec['yaw'])
-
                 elif sensor_spec['type'].startswith('sensor.other.gnss'):
                     bp.set_attribute('noise_alt_stddev', str(0.000005))
                     bp.set_attribute('noise_lat_stddev', str(0.000005))
@@ -153,7 +154,6 @@ class AgentWrapper(object):
 
                     sensor_location = carla.Location()
                     sensor_rotation = carla.Rotation()
-
                 elif sensor_spec['type'].startswith('sensor.other.imu'):
                     bp.set_attribute('noise_accel_stddev_x', str(0.001))
                     bp.set_attribute('noise_accel_stddev_y', str(0.001))
