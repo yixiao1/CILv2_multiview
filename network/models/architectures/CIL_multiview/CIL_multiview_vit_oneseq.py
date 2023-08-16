@@ -56,12 +56,15 @@ class CIL_multiview_vit_oneseq(nn.Module):
         freeze_layers = self.params['encoder_embedding']['perception']['vit'].get('freeze_layers', None)
         if freeze_layers is not None:
             # Sanity check
-            freeze_layers = int(freeze_layers)
-            freeze_layers = max(min(freeze_layers, len(self.tfx_encoder.layers)), 0)
-            if freeze_layers > 0:
+            if isinstance(freeze_layers, (str, int)):
+                freeze_layers = list(range(int(freeze_layers)))
+            elif isinstance(freeze_layers, list):
+                freeze_layers = [int(x) for x in freeze_layers]
+            freeze_layers = [x for x in freeze_layers if len(self.tfx_encoder.layers) > x >= 0]
+            if len(freeze_layers) > 0:
                 if rank == 0:
-                    print(f'Freezing the first {freeze_layers} layers of the ViT model (total: {len(self.tfx_encoder.layers)})...')
-                for i in range(freeze_layers):
+                    print(f'Freezing {len(freeze_layers)} layers of the Encoder (from total: {len(self.tfx_encoder.layers)})...')
+                for i in freeze_layers:
                     for param in self.tfx_encoder.layers[i].parameters():
                         param.requires_grad = False
 
@@ -113,10 +116,8 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
             self.act_tokens_pos = [0, 1] if not g_conf.ONE_ACTION_TOKEN else [0]  # Tokens to use for the action
 
-            # Remove the [CLS] token if needed
+            # Remove the [CLS] token (default)
             if g_conf.REMOVE_CLS_TOKEN:
-                if rank == 0:
-                    print('Removing the [CLS] token from the sequence...')
                 self.tfx_seq_length -= 1  # K=2
                 del self.tfx_class_token
 
@@ -129,6 +130,13 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         # Sequence length
         self.tfx_seq_length += int(g_conf.ENCODER_INPUT_FRAMES_NUM) * len(g_conf.DATA_USED) * self.tfx_num_patches
+
+        # Mask the diagonal with -inf
+        if g_conf.MASK_DIAGONAL_ATTMAP:
+            tfx_mask = torch.zeros((self.tfx_seq_length, self.tfx_seq_length)).fill_diagonal_(float('-inf'))
+            self.tfx_mask = nn.Parameter(tfx_mask, requires_grad=False)
+        else:
+            self.tfx_mask = None
 
         if g_conf.LEARNABLE_POS_EMBED and not g_conf.IMAGENET_PRE_TRAINED:
             self.tfx_encoder.pos_embedding = nn.Parameter(
@@ -211,33 +219,6 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         self.train()
 
-    def interpolate_pos_encoding(self, new_seq_shape: Tuple[int, int]) -> None:
-        # Interpolate the positional encoding to the correct size
-        old_pos_embedding_token = self.tfx_encoder.pos_embedding[:, :1, :]
-        old_pos_embedding_img = self.tfx_encoder.pos_embedding[:, 1:, :]
-        old_pos_embedding_img = rearrange(old_pos_embedding_img, '1 (p1 p2) d -> 1 d p1 p2', p1=self.tfx_patch_size)
-
-        # Create the positional embedding; will be used implicitly by the Encoder
-        if g_conf.IMAGENET_PRE_TRAINED:
-            # If pre-trained, we need to interpolate the positional embedding
-            new_pos_embedding_img = nn.functional.interpolate(
-                old_pos_embedding_img,  # Grab the old positional embedding, [1, D, H//P, H//P]
-                size=new_seq_shape,  # expand it as we have concatenated the images, [S*cam*H//P, H//P]
-                mode='bicubic',
-                align_corners=True)  # [1, D, S*cam*H//P, H//P]
-
-            new_pos_embedding_img = rearrange(new_pos_embedding_img, '1 D (S cam p1) p2 -> 1 (S cam p1 p2) D',
-                                              D=self.tfx_hidden_dim, S=int(g_conf.ENCODER_INPUT_FRAMES_NUM),
-                                              cam=len(g_conf.DATA_USED))  # [1, S*cam*(H//P)^2, D]
-            self.tfx_encoder.pos_embedding = nn.Parameter(
-                torch.cat([old_pos_embedding_token, new_pos_embedding_img], dim=1))  # [1, S*cam*(H//P)^2 + 1, D]
-        else:
-            # If we are not using a pre-trained model, we need to create the positional embedding from scratch
-            # (as interpolating the old one would not make sense); we use the same method as in the official code
-            self.tfx_encoder.pos_embedding = nn.Parameter(
-                torch.empty(1, self.tfx_patch_number + 1, self.tfx_hidden_dim).normal_(std=0.02)
-            )
-
     def encode_observations(self, s, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size
@@ -288,77 +269,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
         if not g_conf.NO_ACT_TOKENS:
             sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
         if 'action_output' in self.params:
-            if self.params['action_output']['type'] == '2mlp':
-                # Pass the ACT tokens through two MLPs, one for steering and one for acceleration
-                steering_input = sequence_act[:, 0] if not g_conf.ONE_ACTION_TOKEN else sequence_act.squeeze(1)
-                acceleration_input = sequence_act[:, 1] if not g_conf.ONE_ACTION_TOKEN else sequence_act.squeeze(1)
-                steering_output = self.steer_output(steering_input)  # [B, D] => [B, 1]
-                acceleration_output = self.accel_output(acceleration_input)  # [B, D] => [B, 1]
-                # Concatenate them
-                action_output = torch.cat([steering_output, acceleration_output], dim=1).unsqueeze(1)  # [B, 1, t]
-            elif self.params['action_output']['type'] == '1mlp':
-                # Pass the ACT tokens through a MLP
-                in_memory = rearrange(sequence_act, 'B t D -> B (t D)')  # flatten the sequence [B, t, D] => [B, t*D]
-                action_output = self.action_output(in_memory).unsqueeze(1)  # [B, t*D] => [B, 1, len(TARGETS)]
-            elif self.params['action_output']['type'] == 'gap' and not g_conf.NO_ACT_TOKENS:  # too basic
-                # Average pooling of the ACT tokens (one per target)
-                action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'avgmult_gap' and not g_conf.NO_ACT_TOKENS:  # Makes no sense
-                # Average the CMD and SPD tokens and then multiply them by the GAP of the ACT tokens
-                cmd = reduce(sequence[:, 0], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
-                spd = reduce(sequence[:, 1], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
-                action_output = cmd * spd * reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'avgsum_gap' and not g_conf.NO_ACT_TOKENS:  # makes no sense
-                # Average the CMD and SPD tokens and then add them to the GAP of the ACT tokens
-                cmd = reduce(sequence[:, 0], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
-                spd = reduce(sequence[:, 1], 'B D -> B 1 1', 'mean')  # [B, D] => [B, 1, 1]
-                action_output = cmd + spd + reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'dotmult_gap' and not g_conf.NO_ACT_TOKENS:  # makes no sense
-                # Perform the dot product of the CMD and SPD tokens, then multiply them by the GAP of the ACT tokens
-                dot = reduce(sequence[:, 0] * sequence[:, 1], 'B D -> B 1 1', 'sum')  # [B, D] => [B, 1, 1]
-                action_output = dot * reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'dotsum_gap' and not g_conf.NO_ACT_TOKENS:  # makes no sense
-                # Perform the dot product of the CMD and SPD tokens, then add them to the GAP of the ACT tokens
-                dot = reduce(sequence[:, 0] * sequence[:, 1], 'B D -> B 1 1', 'sum')  # [B, D] => [B, 1, 1]
-                action_output = dot + reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'add_gap' and not g_conf.NO_ACT_TOKENS:  # More sense; modifies too much the attention maps tho
-                # Add the CMD and SPD tokens individually to the ACT tokens, then perform a GAP  (same as avgsum_gap)
-                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                action_output = reduce(sequence_act + cmd + spd, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'add_avg_gap' and not g_conf.NO_ACT_TOKENS:  # summing is not the best; perhaps multiplication?
-                # Add the CMD and SPD tokens individually to the ACT tokens, then perform a GAP  (same as avgsum_gap)
-                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                new_seq_act = (sequence_act + cmd + spd) / 3  # [B, t, D]; get the average vector before the GAP
-                action_output = reduce(new_seq_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]; GAP_D
-            elif self.params['action_output']['type'] == 'addmult_gap' and not g_conf.NO_ACT_TOKENS:  # almost, but not quite
-                # Add the CMD and SPD tokens individually to the ACT tokens, then multiply them by the GAP
-                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                action_output = reduce((cmd + spd) * sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'add_patches_avg_gap' and not g_conf.NO_ACT_TOKENS:
-                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
-                action_output = reduce((sequence_act + cmd + spd + patches)/4, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'elem_mult_gap' and not g_conf.NO_ACT_TOKENS:
-                # Element-wise multiplication of the final representations of all available tokens, then do a GAP.
-                # We want the attention maps to really focus on important patches, so the element-wise multiplication
-                # should work better than the addition
-                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
-                action_output = reduce(cmd * spd * sequence_act * patches, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'elem_mult_map' and not g_conf.NO_ACT_TOKENS:
-                # Element-wise multiplication of the final representations of all available tokens, then do a MAP.
-                # We want the attention maps to really focus on important patches, so the element-wise multiplication
-                # should work better than the addition
-                cmd = sequence[:, 0].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                spd = sequence[:, 1].unsqueeze(1) if g_conf.CMD_SPD_TOKENS else 1.0  # [B, 1, D] or 1.0
-                patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B 1 D', 'mean')  # [B, N, D] => [B, 1, D]
-                action_output = reduce(cmd * spd * sequence_act * patches, 'B t D -> B 1 t', 'max')  # [B, t, D] => [B, 1, t]
-            elif self.params['action_output']['type'] == 'baseline1_patches2act':
+            if self.params['action_output']['type'] == 'baseline1_patches2act':
                 # Get the patch representation at the final layer
                 patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
                 # Pass the patch representation through an MLP
@@ -420,7 +331,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
         if self.params['encoder_embedding']['perception']['vit'].get('stochastic_depth', False):
             in_memory = torchvision.ops.StochasticDepth(p=0.1, mode='row')(self.tfx_encoder.forward(encoded_obs))
         else:
-            in_memory = self.tfx_encoder.forward(encoded_obs)  # [B, S*cam*H*W/P^2 + K, D]
+            in_memory = self.tfx_encoder.forward(encoded_obs, mask=self.tfx_mask)  # [B, S*cam*H*W/P^2 + K, D]
 
         # Get the action output
         action_output = self.action_prediction(in_memory, cam)  # [B, t=2]
@@ -435,7 +346,8 @@ class CIL_multiview_vit_oneseq(nn.Module):
                      s: List[List[torch.Tensor]],
                      s_d: List[torch.Tensor],
                      s_s: List[torch.Tensor],
-                     attn_rollout: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
+                     attn_rollout: bool = False,
+                     zero_diagonal_attnmap: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size; will change if using multiple GPUs
         cam = len(g_conf.DATA_USED)  # Number of cameras
@@ -451,7 +363,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         # Pass on to the Transformer encoder
         # [B, S*cam*H*W/P^2 + K, D], num_layers * [B, S*cam*H*W/P^2 + K, S*cam*H*W/P^2 + K]
-        in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs)
+        in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs, mask=self.tfx_mask)
 
         # Get the action output
         action_output = self.action_prediction(in_memory, cam)  # [B, t=2]
@@ -460,19 +372,24 @@ class CIL_multiview_vit_oneseq(nn.Module):
         if attn_rollout:
             attn_weights = utils.attn_rollout(attn_weights)
 
+        if zero_diagonal_attnmap:
+            attn_weights = utils.zero_diagonal_att_map(attn_weights)
+
         # Get the attention weights in the right shape
         if not g_conf.NO_ACT_TOKENS:
             if g_conf.CMD_SPD_TOKENS:
                 # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens
-                attn_weights_t2t = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, :self.act_tokens_pos[-1]+1]  # [B, t+2, t+2]
+                attn_weights_t2t = torch.zeros(B, self.act_tokens_pos[-1]+1, self.act_tokens_pos[-1]+2, device=attn_weights[-1].device)  # [B, t+2, t+3]
+                attn_weights_t2t[:, :self.act_tokens_pos[-1]+1, :self.act_tokens_pos[-1]+1] = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, :self.act_tokens_pos[-1]+1]
+                attn_weights_t2t[:, :, -1:] = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, -self.tfx_num_patches*S*cam:].sum(dim=-1).unsqueeze(-1)  # [B, t+2, t+3]
                 attn_weights_stracc = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches*S*cam:]  # [B, t, S*cam*(H//P)^2]
                 # Normalize the attention weights to be in the range [0, 1], row-wise
-                attn_weights_t2t = attn_weights_t2t / attn_weights_t2t.sum(dim=2, keepdim=True)  # [B, t+2, t+2]
+                attn_weights_t2t = attn_weights_t2t / attn_weights_t2t.sum(dim=2, keepdim=True)  # [B, t+2, t+3]
                 attn_weights_stracc = (attn_weights_stracc - attn_weights_stracc.min()) / (attn_weights_stracc.max() - attn_weights_stracc.min())  # [B, t, S*cam*(H//P)^2]
                 attn_weights_stracc = rearrange(attn_weights_stracc, 'B T (S cam h w) -> B T h (S cam w)',
                                                 S=S, cam=cam, h=self.tfx_num_patches_h)
                 # Give as a tuple
-                attn_weights = (attn_weights_t2t, attn_weights_stracc)  # [B, t+2, t+2], [B, t+2, H//P, S*cam*W//P]
+                attn_weights = (attn_weights_t2t, attn_weights_stracc)  # [B, t+2, t+3], [B, t+2, H//P, S*cam*W//P]
             else:
                 # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
                 attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches*S*cam:]  # [B, t, S*cam*(H//P)^2]

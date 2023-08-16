@@ -15,7 +15,6 @@ from _utils.evaluation import evaluation_saving
 from logger import _logger, StdoutLogger
 
 
-
 def update_early_stopping(flags, rank, world_size):
     torch.cuda.set_device(rank)
     data_dpp = {
@@ -24,8 +23,11 @@ def update_early_stopping(flags, rank, world_size):
     }
     outputs_dpp = [None for _ in range(world_size)]
     dist.all_gather_object(outputs_dpp, data_dpp)    # we only want to operate on the collected objects at master node
-
-    flags = [el['flags'] for el in outputs_dpp if el['rank'] == 0][0]
+    flags = []
+    for el in outputs_dpp:
+        if el is not None:
+            flags.append(el['flags']) if el['rank'] == 0 else None
+    flags = flags[0]
 
 
 def train_upstream_task(model, optimizer, rank=0, world_size=1):

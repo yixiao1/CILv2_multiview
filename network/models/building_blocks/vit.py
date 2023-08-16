@@ -73,10 +73,11 @@ class EncoderBlock(nn.Module):
         self.ln_2 = norm_layer(hidden_dim)
         self.mlp = MLPBlock(hidden_dim, mlp_dim, dropout)
 
-    def forward(self, input: torch.Tensor):
+    def forward(self, input: torch.Tensor, mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         torch._assert(input.dim() == 3, f"Expected (seq_length, batch_size, hidden_dim) got {input.shape}")
         x = self.ln_1(input)
-        x, att = self.self_attention(query=x, key=x, value=x, need_weights=True, average_attn_weights=True)
+        x, att = self.self_attention(query=x, key=x, value=x, need_weights=True, average_attn_weights=True,
+                                     attn_mask=mask)
         x = self.dropout(x)
         x = x + input
 
@@ -122,19 +123,20 @@ class Encoder(nn.Module):
         self.layers = nn.Sequential(layers)
         self.ln = norm_layer(hidden_dim)
 
-    def forward(self, input: torch.Tensor, pre_pos_emb: bool = True) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, pre_pos_emb: bool = True, mask: torch.Tensor = None) -> torch.Tensor:
         """ Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
          False. """
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
         input = input + self.pos_embedding if not pre_pos_emb else input
         input = self.dropout(input)
         for i in range(self.num_layers):
-            input, _ = self.layers[i](input)
+            input, _ = self.layers[i](input, mask=mask)
 
         return self.ln(input)
 
     def forward_return_attn(self, input: torch.Tensor,
-                            pre_pos_emb: bool = True) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+                            pre_pos_emb: bool = True,
+                            mask: torch.Tensor = None) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         """
         Forward of the model. If the positional embedding has already been addded to the input, set pre_pos_emb to
         True.
@@ -146,7 +148,7 @@ class Encoder(nn.Module):
         input = self.dropout(input)
         attns = []
         for i in range(self.num_layers):
-            input, att = self.layers[i](input)
+            input, att = self.layers[i](input, mask=mask)
             attns.append(att)
         return self.ln(input), attns
 

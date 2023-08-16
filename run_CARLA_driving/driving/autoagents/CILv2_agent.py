@@ -374,7 +374,7 @@ class CILv2_agent(object):
             return encode_directions_6(cmd.value), cmd.value
 
     def record_driving(self, current_input_data):
-        if self.vision_save_path:
+        if self.vision_save_path and self.datapoint_count % self.save_frequence == 0:
             # Aux function for getting the images to the desired shape
             def get_grayscale_attn_map(attn_weights: torch.Tensor,
                                        token_idx: int = None,
@@ -423,11 +423,12 @@ class CILv2_agent(object):
                 if not g_conf.NO_ACT_TOKENS:
                     if not g_conf.ONE_ACTION_TOKEN:
                         # Get the steering [STR] attention map
-                        grayscale_cam_str = get_grayscale_attn_map(self.attn_weights, -2, 900, 300, one_seq=True)  # wtf, why was this self.attn_weights[1] before?
+                        attmaps = self.attn_weights[1] if isinstance(self.attn_weights, tuple) else self.attn_weights
+                        grayscale_cam_str = get_grayscale_attn_map(attmaps, -2, 900, 300, one_seq=True)
                         topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
 
                         # Get the acceleration [ACC] attention map
-                        grayscale_cam_acc = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                        grayscale_cam_acc = get_grayscale_attn_map(attmaps, -1, 900, 300, one_seq=True)
                         bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
 
                     else:
@@ -515,7 +516,7 @@ class CILv2_agent(object):
 
             # Background image (black)
             l = 4/3 if g_conf.CMD_SPD_TOKENS else 1
-            mat_width = int(rgb_backontop.width + l * len(cams) * (cams[0].width + images_separation_horizontally))
+            mat_width = int(rgb_backontop.width + l * len(cams) * (cams[0].width + images_separation_horizontally)) + 75
             mat_height = int(border_height_top + rgb_backontop.height + border_height_bottom)
             mat = Image.new('RGB', (mat_width, mat_height), (0, 0, 0))
             draw_mat = ImageDraw.Draw(mat)
@@ -556,11 +557,11 @@ class CILv2_agent(object):
 
             if g_conf.CMD_SPD_TOKENS:
                 # Get the token-to-token attention map
-                grayscale_cam_t2t = get_grayscale_attn_map(self.attn_weights[0], resize_width=300, resize_height=300)
+                grayscale_cam_t2t = get_grayscale_attn_map(self.attn_weights[0], resize_width=375, resize_height=300)
                 cmap_att = np.delete(self.cmap_2(grayscale_cam_t2t), 3, 3)[0]
                 cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8))
                 # Paste them
-                title = '[CMD] [SPD] [STR] [ACC]' if not g_conf.ONE_ACTION_TOKEN else '[CMD] [SPD] [ACT]'
+                title = '[CMD] [SPD] [STR] [ACC] Patches' if not g_conf.ONE_ACTION_TOKEN else '[CMD] [SPD] [ACT] Patches'
                 draw_mat.text((rgb_backontop.width + 2*images_separation_horizontally + cams[0].width, 80), title,
                               fill=(255, 255, 255), font=font_3)
                 mat.paste(cmap_att, (rgb_backontop.width + 2*images_separation_horizontally + cams[0].width, border_height_top))
@@ -686,6 +687,5 @@ class CILv2_agent(object):
             
             if not os.path.exists(self.vision_save_path):
                 os.makedirs(self.vision_save_path)
-            if self.datapoint_count % self.save_frequence == 0:
-                mat = mat.resize((int(mat.size[0] / 2), int(mat.size[1] / 2)))   # comment this if you don't want to resize
-                mat.save(os.path.join(self.vision_save_path, f'{self.datapoint_count:06d}.jpg'))
+            mat = mat.resize((int(mat.size[0] / 2), int(mat.size[1] / 2)))   # comment this if you don't want to resize
+            mat.save(os.path.join(self.vision_save_path, f'{self.datapoint_count:06d}.jpg'))

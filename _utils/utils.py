@@ -284,3 +284,15 @@ def attn_rollout(attn_weights: List[torch.Tensor], layer: int = None) -> torch.T
         attn_weights_rollout_cams[:, c] = torch.stack(attn_weights_rollout)
 
     return attn_weights_rollout_cams
+
+
+def zero_diagonal_att_map(attn_weights: Union[torch.Tensor, List[torch.Tensor]]) -> torch.Tensor:
+    """ Zero the diagonal of the attention map """
+    if isinstance(attn_weights, torch.Tensor):
+        if len(attn_weights.shape) == 3:
+            attn_weights = [attn_weights]
+    att_map = torch.stack([attn_weights[i] for i in range(len(attn_weights))], dim=0)  # [L, C, S, S]
+    num_layers, num_cams, S, _ = att_map.shape
+
+    att_map = att_map * (1 - torch.eye(S, device=att_map.device))  # [L, C, S, S]
+    return att_map
