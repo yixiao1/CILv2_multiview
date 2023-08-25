@@ -192,6 +192,13 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 # It's a GAP, so do nothing
                 pass
 
+        # Action ratio between pure tokens and patches
+        if g_conf.LEARNABLE_ACTION_RATIO:
+            # Start balanced
+            self.action_ratio = nn.Parameter(torch.tensor([0.5]), requires_grad=True)
+        else:
+            self.action_ratio = 0.5
+
         # Extra regularization: predict the input speed and command
         if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
             print('Adding the speed and command prediction...') if rank == 0 else None
@@ -285,7 +292,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 # Average pooling of the ACT tokens (one per target)
                 action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
                 # Final action will be the average of both of these
-                action_output = (action_output_patches + action_output_tokens) / 2
+                action_output = self.action_ratio * action_output_patches + (1 - self.action_ratio) * action_output_tokens
             elif self.params['action_output']['type'] == 'baseline4_patches2act_gap_diff' and not g_conf.ONE_ACTION_TOKEN:
                 # Get the patch representation at the final layer
                 patches = reduce(sequence[:, -cam * self.tfx_num_patches:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]

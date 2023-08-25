@@ -183,6 +183,9 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                                                   model._model.tfx_steer_token,  # [STR], [1, 1, D]
                                                   dim=-1).item()  # [1, 1, D] -> [1, 1] -> float
                     _logger.add_scalar('Cosine sim [STR] and [ACC]', cos_sim, model._current_iteration)
+                # Keep track of action ratio if it's learnable
+                if g_conf.LEARNABLE_ACTION_RATIO:
+                    _logger.add_scalar('Action ratio', model._model.action_ratio.item(), model._current_iteration)
 
             if test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
                 print('\nTraining finished !!')
