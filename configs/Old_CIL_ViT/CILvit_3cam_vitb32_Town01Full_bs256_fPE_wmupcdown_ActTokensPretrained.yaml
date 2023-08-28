@@ -59,7 +59,7 @@ PRETRAINED_ACC_STR_TOKENS: True  # Initialize [ACC] and [STR] tokens as clones o
 FREEZE_CLS_TOKEN: False  # freeze the [CLS] token
 REMOVE_CLS_TOKEN: False  # Remove the [CLS] token from the sequence
 
-MODEL_TYPE: 'CIL_ViT'
+MODEL_TYPE: 'Old_CIL_ViT'
 # Based on the MODEL_TYPE, we specify the structure
 MODEL_CONFIGURATION:
   encoder_embedding:
