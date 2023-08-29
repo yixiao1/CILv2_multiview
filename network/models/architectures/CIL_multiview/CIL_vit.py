@@ -237,16 +237,16 @@ class CIL_vit(nn.Module):
 
         if g_conf.CMD_SPD_TOKENS:
             # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens
-            attn_weights = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, -self.tfx_num_patches:]  # [B*S*cam, t+2, (H//P)^2]
+            attn_weights = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, -self.camera_tfx_num_patches:]  # [B*S*cam, t+2, (H//P)^2]
             # Normalize/make sure the sum is 1 w.r.t. the last dimension
             attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)  # [B*S*cam, t+2, (H//P)^2]
-            attn_weights = attn_weights.unflatten(2, (self.tfx_num_patches_h, self.tfx_num_patches_w))  # [B*S*cam, t+2, H//P, W//P]
+            attn_weights = attn_weights.unflatten(2, (self.camera_tfx_num_patches_h, self.camera_tfx_num_patches_w))  # [B*S*cam, t+2, H//P, W//P]
         else:
             # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
-            attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]
+            attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.camera_tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]
             # Normalize/make sure the sum is 1 w.r.t. the last dimension
             attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)  # [B*S*cam, t, (H//P)^2]
-            attn_weights = attn_weights.unflatten(2, (self.tfx_num_patches_h, self.tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
+            attn_weights = attn_weights.unflatten(2, (self.camera_tfx_num_patches_h, self.camera_tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
 
         return action_output, attn_weights
 

@@ -179,8 +179,14 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 _logger.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], model._current_iteration)
                 # Cosine similarity of the learned [ACC] and [STR] tokens, if being used
                 if not g_conf.ONE_ACTION_TOKEN and not g_conf.NO_ACT_TOKENS:
-                    cos_sim = F.cosine_similarity(model._model.tfx_accel_token,  # [ACC], [1, 1, D]
-                                                  model._model.tfx_steer_token,  # [STR], [1, 1, D]
+                    try:
+                        accel_token = getattr(model._model, 'camera_tfx_accel_token')
+                        steer_token = getattr(model._model, 'camera_tfx_steer_token')
+                    except AttributeError:
+                        accel_token = getattr(model._model, 'tfx_accel_token')
+                        steer_token = getattr(model._model, 'tfx_steer_token')
+                    cos_sim = F.cosine_similarity(accel_token,  # [ACC], [1, 1, D]
+                                                  steer_token,  # [STR], [1, 1, D]
                                                   dim=-1).item()  # [1, 1, D] -> [1, 1] -> float
                     _logger.add_scalar('Cosine sim [STR] and [ACC]', cos_sim, model._current_iteration)
                 # Keep track of action ratio if it's learnable
