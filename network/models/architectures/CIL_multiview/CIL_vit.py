@@ -46,8 +46,8 @@ class CIL_vit(nn.Module):
 
         # Steering Transformer Encoder
         self.steering_tfx_encoder = Encoder(seq_length=self.steering_tfx_seq_length,
-                                            num_layers=4,
-                                            num_heads=4,
+                                            num_layers=self.params['steering_encoder']['num_layers'],
+                                            num_heads=self.params['steering_encoder']['num_heads'],
                                             hidden_dim=self.camera_tfx_hidden_dim,
                                             mlp_dim=4 * self.camera_tfx_hidden_dim,
                                             dropout=0.0, attention_dropout=0.0)
@@ -55,8 +55,8 @@ class CIL_vit(nn.Module):
 
         # Acceleration Transformer Encoder
         self.accel_tfx_encoder = Encoder(seq_length=self.accel_tfx_seq_length,
-                                         num_layers=4,
-                                         num_heads=4,
+                                         num_layers=self.params['accel_encoder']['num_layers'],
+                                         num_heads=self.params['accel_encoder']['num_heads'],
                                          hidden_dim=self.camera_tfx_hidden_dim,
                                          mlp_dim=4 * self.camera_tfx_hidden_dim,
                                          dropout=0.0, attention_dropout=0.0)
@@ -118,7 +118,7 @@ class CIL_vit(nn.Module):
 
         # image embedding
         # First, patch and embed the input images
-        e_p = self.tfx_conv_projection(x)  # [B*S*cam, D, H/P, W/P]; usually H = W = 224
+        e_p = self.camera_tfx_conv_projection(x)  # [B*S*cam, D, H/P, W/P]; usually H = W = 224
         e_p = rearrange(e_p, '(B S cam) D (patches_h) (patches_w) -> (B S cam) (patches_h patches_w) D',
                         B=B, cam=cam)  # [B*S*cam, H*W/P^2, D]
 
@@ -156,7 +156,7 @@ class CIL_vit(nn.Module):
         # Steering
         steering_in_memory = rearrange(in_memory[:, 0, :], '(B S cam) D -> B (S cam) D', B=B, S=S,
                                        cam=cam)  # [B, S*cam, D]
-        steering_in_memory = torch.cat([self.final_steer_token, steering_in_memory],
+        steering_in_memory = torch.cat([self.final_steer_token.expand(B, -1, -1), steering_in_memory],
                                        dim=1)  # [B, S*cam, D] => [B, S*cam+1, D]
         steering_in_memory = steering_in_memory + self.pos_embed_steering_tfx  # [B, S*cam+1, D]
         steering_in_memory = self.steering_tfx_encoder.forward(steering_in_memory)  # [B, S*cam+1, D]
@@ -165,7 +165,7 @@ class CIL_vit(nn.Module):
         # Acceleration
         accel_in_memory = rearrange(in_memory[:, 1, :], '(B S cam) D -> B (S cam) D', B=B, S=S,
                                     cam=cam)  # [B, S*cam, D]
-        accel_in_memory = torch.cat([self.final_accel_token, accel_in_memory],
+        accel_in_memory = torch.cat([self.final_accel_token.expand(B, -1, -1), accel_in_memory],
                                     dim=1)  # [B, S*cam, D] => [B, S*cam+1, D]
         accel_in_memory = accel_in_memory + self.pos_embed_accel_tfx  # [B, S*cam+1, D]
         accel_in_memory = self.accel_tfx_encoder.forward(accel_in_memory)  # [B, S*cam+1, D]

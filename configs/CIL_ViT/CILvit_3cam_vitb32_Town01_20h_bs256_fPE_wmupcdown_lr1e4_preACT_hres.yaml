@@ -71,6 +71,14 @@ MODEL_CONFIGURATION:
       vit:
         name: 'vit_b_32'
 
+  steering_encoder:
+    num_layers: 4
+    num_heads: 4
+
+  accel_encoder:
+    num_layers: 4
+    num_heads: 4
+
   command:
     fc:
       neurons: [512]  # TODO: for multitokens, use a deeper FC
