@@ -226,7 +226,7 @@ class CIL_vit(nn.Module):
         encoded_obs = self.pos_embed_camera_tfx(encoded_obs) if not g_conf.LEARNABLE_POS_EMBED else encoded_obs + self.pos_embed_camera_tfx  # [B*S*cam, H*W/P^2 + K, D]]
 
         # Pass on to the camera Transformer encoder
-        in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs)  # [B*S*cam, (H//P)^2+K, D], num_layers * [B*S*cam, (H//P)^2+K, (H//P)^2+K]
+        in_memory, attn_weights = self.camera_tfx_encoder.forward_return_attn(encoded_obs)  # [B*S*cam, (H//P)^2+K, D], num_layers * [B*S*cam, (H//P)^2+K, (H//P)^2+K]
 
         # Get the action prediction
         action_output = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)]
