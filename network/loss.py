@@ -33,11 +33,46 @@ def Action_nospeed_L1(params: dict) -> Tuple[torch.Tensor, ...]:
         return loss, steer_loss, throttle_loss, brake_loss
 
 
+def Action_nospeed_Quantile(params: dict) -> Tuple[torch.Tensor, ...]:
+    """ Quantile regression loss """
+    B = params['action_output'].shape[0]  # batch_size
+    tau = 0.5 if 'tau' not in params else params['tau']  # L2 loss by default
+
+    # SingleFrame model - we only take into account the last frame's action
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
+    difference = params['action_output'][:, -1, :] - params['targets_action'][-1]  # (B, 2)
+    ind = (difference < 0.0).type(torch.float)  # (B, 2)
+    actions_loss_mat = torch.abs(tau - ind) * difference ** 2  # (B, 2)
+
+    steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
+
+    if g_conf.ACCELERATION_AS_ACTION:
+        acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
+        acceleration_loss = torch.sum(acceleration_loss) / B
+
+        loss = steer_loss + acceleration_loss
+
+        return loss, steer_loss, acceleration_loss
+
+    else:
+        throttle_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['throttle']
+        brake_loss = actions_loss_mat[:, 2] * params['variable_weights']['actions']['brake']
+        throttle_loss = torch.sum(throttle_loss) / B
+        brake_loss = torch.sum(brake_loss) / B
+
+        loss = steer_loss + throttle_loss + brake_loss
+
+        return loss, steer_loss, throttle_loss, brake_loss
+
+
 def Loss(loss: str):
 
-    if loss=='Action_nospeed_L1':
+    if loss == 'Action_nospeed_L1':
         return Action_nospeed_L1
-
+    elif loss == 'Action_nospeed_Quantile':
+        return Action_nospeed_Quantile
     else:
         raise NotImplementedError("The loss of this model type has not yet defined ")
 

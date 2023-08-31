@@ -457,8 +457,11 @@ class CILv2_agent(object):
                     rimg = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)).resize((300, 300))
                     cams.append(rimg)
 
+                # Separate the attention maps
+                cam_attn_weights, steer_attn_weights, accel_attn_weights = self.attn_weights
+
                 # Get the acceleration [ACC] attention map
-                grayscale_cam_acc = self.attn_weights[:, -1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+                grayscale_cam_acc = cam_attn_weights[:, -1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
                 # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
                 grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
                 grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
@@ -469,11 +472,11 @@ class CILv2_agent(object):
                     att = grayscale_cam_acc[cam_id, :]
                     cmap_att = np.delete(self.cmap_2(att), 3, 2)
                     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                    gcacc = Image.blend(cams[cam_id], cmap_att, 0.5)
+                    gcacc = Image.blend(cams[cam_id], cmap_att, accel_attn_weights[:, cam_id].item())
                     gradcams_acc.append(gcacc)
 
                 # Get the steering [STR] attention map
-                grayscale_cam_str = self.attn_weights[:, -2, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+                grayscale_cam_str = cam_attn_weights[:, -2, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
                 # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
                 grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
                 grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
@@ -484,7 +487,7 @@ class CILv2_agent(object):
                     att = grayscale_cam_str[cam_id, :]
                     cmap_att = np.delete(self.cmap_2(att), 3, 2)
                     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                    gcstr = Image.blend(cams[cam_id], cmap_att, 0.5)
+                    gcstr = Image.blend(cams[cam_id], cmap_att, steer_attn_weights[:, cam_id].item())
                     gradcams_str.append(gcstr)
 
             # Get the 3rd person view
@@ -544,16 +547,27 @@ class CILv2_agent(object):
 
             # Attention Maps
             draw_mat.text((330 + rgb_backontop.width, 80), view_titles[0], fill=(255, 255, 255), font=font)
-            mat.paste(topl_gradcam[0], (rgb_backontop.width + images_separation_horizontally, border_height_top))
-            # mat.paste(gradcams_str[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120))
-            # mat.paste(gradcams_str[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2, 120))
+            if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
+                mat.paste(topl_gradcam[0], (rgb_backontop.width + images_separation_horizontally, border_height_top))
+            else:
+                mat.paste(gradcams_str[0], (rgb_backontop.width + images_separation_horizontally, border_height_top))
+                mat.paste(gradcams_str[1], (rgb_backontop.width + 2*images_separation_horizontally + int(cams[0].width),
+                                            border_height_top))
+                mat.paste(gradcams_str[2], (rgb_backontop.width + 3*images_separation_horizontally + 2*int(cams[0].width),
+                                            border_height_top))
 
             draw_mat.text((330 + rgb_backontop.width, border_height_top + cams[0].height + 35), view_titles[1],
                           fill=(255, 255, 255), font=font)
-            mat.paste(bottoml_gradcam[0], (rgb_backontop.width + images_separation_horizontally,
-                                        border_height_top + cams[0].height + images_separation_vertically))
-            # mat.paste(gradcams_acc[1], (rgb_backontop.width+10 + int(cams[0].width) + 10, 120+cams[0].height+80))
-            # mat.paste(gradcams_acc[2], (rgb_backontop.width+10 + int((cams[0].width) + 10)*2,  120+cams[0].height+80))
+            if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
+                mat.paste(bottoml_gradcam[0], (rgb_backontop.width + images_separation_horizontally,
+                                               border_height_top + cams[0].height + images_separation_vertically))
+            else:
+                mat.paste(gradcams_acc[0], (rgb_backontop.width + images_separation_horizontally,
+                                            border_height_top + cams[0].height + images_separation_vertically))
+                mat.paste(gradcams_acc[1], (rgb_backontop.width + 2*images_separation_horizontally + int(cams[0].width),
+                                            border_height_top + cams[0].height + images_separation_vertically))
+                mat.paste(gradcams_acc[2], (rgb_backontop.width + 3*images_separation_horizontally + 2*int(cams[0].width),
+                                            border_height_top + cams[0].height + images_separation_vertically))
 
             if g_conf.CMD_SPD_TOKENS:
                 # Get the token-to-token attention map
