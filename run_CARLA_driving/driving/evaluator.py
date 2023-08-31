@@ -94,7 +94,7 @@ class Evaluator(object):
         if self.ServerDocker is not None:
             args.port = find_free_port()
             self.ServerDocker.reset(args.host, args.port)
-            args.trafficManagerPort=find_free_port()
+            args.trafficManagerPort = find_free_port()
 
         self.client = carla.Client(args.host, int(args.port))
         if args.timeout:
@@ -199,7 +199,6 @@ class Evaluator(object):
         self.world.apply_settings(settings)
 
         self.world.set_pedestrians_seed(int(args.PedestriansSeed))
-        print('Set seed for pedestrians:', str(int(args.PedestriansSeed)))
 
         self.world.reset_all_traffic_lights()
         if hasattr(config, 'scenarios'):
@@ -216,11 +215,10 @@ class Evaluator(object):
         self.traffic_manager.set_synchronous_mode(True)
         self.traffic_manager.set_global_distance_to_leading_vehicle(5.0)
         self.traffic_manager.set_random_device_seed(int(args.trafficManagerSeed))
-        print('Set seed for traffic manager:', str(int(args.trafficManagerSeed)))
+
+        # Set seeds for traffic manager, numpy and the random state
         seed_everything(seed=int(args.trafficManagerSeed))
-        print('Set seed for numpy:', str(int(args.trafficManagerSeed)))
         CarlaDataProvider.set_random_state_seed(int(args.trafficManagerSeed))
-        print('Set seed for random state:', str(int(args.trafficManagerSeed)))
 
         # Wait for the world to be ready
         if CarlaDataProvider.is_sync_mode():
@@ -498,7 +496,7 @@ def main():
                 gpus.append(int(gpu))
             except ValueError:  # Reraise a meaningful error.
                 raise ValueError("GPU is not a valid int number")
-        os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(arguments.gpus)  # This must to be ahead of the whole excution
+        os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(arguments.gpus)  # This must be ahead of the whole execution
         arguments.gpus = gpus
     else:
         raise ValueError('You need to define the ids of GPU you want to use by adding: --gpus')

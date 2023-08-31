@@ -338,7 +338,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
         if self.params['encoder_embedding']['perception']['vit'].get('stochastic_depth', False):
             in_memory = torchvision.ops.StochasticDepth(p=0.1, mode='row')(self.tfx_encoder.forward(encoded_obs))
         else:
-            in_memory = self.tfx_encoder.forward(encoded_obs, mask=self.tfx_mask)  # [B, S*cam*H*W/P^2 + K, D]
+            in_memory, _ = self.tfx_encoder.forward(encoded_obs, mask=self.tfx_mask)  # [B, S*cam*H*W/P^2 + K, D]
 
         # Get the action output
         action_output = self.action_prediction(in_memory, cam)  # [B, t=2]
@@ -370,7 +370,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
 
         # Pass on to the Transformer encoder
         # [B, S*cam*H*W/P^2 + K, D], num_layers * [B, S*cam*H*W/P^2 + K, S*cam*H*W/P^2 + K]
-        in_memory, attn_weights = self.tfx_encoder.forward_return_attn(encoded_obs, mask=self.tfx_mask)
+        in_memory, attn_weights = self.tfx_encoder.forward(encoded_obs, mask=self.tfx_mask)
 
         # Get the action output
         action_output = self.action_prediction(in_memory, cam)  # [B, t=2]

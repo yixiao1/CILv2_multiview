@@ -1,4 +1,5 @@
 import importlib
+from typing import Tuple, List
 
 import torch
 import torch.nn as nn
@@ -109,7 +110,6 @@ class CIL_vit(nn.Module):
     def encode_observations(self, s, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size
-        cam = len(g_conf.DATA_USED)  # Number of cameras/views
 
         x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1)  # [B, S, cam, 3, H, W]
         x = rearrange(x, 'B S cam C H W -> (B S cam) C H W')  # [B*S*cam, 3, H, W]
@@ -120,7 +120,7 @@ class CIL_vit(nn.Module):
         # First, patch and embed the input images
         e_p = self.camera_tfx_conv_projection(x)  # [B*S*cam, D, H/P, W/P]; usually H = W = 224
         e_p = rearrange(e_p, '(B S cam) D (patches_h) (patches_w) -> (B S cam) (patches_h patches_w) D',
-                        B=B, cam=cam)  # [B*S*cam, H*W/P^2, D]
+                        B=B, cam=self.num_cameras)  # [B*S*cam, H*W/P^2, D]
 
         # Set up the first tokens in the sequence
         n = e_p.shape[0]  # B*S*cam
@@ -134,8 +134,8 @@ class CIL_vit(nn.Module):
         e_d = self.command(d).unsqueeze(1)  # [B, 1, D]
         e_s = self.speed(s).unsqueeze(1)  # [B, 1, D]
 
-        e_d = e_d.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
-        e_s = e_s.repeat(S * cam, 1, 1)  # [B*S*cam, 1, D]
+        e_d = e_d.repeat(S * self.num_cameras, 1, 1)  # [B*S*cam, 1, D]
+        e_s = e_s.repeat(S * self.num_cameras, 1, 1)  # [B*S*cam, 1, D]
 
         # Add the embeddings to the image embeddings
         if g_conf.CMD_SPD_TOKENS:
@@ -145,36 +145,35 @@ class CIL_vit(nn.Module):
 
         return encoded_obs
 
-    def action_prediction(self, sequence):
+    def action_prediction(self, sequence) -> Tuple[torch.Tensor, Tuple[List[torch.Tensor], List[torch.Tensor]]]:
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
-        cam = len(g_conf.DATA_USED)  # Number of cameras/views
-        B = sequence.shape[0] // (S * cam)  # Batch size
+        B = sequence.shape[0] // (S * self.num_cameras)  # Batch size
 
         # Use only the [ACC] and [STR] tokens for the action prediction
         in_memory = sequence[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, t, D]; t = 2
 
         # Steering
         steering_in_memory = rearrange(in_memory[:, 0, :], '(B S cam) D -> B (S cam) D', B=B, S=S,
-                                       cam=cam)  # [B, S*cam, D]
+                                       cam=self.num_cameras)  # [B, S*cam, D]
         steering_in_memory = torch.cat([self.final_steer_token.expand(B, -1, -1), steering_in_memory],
                                        dim=1)  # [B, S*cam, D] => [B, S*cam+1, D]
         steering_in_memory = steering_in_memory + self.pos_embed_steering_tfx  # [B, S*cam+1, D]
-        steering_in_memory = self.steering_tfx_encoder.forward(steering_in_memory)  # [B, S*cam+1, D]
+        steering_in_memory, steer_attn_weights = self.steering_tfx_encoder.forward(steering_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
         steering = reduce(steering_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
 
         # Acceleration
         accel_in_memory = rearrange(in_memory[:, 1, :], '(B S cam) D -> B (S cam) D', B=B, S=S,
-                                    cam=cam)  # [B, S*cam, D]
+                                    cam=self.num_cameras)  # [B, S*cam, D]
         accel_in_memory = torch.cat([self.final_accel_token.expand(B, -1, -1), accel_in_memory],
                                     dim=1)  # [B, S*cam, D] => [B, S*cam+1, D]
         accel_in_memory = accel_in_memory + self.pos_embed_accel_tfx  # [B, S*cam+1, D]
-        accel_in_memory = self.accel_tfx_encoder.forward(accel_in_memory)  # [B, S*cam+1, D]
+        accel_in_memory, accel_attn_weights = self.accel_tfx_encoder.forward(accel_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
         acceleration = reduce(accel_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
 
         # Action prediction
         action_output = torch.stack((steering, acceleration), dim=2)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
-        return action_output
+        return action_output, (steer_attn_weights, accel_attn_weights)
 
     def forward(self, s, s_d, s_s):
         """
@@ -187,7 +186,6 @@ class CIL_vit(nn.Module):
         # Data dimensions
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size
-        cam = len(g_conf.DATA_USED)  # Number of cameras/views
 
         # Encode the observations
         encoded_obs = self.encode_observations(s, s_d, s_s)  # [B*S*cam, (H//P)^2 + K, D]
@@ -196,10 +194,10 @@ class CIL_vit(nn.Module):
         encoded_obs = self.pos_embed_camera_tfx(encoded_obs) if not g_conf.LEARNABLE_POS_EMBED else encoded_obs + self.pos_embed_camera_tfx  # [B*S*cam, H*W/P^2 + K, D]]
 
         # Pass on to the camera Transformer encoder
-        in_memory = self.camera_tfx_encoder.forward(encoded_obs)  # [B*S*cam, (H//P)^2+K, D]
+        in_memory, _ = self.camera_tfx_encoder.forward(encoded_obs)  # [B*S*cam, (H//P)^2+K, D]
 
         # Get the action prediction
-        action_output = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)]
+        action_output, _ = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         return action_output
 
@@ -217,7 +215,6 @@ class CIL_vit(nn.Module):
         # Data dimensions
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size
-        cam = len(g_conf.DATA_USED)  # Number of cameras/views
 
         # Encode the observations
         encoded_obs = self.encode_observations(s, s_d, s_s)  # [B*S*cam, (H//P)^2 + K, D]
@@ -226,29 +223,36 @@ class CIL_vit(nn.Module):
         encoded_obs = self.pos_embed_camera_tfx(encoded_obs) if not g_conf.LEARNABLE_POS_EMBED else encoded_obs + self.pos_embed_camera_tfx  # [B*S*cam, H*W/P^2 + K, D]]
 
         # Pass on to the camera Transformer encoder
-        in_memory, attn_weights = self.camera_tfx_encoder.forward_return_attn(encoded_obs)  # [B*S*cam, (H//P)^2+K, D], num_layers * [B*S*cam, (H//P)^2+K, (H//P)^2+K]
+        in_memory, cam_attn_weights = self.camera_tfx_encoder.forward(encoded_obs)  # [B*S*cam, (H//P)^2+K, D], num_layers * [B*S*cam, (H//P)^2+K, (H//P)^2+K]
 
         # Get the action prediction
-        action_output = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)]
+        action_output, (steer_attn_weights, accel_attn_weights) = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)], num_layers * [B, cam+1, cam+1], num_layers * [B, cam+1, cam+1]
 
         # Attention stuff
         if attn_rollout:
-            attn_weights = utils.attn_rollout(attn_weights)
+            cam_attn_weights = utils.attn_rollout(cam_attn_weights)  # [num_layers_camtfx, B*S*cam, (H//P)^2+K, (H//P)^2+K]
+            steer_attn_weights = utils.attn_rollout(steer_attn_weights)  # [num_layers_spdtfx, B*S*cam, cam+1, cam+1]
+            accel_attn_weights = utils.attn_rollout(accel_attn_weights)  # [num_layers_acctfx, B*S*cam, cam+1, cam+1]
 
         if g_conf.CMD_SPD_TOKENS:
-            # We'd like to analyze the attention weights of the [CMD] and [SPD] tokens
-            attn_weights = attn_weights[-1][:, :self.act_tokens_pos[-1]+1, -self.camera_tfx_num_patches:]  # [B*S*cam, t+2, (H//P)^2]
-            # Normalize/make sure the sum is 1 w.r.t. the last dimension
-            attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)  # [B*S*cam, t+2, (H//P)^2]
-            attn_weights = attn_weights.unflatten(2, (self.camera_tfx_num_patches_h, self.camera_tfx_num_patches_w))  # [B*S*cam, t+2, H//P, W//P]
+            # Return only the attention weights of the last layer for the [CMD], [SPD], [STR] and [ACC] tokens
+            cam_attn_weights = utils.get_attn_weights_tokens(
+                cam_attn_weights, layer=-1, token_positions=self.act_tokens_pos[-1]+1, last_patches=self.camera_tfx_num_patches,
+                unflatten_shape=(self.camera_tfx_num_patches_h, self.camera_tfx_num_patches_w))  # [B*S*cam, t+2, H//P, W//P]
         else:
-            # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
-            attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.camera_tfx_num_patches:]  # [B*S*cam, t, (H//P)^2]
-            # Normalize/make sure the sum is 1 w.r.t. the last dimension
-            attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)  # [B*S*cam, t, (H//P)^2]
-            attn_weights = attn_weights.unflatten(2, (self.camera_tfx_num_patches_h, self.camera_tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
+            # Return only the attention weights of the last layer for the [STR] and [ACC] tokens
+            cam_attn_weights = utils.get_attn_weights_tokens(
+                cam_attn_weights, layer=-1, token_positions=self.act_tokens_pos, last_patches=self.camera_tfx_num_patches,
+                unflatten_shape=(self.camera_tfx_num_patches_h, self.camera_tfx_num_patches_w))  # [B*S*cam, t, H//P, W//P]
 
-        return action_output, attn_weights
+        # Just get the attention for the final STR and ACC tokens
+        steer_attn_weights = utils.get_attn_weights_tokens(steer_attn_weights, layer=-1,
+                                                           token_positions=0, last_patches=self.num_cameras)  # [B, S*cam]
+
+        accel_attn_weights = utils.get_attn_weights_tokens(accel_attn_weights, layer=-1,
+                                                           token_positions=0, last_patches=self.num_cameras)  # [B, S*cam]
+
+        return action_output, (cam_attn_weights, steer_attn_weights, accel_attn_weights)
 
     @staticmethod
     def generate_square_subsequent_mask(sz):

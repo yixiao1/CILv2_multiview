@@ -58,8 +58,8 @@ class ServerManagerDocker(ServerManager):
         # TODO quality level to be set here
         my_env = os.environ.copy()
         my_env["NV_GPU"] = str(self._gpu)
-        if not os.path.exists(os.path.join(os.getcwd(),'CARLA_recorder')):
-            os.makedirs(os.path.join(os.getcwd(),'CARLA_recorder'))
+        if not os.path.exists(os.path.join(os.getcwd(), 'CARLA_recorder')):
+            os.makedirs(os.path.join(os.getcwd(), 'CARLA_recorder'))
         # for running docker for CARLA version in prior to 0.9.9
         if self._docker_name in ['carla_099_t10']:
             self._proc = subprocess.Popen(['docker', 'run', '--name', self._docker_id, '--rm', '-d', '-p',

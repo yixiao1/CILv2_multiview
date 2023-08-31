@@ -129,10 +129,12 @@ class Encoder(nn.Module):
         torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
         input = input + self.pos_embedding if not pre_pos_emb else input
         input = self.dropout(input)
+        attns = []
         for i in range(self.num_layers):
-            input, _ = self.layers[i](input, mask=mask)
+            input, att = self.layers[i](input, mask=mask)
+            attns.append(att)
 
-        return self.ln(input)
+        return self.ln(input), attns
 
     def forward_return_attn(self, input: torch.Tensor,
                             pre_pos_emb: bool = True,

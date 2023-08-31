@@ -3,7 +3,7 @@ import torch
 import glob
 import os
 import re
-from typing import Union, List
+from typing import Union, List, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -284,6 +284,22 @@ def attn_rollout(attn_weights: List[torch.Tensor], layer: int = None) -> torch.T
         attn_weights_rollout_cams[:, c] = torch.stack(attn_weights_rollout)
 
     return attn_weights_rollout_cams
+
+
+def get_attn_weights_tokens(attn_weights: Union[List[torch.Tensor], torch.Tensor],
+                            layer: int,
+                            token_positions: Union[int, List[int]],
+                            last_patches: int,
+                            unflatten_shape: Tuple[int, int] = None) -> torch.Tensor:
+    """ Get the attention maps for the specified tokens at the selected layer, for the last patches """
+    if isinstance(token_positions, int):
+        token_positions = list(range(token_positions))
+    attn_weights = attn_weights[layer][:, token_positions, -last_patches:]
+    # Normalize s.t. sum is 1
+    attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)
+    if unflatten_shape is not None:
+        attn_weights = attn_weights.unflatten(2, unflatten_shape)
+    return attn_weights
 
 
 def zero_diagonal_att_map(attn_weights: Union[torch.Tensor, List[torch.Tensor]]) -> torch.Tensor:
