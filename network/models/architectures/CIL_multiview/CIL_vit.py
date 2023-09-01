@@ -208,7 +208,7 @@ class CIL_vit(nn.Module):
         in_memory, _ = self.camera_tfx_encoder.forward(encoded_obs)  # [B*S*cam, (H//P)^2+K, D]
 
         # Get the action prediction
-        action_output, _ = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)]
+        action_output, _ = self.action_prediction(in_memory, s_d, s_s)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         return action_output
 
@@ -237,7 +237,7 @@ class CIL_vit(nn.Module):
         in_memory, cam_attn_weights = self.camera_tfx_encoder.forward(encoded_obs)  # [B*S*cam, (H//P)^2+K, D], num_layers * [B*S*cam, (H//P)^2+K, (H//P)^2+K]
 
         # Get the action prediction
-        action_output, (steer_attn_weights, accel_attn_weights) = self.action_prediction(in_memory)  # [B, 1, t] = [B, 1, len(TARGETS)], num_layers * [B, cam+1, cam+1], num_layers * [B, cam+1, cam+1]
+        action_output, (steer_attn_weights, accel_attn_weights) = self.action_prediction(in_memory, s_d, s_s)  # [B, 1, t] = [B, 1, len(TARGETS)], num_layers * [B, cam+1, cam+1], num_layers * [B, cam+1, cam+1]
 
         # Attention stuff
         if attn_rollout:
