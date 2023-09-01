@@ -293,7 +293,7 @@ def get_attn_weights_tokens(attn_weights: Union[List[torch.Tensor], torch.Tensor
                             unflatten_shape: Tuple[int, int] = None) -> torch.Tensor:
     """ Get the attention maps for the specified tokens at the selected layer, for the last patches """
     if isinstance(token_positions, int):
-        token_positions = list(range(token_positions))
+        token_positions = list(range(token_positions)) if token_positions > 0 else [token_positions]
     attn_weights = attn_weights[layer][:, token_positions, -last_patches:]
     # Normalize s.t. sum is 1
     attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)

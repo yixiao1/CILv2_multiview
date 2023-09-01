@@ -113,8 +113,8 @@ class CIL_vit(nn.Module):
 
         x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1)  # [B, S, cam, 3, H, W]
         x = rearrange(x, 'B S cam C H W -> (B S cam) C H W')  # [B*S*cam, 3, H, W]
-        d = s_d[-1]  # [B, 4]
-        s = s_s[-1]  # [B, 1]
+        s_d = s_d[-1]  # [B, 4]
+        s_s = s_s[-1]  # [B, 1]
 
         # image embedding
         # First, patch and embed the input images
@@ -128,26 +128,29 @@ class CIL_vit(nn.Module):
                         self.camera_tfx_accel_token.expand(n, -1, -1)]
 
         # Concatenate the first tokens to the image embeddings
-        e_p = torch.cat([*first_tokens, e_p], dim=1)  # [B*S*cam, (H/P)(W/P) + K, D]]), K = 3 if w/CLS token else 2
+        encoded_obs = torch.cat([*first_tokens, e_p], dim=1)  # [B*S*cam, (H/P)(W/P) + K, D]]), K = 3 if w/CLS token else 2
 
         # Embedding of command and speed
-        e_d = self.command(d).unsqueeze(1)  # [B, 1, D]
-        e_s = self.speed(s).unsqueeze(1)  # [B, 1, D]
+        if g_conf.EARLY_COMMAND_SPEED_FUSION:
+            e_d = self.command(s_d).unsqueeze(1)  # [B, 1, D]
+            e_s = self.speed(s_s).unsqueeze(1)  # [B, 1, D]
 
-        e_d = e_d.repeat(S * self.num_cameras, 1, 1)  # [B*S*cam, 1, D]
-        e_s = e_s.repeat(S * self.num_cameras, 1, 1)  # [B*S*cam, 1, D]
+            e_d = e_d.repeat(S * self.num_cameras, 1, 1)  # [B*S*cam, 1, D]
+            e_s = e_s.repeat(S * self.num_cameras, 1, 1)  # [B*S*cam, 1, D]
 
-        # Add the embeddings to the image embeddings
-        if g_conf.CMD_SPD_TOKENS:
-            encoded_obs = torch.cat([e_p, e_d, e_s], dim=1)  # [B*S*cam, (H//P)^2 + K, D]; K = 5 w/CLS token else 4
-        else:
-            encoded_obs = e_p + e_d + e_s  # [B*S*cam, (H//P)^2 + K, D]; K = 3 w/CLS token else 2
+            # Add the embeddings to the image embeddings
+            if g_conf.CMD_SPD_TOKENS:
+                encoded_obs = torch.cat([e_d, e_s, encoded_obs], dim=1)  # [B*S*cam, (H//P)^2 + K, D]; K = 5 w/CLS token else 4
+            else:
+                encoded_obs = encoded_obs + e_d + e_s  # [B*S*cam, (H//P)^2 + K, D]; K = 3 w/CLS token else 2
 
         return encoded_obs
 
-    def action_prediction(self, sequence) -> Tuple[torch.Tensor, Tuple[List[torch.Tensor], List[torch.Tensor]]]:
+    def action_prediction(self, sequence, s_d, s_s) -> Tuple[torch.Tensor, Tuple[List[torch.Tensor], List[torch.Tensor]]]:
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = sequence.shape[0] // (S * self.num_cameras)  # Batch size
+        s_d = s_d[-1]  # [B, 4]
+        s_s = s_s[-1]  # [B, 1]
 
         # Use only the [ACC] and [STR] tokens for the action prediction
         in_memory = sequence[:, self.act_tokens_pos, :]  # [B*S*cam, (H//P)^2+K, D] => [B*S*cam, t, D]; t = 2
@@ -158,8 +161,6 @@ class CIL_vit(nn.Module):
         steering_in_memory = torch.cat([self.final_steer_token.expand(B, -1, -1), steering_in_memory],
                                        dim=1)  # [B, S*cam, D] => [B, S*cam+1, D]
         steering_in_memory = steering_in_memory + self.pos_embed_steering_tfx  # [B, S*cam+1, D]
-        steering_in_memory, steer_attn_weights = self.steering_tfx_encoder.forward(steering_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
-        steering = reduce(steering_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
 
         # Acceleration
         accel_in_memory = rearrange(in_memory[:, 1, :], '(B S cam) D -> B (S cam) D', B=B, S=S,
@@ -167,10 +168,20 @@ class CIL_vit(nn.Module):
         accel_in_memory = torch.cat([self.final_accel_token.expand(B, -1, -1), accel_in_memory],
                                     dim=1)  # [B, S*cam, D] => [B, S*cam+1, D]
         accel_in_memory = accel_in_memory + self.pos_embed_accel_tfx  # [B, S*cam+1, D]
+
+        if g_conf.LATE_COMMAND_SPEED_FUSION:
+            s_d = self.command(s_d).unsqueeze(1)  # [B, 1, D]
+            s_s = self.speed(s_s).unsqueeze(1)  # [B, 1, D]
+            steering_in_memory = steering_in_memory + s_d + s_s  # [B, S*cam+1, D]
+            accel_in_memory = accel_in_memory + s_d + s_s  # [B, S*cam+1, D]
+
+        # Action prediction
+        steering_in_memory, steer_attn_weights = self.steering_tfx_encoder.forward(steering_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
+        steering = reduce(steering_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
+
         accel_in_memory, accel_attn_weights = self.accel_tfx_encoder.forward(accel_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
         acceleration = reduce(accel_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
 
-        # Action prediction
         action_output = torch.stack((steering, acceleration), dim=2)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
         return action_output, (steer_attn_weights, accel_attn_weights)

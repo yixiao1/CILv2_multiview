@@ -99,6 +99,8 @@ _g_conf.EXTRA_POS_EMBED = False  # A final positional embedding at the output of
 _g_conf.OLD_TOKEN_ORDER = True  # Originally had mixed the order of the [STR] and [ACC]; should be set explicitly
 _g_conf.NEW_COMMAND_SPEED_FC = False  # Originally had a FC layer for the command and speed embeddings; should be set explicitly
 _g_conf.LEARNABLE_ACTION_RATIO = False  # Ratio of actions between patches and specialized action tokens is learnable
+_g_conf.EARLY_COMMAND_SPEED_FUSION = True  # Fusion of the command and speed embeddings is done before the camera encoder
+_g_conf.LATE_COMMAND_SPEED_FUSION = False  # Fusion of the command and speed embeddings is done before each steering and acceleration encoders
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder
