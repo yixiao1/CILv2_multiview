@@ -10,6 +10,7 @@ from _utils import utils
 
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 from network.models.building_blocks.vit import Encoder
+from network.models.building_blocks.fc import FC
 
 
 class CIL_vit(nn.Module):
@@ -98,6 +99,18 @@ class CIL_vit(nn.Module):
             self.pos_embed_camera_tfx = PositionalEncoding(d_model=self.camera_tfx_hidden_dim,
                                                            max_len=self.camera_tfx_seq_length)
 
+        if self.params['action_output']['type'] == '2mlp':
+            self.steer_output = FC(params={
+                'neurons': [self.steering_tfx_hidden_dim] + self.params['action_output']['fc']['neurons'] + [1],
+                'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
+                'end_layer': True},
+                norm=g_conf.FC_LAYER_NORM, activate=True)  # Uses ReLU by default and on by default
+            self.accel_output = FC(params={
+                'neurons': [self.accel_tfx_hidden_dim] + self.params['action_output']['fc']['neurons'] + [1],
+                'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
+                'end_layer': True},
+                norm=g_conf.FC_LAYER_NORM, activate=True)  # Uses ReLU by default and on by default
+
         # We don't want to undo the pretrained weights of the ViT!
         for name, module in self.named_modules():
             if not name.startswith(('layers.encoder', 'encoder.layers')):
@@ -177,10 +190,15 @@ class CIL_vit(nn.Module):
 
         # Action prediction
         steering_in_memory, steer_attn_weights = self.steering_tfx_encoder.forward(steering_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
-        steering = reduce(steering_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
 
         accel_in_memory, accel_attn_weights = self.accel_tfx_encoder.forward(accel_in_memory)  # [B, S*cam+1, D], num_layers * [B*S*cam, cam+1, cam+1]
-        acceleration = reduce(accel_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
+
+        if self.params['action_output']['type'] == '2mlp':
+            steering = self.steer_output(steering_in_memory[:, 0])  # [B, D]
+            acceleration = self.accel_output(accel_in_memory[:, 0])  # [B, D]
+        else:
+            steering = reduce(steering_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
+            acceleration = reduce(accel_in_memory[:, 0], 'B D -> B 1', 'mean')  # [B, D] => [B, 1]
 
         action_output = torch.stack((steering, acceleration), dim=2)  # [B, 1, t] = [B, 1, len(TARGETS)]
 
