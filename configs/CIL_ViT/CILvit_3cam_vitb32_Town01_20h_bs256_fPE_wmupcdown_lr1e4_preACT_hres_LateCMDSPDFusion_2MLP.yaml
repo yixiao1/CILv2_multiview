@@ -40,8 +40,8 @@ LOSS_WEIGHT:
     acceleration: 0.50
 
 # Optimizer Parameters #
-LEARNING_RATE: 0.00001
-LEARNING_RATE_MINIMUM: 0.000001
+LEARNING_RATE: 0.0001
+LEARNING_RATE_MINIMUM: 0.00001
 LEARNING_RATE_SCHEDULE: 'warmup_cooldown'  # linear warmup, cosine cooldown
 LEARNING_RATE_POLICY:
   warmup: 0.1
@@ -92,4 +92,7 @@ MODEL_CONFIGURATION:
       dropouts: [0.0]
 
   action_output:
-    type: 'gapd'  # 'gap', '2mlp', '1mlp'
+    type: '2mlp'  # 'gap', '2mlp', '1mlp'
+    fc:
+      neurons: [ 512, 256 ]
+      dropouts: [ 0.0, 0.0 ]
