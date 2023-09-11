@@ -30,6 +30,7 @@ _g_conf.FINETUNE = False
 _g_conf.FINETUNE_MODEL = ''
 _g_conf.BATCH_SIZE = 120
 _g_conf.NUMBER_EPOCH = 100     # Total number of training epochs
+_g_conf.SUBSET_SIZE = 1.0      # Percentage of the dataset to use for training (between 0 and 1)
 _g_conf.TRAIN_DATASET_NAME = []
 _g_conf.VALID_DATASET_NAME = []      # More than one datasets could be evaluated, thus a list
 _g_conf.GT_DATA_USED = 'il_data'
