@@ -81,10 +81,10 @@ MODEL_CONFIGURATION:
 
   command:
     fc:
-      neurons: [512]  # TODO: for multitokens, use a deeper FC
+      neurons: [512]
       dropouts: [0.0]
 
   speed:
     fc:
-      neurons: [512]  # TODO: for multitokens, use a deeper FC
+      neurons: [512]
       dropouts: [0.0]
