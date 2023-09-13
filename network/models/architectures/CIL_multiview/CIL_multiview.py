@@ -28,8 +28,8 @@ class CIL_multiview(nn.Module):
 
         if not g_conf.NO_ACT_TOKENS:
             # Add the STR and ACC tokens as parameters
-            self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, params['TxEncoder']['d_model']).normal_(std=0.02))
-            self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, params['TxEncoder']['d_model']).normal_(std=0.02))
+            self.tfx_steer_token = nn.Parameter(torch.empty(1, 1, self.params['TxEncoder']['d_model']).normal_(std=0.02))
+            self.tfx_accel_token = nn.Parameter(torch.empty(1, 1, self.params['TxEncoder']['d_model']).normal_(std=0.02))
             self.sequence_length += 2
             self.act_tokens_pos = [0, 1]
 
@@ -39,31 +39,45 @@ class CIL_multiview(nn.Module):
                 self.act_tokens_pos = [2, 3]
 
 
-        if params['TxEncoder']['learnable_pe']:
-            self.positional_encoding = nn.Parameter(torch.zeros(1, self.sequence_length, params['TxEncoder']['d_model']))
+        if self.params['TxEncoder']['learnable_pe']:
+            self.positional_encoding = nn.Parameter(torch.zeros(1, self.sequence_length, self.params['TxEncoder']['d_model']))
         else:
-            self.positional_encoding = PositionalEncoding(d_model=params['TxEncoder']['d_model'], dropout=0.0,
+            self.positional_encoding = PositionalEncoding(d_model=self.params['TxEncoder']['d_model'], dropout=0.0,
                                                           max_len=self.sequence_length)
 
         # Sensor embedding is useful when adding different sensors to the sequence
         if g_conf.SENSOR_EMBED:
             self.sensor_embedding = nn.Parameter(torch.empty(1, self.sequence_length, self.tfx_hidden_dim).normal_(std=0.02))  # from BERT
 
-        join_dim = params['TxEncoder']['d_model']
-        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, params['TxEncoder']['d_model'])
-        self.speed = nn.Linear(1, params['TxEncoder']['d_model'])
+        join_dim = self.params['TxEncoder']['d_model']
+        self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.params['TxEncoder']['d_model'])
+        self.speed = nn.Linear(1, self.params['TxEncoder']['d_model'])
 
-        tx_encoder_layer = TransformerEncoderLayer(d_model=params['TxEncoder']['d_model'],
-                                                   nhead=params['TxEncoder']['n_head'],
-                                                   norm_first=params['TxEncoder']['norm_first'], batch_first=True)
-        self.tx_encoder = TransformerEncoder(tx_encoder_layer, num_layers=params['TxEncoder']['num_layers'],
-                                             norm=nn.LayerNorm(params['TxEncoder']['d_model']))
+        tx_encoder_layer = TransformerEncoderLayer(d_model=self.params['TxEncoder']['d_model'],
+                                                   nhead=self.params['TxEncoder']['n_head'],
+                                                   norm_first=self.params['TxEncoder']['norm_first'], batch_first=True)
+        self.tx_encoder = TransformerEncoder(tx_encoder_layer, num_layers=self.params['TxEncoder']['num_layers'],
+                                             norm=nn.LayerNorm(self.params['TxEncoder']['d_model']))
 
-        self.action_output = FC(params={'neurons': [join_dim] +
-                                            params['action_output']['fc']['neurons'] +
-                                            [len(g_conf.TARGETS)],
-                                 'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
-                                 'end_layer': True})
+        self.action_output = FC(params={'neurons': [join_dim] + self.params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
+                                        'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
+                                        'end_layer': True})
+
+        if self.params['action_output']['type'] == 'decoder_mlp':
+            from network.models.building_blocks.Transformer.TransformerDecoder import TransformerDecoderLayer
+            from network.models.building_blocks.Transformer.TransformerDecoder import TransformerDecoder
+
+            self.tfx_decoder_layer = TransformerDecoderLayer(
+                d_model=self.params['action_output']['TxDecoder']['d_model'],
+                nhead=self.params['action_output']['TxDecoder']['n_head'],
+                norm_first=self.params['action_output']['TxDecoder']['norm_first'],
+                batch_first=True)
+
+            self.tfx_decoder = TransformerDecoder(self.tfx_decoder_layer,
+                                                  num_layers=self.params['action_output']['TxDecoder']['num_layers'],
+                                                  norm=nn.LayerNorm(self.params['action_output']['TxDecoder']['d_model']))
+
+            self.action_query = nn.Parameter(torch.empty(1, 1, self.params['action_output']['TxDecoder']['d_model']).normal_(std=0.02))
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -114,7 +128,7 @@ class CIL_multiview(nn.Module):
         # Only use the action tokens [ACT] for the prediction
         if 'action_output' in self.params and self.params['action_output'].get('type', None) is not None:
             action_output_type = self.params['action_output']['type']
-            if action_output_type == 'baseline1_patches2act':
+            if action_output_type in ['baseline1_patches2act', 'gapn_mlp']:
                 # Get the patch representation at the final layer
                 patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
                 # Pass the patch representation through an MLP
@@ -143,11 +157,15 @@ class CIL_multiview(nn.Module):
                 action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
                 # Return tuple of both actions (difference will be part of the loss)
                 action_output = (action_output_patches, action_output_tokens)
+            elif action_output_type == 'decoder_mlp':
+                # We pass the whole sequence to the Decoder, and then the output query to an MLP
+                out, sa_weights, mha_weights = self.tfx_decoder(self.action_query.repeat(sequence.shape[0], 1, 1), sequence)
+                action_output = self.action_output(out.squeeze()).unsqueeze(1)  # [B, D] => [B, 1, t]
             else:
                 raise ValueError(f'Invalid action_output type: {self.params["action_output"]["type"]}')
 
         else:
-            # Get the patch representation at the final layer
+            # gapn_mlp by default: get the patch representation at the final layer
             patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
             # Pass the patch representation through an MLP
             action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]

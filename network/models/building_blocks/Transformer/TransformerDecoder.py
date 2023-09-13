@@ -41,10 +41,10 @@ class TransformerDecoder(nn.Module):
         attn_layers_sa = []
         attn_layers_mha = []
         for mod in self.layers:
-            output, attn_output_weights_sa,  attn_output_weights_mha= mod(output, memory, tgt_mask=tgt_mask,
-                         memory_mask=memory_mask,
-                         tgt_key_padding_mask=tgt_key_padding_mask,
-                         memory_key_padding_mask=memory_key_padding_mask)
+            output, attn_output_weights_sa,  attn_output_weights_mha = mod(
+                output, memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
+                tgt_key_padding_mask=tgt_key_padding_mask,
+                memory_key_padding_mask=memory_key_padding_mask)
             attn_layers_sa.append(attn_output_weights_sa)
             attn_layers_mha.append(attn_output_weights_mha)
 
@@ -78,13 +78,11 @@ class TransformerDecoderLayer(nn.Module):
 
     """
 
-    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.0, activation=F.relu,
-                 layer_norm_eps=1e-5, norm_first=False):
+    def __init__(self, d_model, nhead, dim_feedforward: int = 2048, dropout: float = 0.0, activation=F.relu,
+                 layer_norm_eps: float = 1e-5, norm_first=False, batch_first: bool = False):
         super(TransformerDecoderLayer, self).__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        #self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
-        #self.multihead_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
+        self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)

@@ -5,15 +5,25 @@ MAGICAL_SEED: 1314520  # Get everything the same; then we may go to our own seed
 DATA_PARALLEL: True
 BATCH_SIZE: 256
 NUM_WORKER: 5
-NUMBER_EPOCH: 120  # Number of epochs to train
+NUMBER_EPOCH: 80  # Number of epochs to train
+SUBSET_SIZE: 0.4  # Use a subset of the training dataset
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
 OTHER_INPUTS: ['speed', 'direction'] # extra input to the neural network
-# These datasets have 529525 images in total
+# Folders of the used training datasets. Should be inside DATASET_PATH folder
 TRAIN_DATASET_NAME: ['Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_LBC_3cam',
                      'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_NoCrash_3cam',
                      'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T1_3cam',
-                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam'] # Folders of the used training datasets. Should be inside DATASET_PATH folder
+                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam',
+                     'DC_nocrash_training_dense_Town01',
+                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T3_3cam',
+                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T4_3cam',
+                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T4_dense_3cam',
+                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T6_3cam',
+                     'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T6_dense_3cam',
+                     'DC_nocrash_training_empty_Town03_lbc',
+                     'DC_nocrash_training_empty_Town04_lbc',
+                     'DC_nocrash_training_empty_Town06_lbc']
 VALID_DATASET_NAME: ['Roach_carla0913_fps10/Roach_LBCRoutes_3cam_valid'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
 ENCODER_INPUT_FRAMES_NUM: 1
 ENCODER_STEP_INTERVAL: 1
@@ -25,7 +35,7 @@ IMG_NORMALIZATION:     # ImageNet normalization
 IMAGE_SHAPE: [3, 288, 288]  # Input image shape; we have lowered this for vanilla ViT deployment (300 => 224)
 DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right']  # Multi-view cameras, it needs to be set in this order
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
-DATA_COMMAND_CLASS_NUM: 4    # Number of commands: 4 for single-lane towns, 6 for multi-lane towns (lane change)
+DATA_COMMAND_CLASS_NUM: 6    # Number of commands: 4 for single-lane towns, 6 for multi-lane towns (lane change)
 # Data normalization: might be changed depending on datasets
 DATA_NORMALIZATION:
   steer: [-1.0, 1.0]  # [left, right]
@@ -49,7 +59,7 @@ LEARNING_RATE_POLICY:
 #### Validation Related Parameters ####
 EVAL_SAVE_LAST_ATT_MAPS: True
 EVAL_BATCH_SIZE: 30
-EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120]
+EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
 EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
@@ -62,8 +72,8 @@ LEARNABLE_POS_EMBED: False
 PRETRAINED_ACC_STR_TOKENS: True  # Initialize [ACC] and [STR] tokens as clones of the (pretrained) [CLS] token
 FREEZE_CLS_TOKEN: False  # freeze the [CLS] token
 MASK_DIAGONAL_ATTMAP: False  # Mask the diagonal of the attention map
-EARLY_COMMAND_SPEED_FUSION: False # Fusion of command and speed tokens before the camera encoder
-LATE_COMMAND_SPEED_FUSION: True  # Fusion of command and speed tokens before the steering and acceleration encoders
+EARLY_COMMAND_SPEED_FUSION: True # Fusion of command and speed tokens before the camera encoder
+LATE_COMMAND_SPEED_FUSION: False  # Fusion of command and speed tokens before the steering and acceleration encoders
 
 MODEL_TYPE: 'CIL_vit'
 # Based on the MODEL_TYPE, we specify the structure
