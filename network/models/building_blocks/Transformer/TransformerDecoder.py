@@ -145,18 +145,20 @@ class TransformerDecoderLayer(nn.Module):
     def _sa_block(self, x,
                   attn_mask, key_padding_mask):
         x, attn_output_weights = self.self_attn(x, x, x,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask,
-                           need_weights=True)
+                                                attn_mask=attn_mask,
+                                                key_padding_mask=key_padding_mask,
+                                                need_weights=True,
+                                                average_attn_weights=False)
         return self.dropout1(x), attn_output_weights
 
     # multihead attention block
     def _mha_block(self, x, mem,
                    attn_mask, key_padding_mask):
         x, attn_output_weights = self.multihead_attn(x, mem, mem,
-                                attn_mask=attn_mask,
-                                key_padding_mask=key_padding_mask,
-                                need_weights=True)
+                                                     attn_mask=attn_mask,
+                                                     key_padding_mask=key_padding_mask,
+                                                     need_weights=True,
+                                                     average_attn_weights=False)
         return self.dropout2(x), attn_output_weights
 
     # feed forward block
