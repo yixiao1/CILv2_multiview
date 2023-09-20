@@ -43,8 +43,7 @@ LOSS_WEIGHT:
 # Optimizer Parameters #
 LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [30, 50, 65]
-LEARNING_RATE_SCHEDULE: 'step'
+LEARNING_RATE_SCHEDULE: 'warmup_cooldown'  # linear warmup, cosine cooldown
 LEARNING_RATE_POLICY:
   warmup: 0.1
 
