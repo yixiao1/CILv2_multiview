@@ -133,32 +133,9 @@ class CIL_multiview(nn.Module):
                 patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
                 # Pass the patch representation through an MLP
                 action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
-            elif action_output_type == 'baseline2_gapd' and not g_conf.ONE_ACTION_TOKEN:
-                # Average pooling of the ACT tokens (one per target)
-                sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
-                action_output = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-            elif action_output_type == 'baseline3_patches2act_gap_avg' and not g_conf.ONE_ACTION_TOKEN:
-                # Get the patch representation at the final layer
-                patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
-                # Pass the patch representation through an MLP
-                action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
-                # Average pooling of the ACT tokens (one per target)
-                sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
-                action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-                # Final action will be the average of both of these
-                action_output = (action_output_patches + action_output_tokens) / 2
-            elif action_output_type == 'baseline4_patches2act_gap_diff' and not g_conf.ONE_ACTION_TOKEN:
-                # Get the patch representation at the final layer
-                patches = reduce(sequence[:, -cam * self.res_out_h * self.res_out_w:], 'B N D -> B D', 'mean')  # [B, N, D] => [B, D]
-                # Pass the patch representation through an MLP
-                action_output_patches = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
-                # Average pooling of the ACT tokens (one per target)
-                sequence_act = sequence[:, self.act_tokens_pos]  # [B, seq_length, hidden_dim] => [B, t, D];, t = len(g_conf.TARGETS)
-                action_output_tokens = reduce(sequence_act, 'B t D -> B 1 t', 'mean')  # [B, t, D] => [B, 1, t]
-                # Return tuple of both actions (difference will be part of the loss)
-                action_output = (action_output_patches, action_output_tokens)
             elif action_output_type == 'decoder_mlp':
                 # We pass the whole sequence to the Decoder, and then the output query to an MLP
+                # Output shapes: [B, 1, D], num_layers * [B, nhead, 1, 1], num_layers * [B, nhead, 1, N]
                 out, sa_weights, mha_weights = self.tfx_decoder(self.action_query.repeat(sequence.shape[0], 1, 1), sequence)
                 action_output = self.action_output(out.squeeze()).unsqueeze(1)  # [B, D] => [B, 1, t]
             else:
