@@ -139,7 +139,7 @@ def save_model_if_better(results_dict, model, optimizer, save_all=False):
                 'best_pred': best_pred
             }
             torch.save(saving_dict, os.path.join(g_conf.EXP_SAVE_PATH, 'checkpoints', str(model.name) + '_' +
-                                                 str(model._done_epoch)+ '_' + str(model._current_iteration-1) + '.pth'))
+                                                 str(model._done_epoch)+ '.pth'))
 
         else:
             if is_better_flag:
@@ -159,7 +159,7 @@ def save_model_if_better(results_dict, model, optimizer, save_all=False):
                     'best_pred': best_pred
                 }
                 torch.save(saving_dict, os.path.join(g_conf.EXP_SAVE_PATH, 'checkpoints', str(model.name) + '_' +
-                                                 str(model._done_epoch)+ '_' + str(model._current_iteration-1) + '.pth'))
+                                                 str(model._done_epoch)+ '.pth'))
             else:
                 if hasattr(save_model_if_better, "best_pred"):
                     best_pred = save_model_if_better.best_pred
