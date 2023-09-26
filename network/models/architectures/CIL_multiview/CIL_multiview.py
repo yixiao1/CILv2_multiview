@@ -139,6 +139,9 @@ class CIL_multiview(nn.Module):
                 # Output shapes: [B, 1, D], num_layers * [B, nhead, 1, 1], num_layers * [B, nhead, 1, N]
                 out, sa_weights, mha_weights = self.tfx_decoder(self.action_query.repeat(sequence.shape[0], 1, 1), sequence)
                 action_output = self.action_output(out.squeeze()).unsqueeze(1)  # [B, D] => [B, 1, t]
+            elif action_output_type == 'baseline2_gapd':
+                # Get the action tokens and perform average pooling over the dimension D
+                action_output = reduce(sequence[:, self.act_tokens_pos], 'B t D -> B 1 t', 'mean')  # t = 2
             else:
                 raise ValueError(f'Invalid action_output type: {self.params["action_output"]["type"]}')
 
