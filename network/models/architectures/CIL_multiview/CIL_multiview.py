@@ -63,21 +63,22 @@ class CIL_multiview(nn.Module):
                                         'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
                                         'end_layer': True})
 
-        if self.params['action_output']['type'] == 'decoder_mlp':
-            from network.models.building_blocks.Transformer.TransformerDecoder import TransformerDecoderLayer
-            from network.models.building_blocks.Transformer.TransformerDecoder import TransformerDecoder
+        if 'type' in self.params['action_output']:
+            if self.params['action_output']['type'] == 'decoder_mlp':
+                from network.models.building_blocks.Transformer.TransformerDecoder import TransformerDecoderLayer
+                from network.models.building_blocks.Transformer.TransformerDecoder import TransformerDecoder
 
-            self.tfx_decoder_layer = TransformerDecoderLayer(
-                d_model=self.params['action_output']['TxDecoder']['d_model'],
-                nhead=self.params['action_output']['TxDecoder']['n_head'],
-                norm_first=self.params['action_output']['TxDecoder']['norm_first'],
-                batch_first=True)
+                self.tfx_decoder_layer = TransformerDecoderLayer(
+                    d_model=self.params['action_output']['TxDecoder']['d_model'],
+                    nhead=self.params['action_output']['TxDecoder']['n_head'],
+                    norm_first=self.params['action_output']['TxDecoder']['norm_first'],
+                    batch_first=True)
 
-            self.tfx_decoder = TransformerDecoder(self.tfx_decoder_layer,
-                                                  num_layers=self.params['action_output']['TxDecoder']['num_layers'],
-                                                  norm=nn.LayerNorm(self.params['action_output']['TxDecoder']['d_model']))
+                self.tfx_decoder = TransformerDecoder(self.tfx_decoder_layer,
+                                                      num_layers=self.params['action_output']['TxDecoder']['num_layers'],
+                                                      norm=nn.LayerNorm(self.params['action_output']['TxDecoder']['d_model']))
 
-            self.action_query = nn.Parameter(torch.empty(1, 1, self.params['action_output']['TxDecoder']['d_model']).normal_(std=0.02))
+                self.action_query = nn.Parameter(torch.empty(1, 1, self.params['action_output']['TxDecoder']['d_model']).normal_(std=0.02))
 
         for m in self.modules():
             if isinstance(m, nn.Linear):

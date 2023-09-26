@@ -36,14 +36,22 @@ def Action_nospeed_L1(params: dict) -> Tuple[torch.Tensor, ...]:
 def Action_nospeed_Quantile(params: dict) -> Tuple[torch.Tensor, ...]:
     """ Quantile regression loss """
     B = params['action_output'].shape[0]  # batch_size
-    tau = 0.5 if 'tau' not in params else params['tau']  # L2 loss by default
+    tau = 0.5 if 'tau' not in params['variable_weights'] else params['variable_weights']['tau']  # 0.5 * L1 loss by default
 
     # SingleFrame model - we only take into account the last frame's action
     mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
-    difference = params['action_output'][:, -1, :] - params['targets_action'][-1]  # (B, 2)
-    ind = (difference < 0.0).type(torch.float)  # (B, 2)
-    actions_loss_mat = torch.abs(tau - ind) * difference ** 2  # (B, 2)
 
+    difference = params['action_output'][:, -1, :] - params['targets_action'][-1]  # (B, 2)
+    actions_loss_mat = torch.zeros_like(difference, device=difference.device)  # (B, 2)
+
+    # L1 loss on steering
+    actions_loss_mat[:, 0] = torch.abs(difference[:, 0])
+
+    # Quantile regression only on acceleration
+    ind = (difference[:, 1] < 0.0).type(torch.float)
+    actions_loss_mat[:, 1] = torch.abs((tau - ind) * difference[:, 1])
+
+    # Weight each action differently
     steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
     num_valid_batch = mask_steer.sum().detach()
     steer_loss = torch.sum(steer_loss) / num_valid_batch
@@ -149,5 +157,7 @@ def Loss(loss):
         return Action_nospeed_LN
     elif loss == 'Action_nospeed_SL':
         return Action_nospeed_SL
+    elif loss == 'Action_nospeed_Quantile':
+        return Action_nospeed_Quantile
     else:
         raise NotImplementError(" The loss of this model type has not yet defined ")
