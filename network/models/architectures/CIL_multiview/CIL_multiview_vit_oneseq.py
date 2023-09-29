@@ -8,7 +8,7 @@ from _utils import utils
 from network.models.building_blocks.PositionalEncoding import PositionalEncoding
 from network.models.building_blocks.fc import FC
 
-from einops import rearrange, reduce
+from einops import rearrange, reduce, einsum
 from typing import Tuple, List
 
 
@@ -354,6 +354,7 @@ class CIL_multiview_vit_oneseq(nn.Module):
                      s_d: List[torch.Tensor],
                      s_s: List[torch.Tensor],
                      attn_rollout: bool = False,
+                     attn_refinement: bool = False,
                      zero_diagonal_attnmap: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)  # Number of frames per camera in sequence
         B = s_d[0].shape[0]  # Batch size; will change if using multiple GPUs
@@ -398,12 +399,21 @@ class CIL_multiview_vit_oneseq(nn.Module):
                 # Give as a tuple
                 attn_weights = (attn_weights_t2t, attn_weights_stracc)  # [B, t+2, t+3], [B, t+2, H//P, S*cam*W//P]
             else:
+                # Just work with the last layer
+                attn_weights = attn_weights[-1]  # [B, S*cam*H*W/P^2 + K, S*cam*H*W/P^2 + K]
                 # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
-                attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.tfx_num_patches*S*cam:]  # [B, t, S*cam*(H//P)^2]
+                attn_act = attn_weights[:, self.act_tokens_pos, -self.tfx_num_patches*S*cam:]  # [B, t, S*cam*(H//P)^2]
                 # Normalize the attention weights to be in the range [0, 1]
-                attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, t+2, S*cam*(H//P)^2]
+                attn_act = (attn_act - attn_act.min(dim=2, keepdim=True).values) / (attn_act.max(dim=2, keepdim=True).values - attn_act.min(dim=2, keepdim=True).values)  # [B, t+2, S*cam*(H//P)^2]
+                if attn_refinement:
+                    attn_p2p = attn_weights[:, -self.tfx_num_patches*S*cam:, -self.tfx_num_patches*S*cam:]  # [B, S*cam*(H//P)^2, S*cam*(H//P)^2]
+                    attn_p2p = rearrange(attn_p2p, 'b (n1 n2) (n3 n4) -> b n1 n2 n3 n4', n1=self.tfx_num_patches_h, n3=self.tfx_num_patches_h)  # [B, H//P, S*cam*W//P, H//P, S*cam*W//P]
+                    attn_act = rearrange(attn_act, 'b t (n1 n2) -> b t n1 n2', n1=self.tfx_num_patches_h)  # [B, t, H//P, S*cam*W//P]
+                    attn_act = einsum(attn_p2p, attn_act, 'b h w h1 w1, b t h1 w1 -> b t h w')
+                    attn_act = rearrange(attn_act, 'b t h w -> b t (h w)')  # [B, t, S*cam*(H//P)^2]
+
                 # Rearrange the attention weights to be in the right shape
-                attn_weights = rearrange(attn_weights, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.tfx_num_patches_h)  # [B, t, H//P, S*cam*W//P]
+                attn_weights = rearrange(attn_act, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.tfx_num_patches_h)  # [B, t, H//P, S*cam*W//P]
 
         else:
             # We don't have any extra tokens, so let's just return the average attention weights of the last layer

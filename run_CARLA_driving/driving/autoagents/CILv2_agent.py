@@ -287,7 +287,8 @@ class CILv2_agent(object):
                 [torch.cuda.LongTensor([self.process_command(self.input_data['GPS'][1],
                                                              self.input_data['IMU'][1])[1]-1]).unsqueeze(0).cuda()]
 
-        outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed, attn_rollout=False)
+        outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed,
+                                           attn_rollout=False, attn_refinement=False)
         actions_outputs = outputs[0]
         self.attn_weights = outputs[-1]
 
@@ -470,9 +471,10 @@ class CILv2_agent(object):
                 gradcams_acc = []
                 for cam_id in range(len(g_conf.DATA_USED)):
                     att = grayscale_cam_acc[cam_id, :]
+                    alpha = min(0.6, accel_attn_weights.squeeze()[cam_id].item())
                     cmap_att = np.delete(self.cmap_2(att), 3, 2)
                     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                    gcacc = Image.blend(cams[cam_id], cmap_att, accel_attn_weights[:, cam_id].item())
+                    gcacc = Image.blend(cams[cam_id], cmap_att, alpha=alpha)
                     gradcams_acc.append(gcacc)
 
                 # Get the steering [STR] attention map
@@ -485,9 +487,10 @@ class CILv2_agent(object):
                 gradcams_str = []
                 for cam_id in range(len(g_conf.DATA_USED)):
                     att = grayscale_cam_str[cam_id, :]
+                    alpha = min(0.6, steer_attn_weights.squeeze()[cam_id].item())
                     cmap_att = np.delete(self.cmap_2(att), 3, 2)
                     cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                    gcstr = Image.blend(cams[cam_id], cmap_att, steer_attn_weights[:, cam_id].item())
+                    gcstr = Image.blend(cams[cam_id], cmap_att, alpha=alpha)
                     gradcams_str.append(gcstr)
 
             # Get the 3rd person view

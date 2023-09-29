@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from einops import rearrange,reduce
+from einops import rearrange, reduce, einsum
 import importlib
 
 from configs import g_conf
@@ -174,7 +174,7 @@ class CIL_multiview(nn.Module):
 
         return action_output         # (B, 1, 1), (B, 1, len(TARGETS))
 
-    def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False):
+    def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False, attn_refinement: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
         cam = len(g_conf.DATA_USED)  # Number of cameras
@@ -211,12 +211,21 @@ class CIL_multiview(nn.Module):
                 # Give as a tuple
                 attn_weights = (attn_weights_t2t, attn_weights_stracc)  # [B, t+2, t+2], [B, t+2, H//P, S*cam*W//P]
             else:
+                # Just work with the last layer
+                attn_weights = attn_weights[-1]  # [B, S*cam*H*W/P^2 + K, S*cam*H*W/P^2 + K]
                 # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
-                attn_weights = attn_weights[-1][:, self.act_tokens_pos, -self.res_out_h * self.res_out_w * S * cam:]  # [B, t, S*cam*(H//P)^2]
+                attn_act = attn_weights[:, self.act_tokens_pos, -self.res_out_h * self.res_out_w * S * cam:]  # [B, t, S*cam*(H//P)^2]
                 # Normalize the attention weights to be in the range [0, 1]
-                attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, t+2, S*cam*(H//P)^2]
+                attn_act = (attn_act - attn_act.min(dim=2, keepdim=True).values) / (attn_act.max(dim=2, keepdim=True).values - attn_act.min(dim=2, keepdim=True).values)  # [B, t+2, S*cam*(H//P)^2]
+                if attn_refinement:
+                    attn_p2p = attn_weights[:, -self.res_out_h * self.res_out_w * S * cam:, -self.res_out_h * self.res_out_w * S * cam:]  # [B, S*cam*(H//P)^2, S*cam*(H//P)^2]
+                    attn_p2p = rearrange(attn_p2p, 'b (n1 n2) (n3 n4) -> b n1 n2 n3 n4', n1=self.res_out_h, n3=self.res_out_h)  # [B, H//P, S*cam*W//P, H//P, S*cam*W//P]
+                    attn_act = rearrange(attn_act, 'b t (n1 n2) -> b t n1 n2', n1=self.res_out_h)  # [B, t, H//P, S*cam*W//P]
+                    attn_act = einsum(attn_p2p, attn_act, 'b h w h1 w1, b t h1 w1 -> b t h w')
+                    attn_act = rearrange(attn_act, 'b t h w -> b t (h w)')  # [B, t, S*cam*(H//P)^2]
+
                 # Rearrange the attention weights to be in the right shape
-                attn_weights = rearrange(attn_weights, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.res_out_h)  # [B, t, H//P, S*cam*W//P]
+                attn_weights = rearrange(attn_act, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.res_out_h)  # [B, t, H//P, S*cam*W//P]
 
         else:
             # We don't have any extra tokens, so let's just return the average attention weights of the last layer
