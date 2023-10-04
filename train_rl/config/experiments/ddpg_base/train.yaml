@@ -1,0 +1,12 @@
+env_name: endless_full.yaml
+description: "SAC with AE in empty env."
+n_steps: 2000000
+moving_window: 50
+warmup_steps: 1500 # common is 1000.
+start_remembering: 10
+evaluate_average_episodes: 6 # common is 20.
+evaluate_frequency_steps: 20000
+host: "127.0.0.1"
+port: 2010
+tm_port: 8020
+seed: 1

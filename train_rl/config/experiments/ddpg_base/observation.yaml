@@ -1,0 +1,44 @@
+# @package _group_
+SPEED:
+  module: actor_state.speed
+GPS:
+  module: navigation.gnss
+rgb_backontop:
+  module: camera.rgb
+  fov: 90
+  width: 640
+  height: 360
+  location: [-8.5, 0.0, 3.0]
+  rotation: [0.0, 0.0, 0.0]
+  distort_images: False
+rgb_central:
+  module: camera.rgb
+  fov: 60
+  width: 300
+  height: 300
+  location: [0.0, 0.0, 2.0]
+  rotation: [0.0, 0.0, 0.0]
+  distort_images: False
+rgb_left:
+  module: camera.rgb
+  fov: 60
+  width: 300
+  height: 300
+  location: [0.0, 0.0, 2.0]
+  rotation: [0.0, 0.0, -60.0]
+  distort_images: False
+rgb_right:
+  module: camera.rgb
+  fov: 60
+  width: 300
+  height: 300
+  location: [0.0, 0.0, 2.0]
+  rotation: [0.0, 0.0, 60.0]
+  distort_images: False
+
+
+
+
+
+
+
