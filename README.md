@@ -48,9 +48,9 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
 
 * Download [CARLA 0.9.13](https://github.com/carla-simulator/carla/releases/tag/0.9.13/) to your root directory and build up CARLA docker:
 
-        export ROOTDIR=<Path to your root directory>
-        cd $ROOTDIR
-        export CARLAPATH=$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/:$ROOTDIR/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg
+        export TRAINING_ROOT=<Path to your root directory>
+        cd $TRAINING_ROOT
+        export CARLAPATH=$TRAINING_ROOT/CARLA_0.9.13/PythonAPI/carla/:$TRAINING_ROOT/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg
 
 * For using CARLA docker, you can either 1) pull or 2) build up the container:
 
@@ -60,16 +60,16 @@ Required packages: [requirements.txt](https://github.com/yixiao1/CILv2_multiview
 
     To build up, run:
 
-        docker image build -f $ROOTDIR/CARLA_0.9.13/Dockerfile -t CARLA0913 $ROOTDIR/CARLA_0.9.13/
+        docker image build -f $TRAINING_ROOT/CARLA_0.9.13/Dockerfile -t CARLA0913 $TRAINING_ROOT/CARLA_0.9.13/
 
 * Download the CIL++ repository in your root directory:
 
-        cd $ROOTDIR
+        cd $TRAINING_ROOT
         git clone https://github.com/yixiao1/CILv2_multiview.git
 
 * Define environment variables:
 
-        export TRAINING_ROOT=$ROOTDIR/CILv2_multiview
+        export TRAINING_ROOT=$TRAINING_ROOT/CILv2_multiview
         export DRIVING_TEST_ROOT=$TRAINING_ROOT/run_CARLA_driving/
         export SCENARIO_RUNNER_ROOT=$TRAINING_ROOT/scenario_runner/
         export PYTHONPATH=$CARLAPATH:$TRAINING_ROOT:$DRIVING_TEST_ROOT:$SCENARIO_RUNNER_ROOT

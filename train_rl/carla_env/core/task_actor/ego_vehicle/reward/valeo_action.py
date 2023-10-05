@@ -1,12 +1,12 @@
 import numpy as np
 import carla
 
-import carla_env.utils.transforms as trans_utils
-from carla_env.core.obs_manager.object_finder.vehicle import ObsManager as OmVehicle
-from carla_env.core.obs_manager.object_finder.pedestrian import ObsManager as OmPedestrian
+import train_rl.carla_env.utils.transforms as trans_utils
+from train_rl.carla_env.core.obs_manager.object_finder.vehicle import ObsManager as OmVehicle
+from train_rl.carla_env.core.obs_manager.object_finder.pedestrian import ObsManager as OmPedestrian
 
-from carla_env.utils.traffic_light import TrafficLightHandler
-from carla_env.utils.hazard_actor import lbc_hazard_vehicle, lbc_hazard_walker
+from train_rl.carla_env.utils.traffic_light import TrafficLightHandler
+from train_rl.carla_env.utils.hazard_actor import lbc_hazard_vehicle, lbc_hazard_walker
 
 
 class ValeoAction(object):

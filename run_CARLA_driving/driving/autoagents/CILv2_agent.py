@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
 from driving.utils.route_manipulation import downsample_route
-from driving.envs.sensor_interface import SensorInterface
+# from driving.envs.sensor_interface import SensorInterface
 
 from configs import g_conf, merge_with_yaml, set_type_of_process
 from network.models_console import Models
@@ -31,12 +31,12 @@ from _utils.training_utils import DataParallelWrapper
 from dataloaders.transforms import encode_directions_4, encode_directions_6, inverse_normalize, decode_directions_4, \
     decode_directions_6
 from driving.utils.waypointer import Waypointer
-from pytorch_grad_cam.pytorch_grad_cam.grad_cam import GradCAM
-from driving.utils.route_manipulation import interpolate_trajectory
+# from pytorch_grad_cam.pytorch_grad_cam.grad_cam import GradCAM
+# from driving.utils.route_manipulation import interpolate_trajectory
 
 from omegaconf import OmegaConf
-from network.models.architectures.Roach_rl_birdview.birdview.chauffeurnet import ObsManager
-from network.models.architectures.Roach_rl_birdview.utils.traffic_light import TrafficLightHandler
+# from network.models.architectures.Roach_rl_birdview.birdview.chauffeurnet import ObsManager
+# from network.models.architectures.Roach_rl_birdview.utils.traffic_light import TrafficLightHandler
 from importlib import import_module
 
 
@@ -77,7 +77,7 @@ class CILv2_agent(object):
         self._global_plan_world_coord = None
 
         # this data structure will contain all sensor data
-        self.sensor_interface = SensorInterface()
+        # self.sensor_interface = SensorInterface()
         self.waypointer = None
         self.attn_weights = None
         self.vision_save_path = save_driving_vision
@@ -127,13 +127,13 @@ class CILv2_agent(object):
     def setup_expert_agent(self, path_to_conf_file):
         exp_dir = os.path.join('/', os.path.join(*path_to_conf_file.split('/')[:-3]), 'Roach_rl_birdview')
         cfg = OmegaConf.load(os.path.join(exp_dir, 'Roach_rl_birdview.yaml'))
-        self._obs_managers = ObsManager(cfg['obs_configs']['birdview'])
+        # self._obs_managers = ObsManager(cfg['obs_configs']['birdview'])
 
     def set_world(self, world):
         self.world = world
         self.map = self.world.get_map()
-        if self.plug_in_expert:
-            TrafficLightHandler.reset(self.world)
+        # if self.plug_in_expert:
+        #     TrafficLightHandler.reset(self.world)
 
     def set_global_plan(self, global_plan_gps, global_plan_world_coord):
         """
@@ -152,11 +152,12 @@ class CILv2_agent(object):
         """
         reset the plan (route) for the agent
         """
+        return
         current_loc = self._ego_vehicle.get_location()
         last_gps, _ = self._global_plan[-1]
         last_loc = self.waypointer.gps_to_location([last_gps['lat'], last_gps['lon'], last_gps['z']])
         gps_route, route = interpolate_trajectory(self.world, [current_loc, last_loc])
-
+        
         if self.plug_in_expert:
             self._route_plan = route
             self._obs_managers.attach_ego_vehicle(self._ego_vehicle, self._route_plan)

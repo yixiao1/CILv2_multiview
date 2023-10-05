@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from _utils.utils import extract_targets, extract_commands, \
     write_model_results, is_result_better, extract_other_inputs, draw_offline_evaluation_results, eval_done
 from configs import g_conf
-from logger import _logger
+# from logger import _logger
 from dataloaders.transforms import inverse_normalize
 
 @contextmanager
@@ -80,13 +80,13 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
                             cams.append(inverse_normalize(frame[i], g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze())
                         input_frames.append(cams)
 
-                    # we save only the first of the batch
-                    if g_conf.EVAL_SAVE_LAST_Conv_ACTIVATIONS:
-                        _logger.add_gradCAM_attentions_to_disk('Valid', model, [eval_images, eval_directions, eval_speeds],
-                                                               input_rgb_frames= input_frames,
-                                                               epoch=eval_epoch,
-                                                               save_path=os.path.join(g_conf.EXP_SAVE_PATH, 'Eval', 'Valid_gradCAM' + '_' + dataset_name),
-                                                               batch_id=idx)
+                    # # we save only the first of the batch
+                    # if g_conf.EVAL_SAVE_LAST_Conv_ACTIVATIONS:
+                    #     _logger.add_gradCAM_attentions_to_disk('Valid', model, [eval_images, eval_directions, eval_speeds],
+                    #                                            input_rgb_frames= input_frames,
+                    #                                            epoch=eval_epoch,
+                    #                                            save_path=os.path.join(g_conf.EXP_SAVE_PATH, 'Eval', 'Valid_gradCAM' + '_' + dataset_name),
+                    #                                            batch_id=idx)
 
 
                 if (idx + 1) % logging_interval == 0:

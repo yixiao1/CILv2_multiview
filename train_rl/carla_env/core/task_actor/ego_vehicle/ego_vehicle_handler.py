@@ -3,7 +3,7 @@ import numpy as np
 from importlib import import_module
 
 
-from carla_env.core.task_actor.common.task_vehicle import TaskVehicle
+from train_rl.carla_env.core.task_actor.common.task_vehicle import TaskVehicle
 
 
 PENALTY_COLLISION_PEDESTRIAN = 0.50

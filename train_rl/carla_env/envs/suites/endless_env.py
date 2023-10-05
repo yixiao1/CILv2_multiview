@@ -1,4 +1,4 @@
-from carla_env.envs.base_env import CarlaEnv
+from train_rl.carla_env.envs.base_env import CarlaEnv
 
 
 class EndlessEnv(CarlaEnv):

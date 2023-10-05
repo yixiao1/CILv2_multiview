@@ -5,7 +5,7 @@ import carla
 from queue import Queue, Empty
 from gym import spaces
 
-from carla_env.core.obs_manager.obs_manager import ObsManagerBase
+from train_rl.carla_env.core.obs_manager.obs_manager import ObsManagerBase
 
 
 class ObsManager(ObsManagerBase):

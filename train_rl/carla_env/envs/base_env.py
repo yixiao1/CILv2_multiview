@@ -6,14 +6,14 @@ import carla
 import numpy as np
 
 
-from carla_env.core.obs_manager.obs_manager_handler import ObsManagerHandler
-from carla_env.core.task_actor.ego_vehicle.ego_vehicle_handler import EgoVehicleHandler
-from carla_env.core.zombie_walker.zombie_walker_handler import ZombieWalkerHandler
-from carla_env.core.zombie_vehicle.zombie_vehicle_handler import ZombieVehicleHandler
-from carla_env.core.task_actor.scenario_actor.scenario_actor_handler import ScenarioActorHandler
-from carla_env.utils.dynamic_weather import WeatherHandler
-from carla_env.utils.traffic_light import TrafficLightHandler
-from utilities.common import set_random_seed
+from train_rl.carla_env.core.obs_manager.obs_manager_handler import ObsManagerHandler
+from train_rl.carla_env.core.task_actor.ego_vehicle.ego_vehicle_handler import EgoVehicleHandler
+from train_rl.carla_env.core.zombie_walker.zombie_walker_handler import ZombieWalkerHandler
+from train_rl.carla_env.core.zombie_vehicle.zombie_vehicle_handler import ZombieVehicleHandler
+from train_rl.carla_env.core.task_actor.scenario_actor.scenario_actor_handler import ScenarioActorHandler
+from train_rl.carla_env.utils.dynamic_weather import WeatherHandler
+from train_rl.carla_env.utils.traffic_light import TrafficLightHandler
+from train_rl.utilities.common import set_random_seed
 
 
 class CarlaEnv():

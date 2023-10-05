@@ -1,4 +1,4 @@
-import carla_env
+import train_rl.carla_env
 import pygame
 import numpy as np
 import h5py

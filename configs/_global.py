@@ -9,8 +9,9 @@ import copy
 import numpy as np
 import os
 import yaml
+from yaml.loader import SafeLoader
 
-from logger._logger import create_log
+# from logger._logger import create_log
 
 _g_conf = AttributeDict()
 
@@ -78,7 +79,7 @@ def merge_with_yaml(yaml_filename, process_type='train_val'):
     global _g_conf
     with open(yaml_filename, 'r') as f:
 
-        yaml_file = yaml.load(f)
+        yaml_file = yaml.load(f, Loader=SafeLoader)
 
         yaml_cfg = AttributeDict(yaml_file)
 
@@ -145,10 +146,10 @@ def set_type_of_process(process_type, root):
     else:
         raise ValueError("Not found type of process")
 
-    if process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only':
-        create_log(_g_conf.EXP_SAVE_PATH,
-                _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY,
-                _g_conf.TRAIN_IMAGE_LOG_FREQUENCY)
+    # if process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only':
+    #     create_log(_g_conf.EXP_SAVE_PATH,
+    #             _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY,
+    #             _g_conf.TRAIN_IMAGE_LOG_FREQUENCY)
 
 
     _g_conf.immutable(True)

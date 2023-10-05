@@ -8,9 +8,9 @@ import csv
 from datetime import datetime
 from yaml.loader import SafeLoader
 
-from utilities.visualization import save_video_from_images, save_episode_plot
-from utilities.configs import save_config, convert_numpy_dict_to_list_dict, create_empty_file, get_config
-from utilities.common import recursive_format, format_number
+from train_rl.utilities.visualization import save_video_from_images, save_episode_plot
+from train_rl.utilities.configs import save_config, convert_numpy_dict_to_list_dict, create_empty_file, get_config
+from train_rl.utilities.common import recursive_format, format_number
 
 
 class LogFile():
@@ -131,7 +131,7 @@ class LogFile():
 
         env_config_name = train_test_config['env_name']
         # in IL_RL folder.
-        env_config_path = f"{os.getenv('IL_RL_ROOT')}/config/envs/{env_config_name}"
+        env_config_path = f"{os.getenv('TRAINING_ROOT')}/config/envs/{env_config_name}"
         with open(env_config_path) as f:
             env_config = yaml.load(f, Loader=SafeLoader)
 

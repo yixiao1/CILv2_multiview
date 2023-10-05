@@ -4,10 +4,10 @@ import carla
 from gym import spaces
 from queue import Queue, Empty
 
-from carla_env.core.obs_manager.obs_manager import ObsManagerBase
-import carla_env.utils.transforms as trans_utils
-import carla_env.core.task_actor.common.navigation.route_manipulation as gps_util
-from carla_env.core.task_actor.common.navigation.map_utils import RoadOption
+from train_rl.carla_env.core.obs_manager.obs_manager import ObsManagerBase
+import train_rl.carla_env.utils.transforms as trans_utils
+import train_rl.carla_env.core.task_actor.common.navigation.route_manipulation as gps_util
+from train_rl.carla_env.core.task_actor.common.navigation.map_utils import RoadOption
 
 
 class ObsManager(ObsManagerBase):

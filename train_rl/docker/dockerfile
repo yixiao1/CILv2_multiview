@@ -1,0 +1,32 @@
+FROM pytorch/pytorch:1.12.0-cuda11.3-cudnn8-runtime
+
+ARG WANDB_API_KEY=default_value
+
+COPY requirements.txt /tmp/
+RUN pip install --requirement /tmp/requirements.txt
+
+RUN apt-get update
+RUN apt-get install ffmpeg libsm6 libxext6  -y
+
+
+WORKDIR /root
+
+RUN mkdir /root/results 
+RUN mkdir /root/results/CILv2_multiview
+RUN mkdir /root/CILv2_multiview
+RUN mkdir /CARLA_0.9.13
+RUN mkdir /root/memory
+
+
+ENV ROOTDIR="/root"
+ENV CARLAPATH=${ROOTDIR}/CARLA_0.9.13/PythonAPI/carla/:${ROOTDIR}/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg
+
+ENV TRAINING_ROOT=${ROOTDIR}/CILv2_multiview
+ENV DRIVING_TEST_ROOT=${TRAINING_ROOT}/run_CARLA_driving/
+ENV SCENARIO_RUNNER_ROOT=${TRAINING_ROOT}/scenario_runner/
+ENV PYTHONPATH=${CARLAPATH}:${TRAINING_ROOT}:${DRIVING_TEST_ROOT}:${SCENARIO_RUNNER_ROOT}
+ENV TRAINING_RESULTS_ROOT=/root/results/CILv2_multiview
+ENV USER="deep"
+ENV WANDB_API_KEY=${WANDB_API_KEY}
+
+

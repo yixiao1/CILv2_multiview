@@ -1,14 +1,16 @@
 - env_id: Endless-v0
   env_configs:
-    carla_map: Town01
-    num_zombie_vehicles: [0, 150]
-    num_zombie_walkers: [0, 300]
-    weather_group: train
+    carla_map_train: Town01
+    carla_map_val: Town02
+    num_zombie_vehicles: [0, 100]
+    num_zombie_walkers: [0, 200]
+    weather_group_train: train
+    weather_group_val: new
     carla_fps: 10
     reward:
-      entry_point: reward.valeo_action_updated_nocrash:ValeoAction
+      entry_point: reward.valeo_action_updated:ValeoAction
       kwargs : 
-        maximum_speed: 6
+        maximum_speed: 5
     terminal: 
-      entry_point: terminal.valeo_no_det_px_nocrash:ValeoNoDetPx
+      entry_point: terminal.valeo_no_det_px:ValeoNoDetPx
       kwargs : {}

@@ -1,7 +1,7 @@
 from collections import deque
 import carla
 import numpy as np
-import carla_env.utils.transforms as trans_utils
+import train_rl.carla_env.utils.transforms as trans_utils
 
 
 def _get_traffic_light_waypoints(traffic_light, carla_map):

@@ -1,6 +1,6 @@
 from gym import spaces
 import carla
-from carla_env.core.obs_manager.obs_manager import ObsManagerBase
+from train_rl.carla_env.core.obs_manager.obs_manager import ObsManagerBase
 
 
 class ObsManager(ObsManagerBase):

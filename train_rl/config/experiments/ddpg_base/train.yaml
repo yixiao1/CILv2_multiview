@@ -1,4 +1,4 @@
-env_name: endless_full.yaml
+env_name: endless_full_nocrash.yaml
 description: "SAC with AE in empty env."
 n_steps: 2000000
 moving_window: 50

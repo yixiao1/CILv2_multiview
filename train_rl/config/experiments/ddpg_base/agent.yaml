@@ -1,4 +1,4 @@
-entry_point: agents.ddpg_base.agent:Agent
+entry_point: train_rl.agents.ddpg_base.agent:Agent
 kwargs:
   training_config:
     device: cuda:1
@@ -10,29 +10,6 @@ kwargs:
     repeat_action: 2
     n_step: 1
     log_every: 1000
-  augmentation_config:
-    use_aug: True
-    pad: 8
-  vehicle_measurements_config:
-    entry_point: agents.models.vehicle_measurements.vehicle_measurements_encoder:VehicleMeasurementsEncoder
-    num_inputs: 2
-    fc_dims: 8
-    out_dims: 16
-  waypoints_config:
-    entry_point: agents.models.waypoints.waypoint_encoder:WaypointConvEncoder
-    num_waypoints: 10
-    fc_dims: 20
-    out_dims: 32
-  image_config:
-    entry_point: agents.models.image.encoder_alix:EncoderALIX
-    image_size: 256
-    out_dims: 256
-  control_config:
-    pid:
-      kp: 1.0
-      ki: 0.2
-      kd: 0.001
-      dt: 0.1
   exploration_config:
     std_clip: 0.3
     std_schedule_init: 1.0
@@ -42,21 +19,12 @@ kwargs:
     entry_point: agents.models.rl_networks.critic_network_drqv2_256:CriticNetwork
     fc_dims: 512 # common. 
     tau: 0.01
-  actor_config:
-    entry_point: agents.models.rl_networks.actor_network_drqv2_256:ActorNetwork
-    fc_dims: 512 # common.
   memory_config:
     capacity: 100000 # common (curl) (100000)
     num_workers: 4
     obs_info:
-      image:
-        shape: (3, 256, 256) # following regnet transformation to save memory.
-        dtype: np.uint8
-      waypoints:
-        shape: (10, 2)
-        dtype: np.float32
-      vehicle_measurements: # speed, steer.
-        shape: (2,)
+      latent:
+        shape: (512,)
         dtype: np.float32
 
 

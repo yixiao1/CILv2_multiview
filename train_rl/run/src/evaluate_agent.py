@@ -4,6 +4,9 @@ import torch
 
 @torch.no_grad()
 def evaluate_agent(env, agent, logfile, step_train, episode_train, num_episodes, eval_idx, maximum_speed, best_score, steps_array, scores_eval, train):
+    
+    env.change_world(val=True)
+    
     logfile.reset()
     scores_eval_idx = []
     steps = 0
@@ -64,5 +67,7 @@ def evaluate_agent(env, agent, logfile, step_train, episode_train, num_episodes,
                           scores=scores_eval, steps_array=steps_array, eval_idx=eval_idx)
 
     eval_idx += 1
+    
+    env.change_world(val=False)
 
     return eval_idx, best_score, scores_eval, steps_array

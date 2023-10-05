@@ -1,9 +1,9 @@
 import numpy as np
 from gym import spaces
 
-from carla_env.core.obs_manager.obs_manager import ObsManagerBase
+from train_rl.carla_env.core.obs_manager.obs_manager import ObsManagerBase
 
-import carla_env.utils.transforms as trans_utils
+import train_rl.carla_env.utils.transforms as trans_utils
 
 
 class ObsManager(ObsManagerBase):

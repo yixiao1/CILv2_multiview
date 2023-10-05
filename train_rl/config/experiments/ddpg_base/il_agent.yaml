@@ -1,0 +1,3 @@
+agent: ${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py
+checkpoint: ${DRIVING_TEST_ROOT}/results/nocrash
+agent-config: ${TRAINING_RESULTS_ROOT}/_results/20230922/CILv2_IL_RGB_T1/config80.json

@@ -1,4 +1,4 @@
-from carla_env.utils.traffic_light import TrafficLightHandler
+from train_rl.carla_env.utils.traffic_light import TrafficLightHandler
 
 
 class EncounterLight():

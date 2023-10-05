@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 
-import carla_env
+import train_rl.carla_env
 
 
 def draw_waypoints(world, waypoints, z=0.5):

@@ -5,18 +5,18 @@ import argparse
 import sys
 import numpy as np
 import wandb
+import importlib
 
 from yaml.loader import SafeLoader
 from colorama import Fore
 from importlib import import_module
 
-from carla_env.envs.suites.endless_env import EndlessEnv
-from carla_env.envs.suites.nocrash_env import NoCrashEnv
-from carla_env.envs.suites.corl2017_env import CoRL2017Env
-from carla_env.envs.suites.leaderboard_env import LeaderboardEnv
-from run.src.log_file import LogFile
-from run.src.evaluate_agent import evaluate_agent
-from utilities.common import set_random_seed
+from train_rl.carla_env.envs.suites.endless_env import EndlessEnv
+from train_rl.carla_env.envs.suites.nocrash_env import NoCrashEnv
+from train_rl.run.src.log_file import LogFile
+from train_rl.run.src.evaluate_agent import evaluate_agent
+from train_rl.utilities.common import set_random_seed
+from train_rl.utilities.configs import get_config_with_env_var
 
 
 wandb.login()
@@ -44,10 +44,11 @@ def main():
     else:
         print(f"{Fore.WHITE} Initialize testing! {Fore.RESET}")
 
-    IL_RL_ROOT = os.getenv('IL_RL_ROOT')
-    observation_config_path = f"{IL_RL_ROOT}/config/experiments/{experiment_name}/observation.yaml"
-    agent_config_path = f"{IL_RL_ROOT}/config/experiments/{experiment_name}/agent.yaml"
-    train_test_config_path = f"{IL_RL_ROOT}/config/experiments/{experiment_name}/{train_test_config_name}"
+    TRAINING_ROOT = os.getenv('TRAINING_ROOT')
+    observation_config_path = f"{TRAINING_ROOT}/train_rl/config/experiments/{experiment_name}/observation.yaml"
+    agent_config_path = f"{TRAINING_ROOT}/train_rl/config/experiments/{experiment_name}/agent.yaml"
+    il_agent_config_path = f"{TRAINING_ROOT}/train_rl/config/experiments/{experiment_name}/il_agent.yaml"
+    train_test_config_path = f"{TRAINING_ROOT}/train_rl/config/experiments/{experiment_name}/{train_test_config_name}"
 
     with open(observation_config_path) as f:
         observation_config = yaml.load(f, Loader=SafeLoader)
@@ -55,10 +56,14 @@ def main():
         agent_config = yaml.load(f, Loader=SafeLoader)
     with open(train_test_config_path) as f:
         train_test_config = yaml.load(f, Loader=SafeLoader)
+    
+    il_agent_config = get_config_with_env_var(il_agent_config_path)
+    
+ 
 
-    # TODO: check if we have more than one training environment (Curriculum Learning).
+
     env_config_name = train_test_config['env_name']
-    env_config_path = f"{IL_RL_ROOT}/config/envs/{env_config_name}"
+    env_config_path = f"{TRAINING_ROOT}/train_rl/config/envs/{env_config_name}"
     with open(env_config_path) as f:
         env_config = yaml.load(f, Loader=SafeLoader)[0]
 
@@ -67,7 +72,8 @@ def main():
     set_random_seed(seed=seed)
 
     # Load Environment.
-    carla_map = env_config['env_configs'].get('carla_map', None)
+    carla_map_train = env_config['env_configs'].get('carla_map_train', None)
+    carla_map_val = env_config['env_configs'].get('carla_map_val', None)
     carla_fps = env_config['env_configs'].get('carla_fps', None)
     host = train_test_config.get('host', None)
     port = train_test_config.get('port', None)
@@ -78,7 +84,8 @@ def main():
         'num_zombie_walkers', None)
     route_description = env_config['env_configs'].get(
         'route_description', None)
-    weather_group = env_config['env_configs'].get('weather_group', None)
+    weather_group_train = env_config['env_configs'].get('weather_group_train', None)
+    weather_group_val = env_config['env_configs'].get('weather_group_val', None)
     terminal_configs = env_config['env_configs'].get('terminal', None)
     reward_configs = env_config['env_configs'].get('reward', None)
     background_traffic = env_config['env_configs'].get(
@@ -86,14 +93,27 @@ def main():
     task_type = env_config['env_configs'].get('task_type', None)
     routes_group = env_config['env_configs'].get('routes_group', None)
 
+
+    module_name = os.path.basename(il_agent_config['agent']).split('.')[0]
+    sys.path.insert(0, os.path.dirname(il_agent_config['agent']))
+    module_agent = importlib.import_module(module_name)
+    agent_class_name = getattr(module_agent, 'get_entry_point')()
+    
+    
+    agent_instance = getattr(module_agent, agent_class_name) \
+        (il_agent_config['agent-config'], save_driving_vision=False,
+            save_driving_measurement=False)
+        
     # init agent.
     agent_config['kwargs']['experiment_path'] = experiment_path
     maximum_speed = env_config['env_configs']['reward']['kwargs']['maximum_speed']
     agent_config['kwargs']['maximum_speed'] = maximum_speed
     agent_config['kwargs']['init_memory'] = train
+    agent_config['kwargs']['il_agent'] = agent_instance
     module_str, class_str = agent_config['entry_point'].split(':')
     _Class = getattr(import_module(module_str), class_str)
     agent = _Class(**agent_config.get('kwargs', {}))
+
 
     # load weights.
     if not train:
@@ -110,24 +130,15 @@ def main():
                       fps=carla_fps, resume_training=args['resume_training'], log_every=agent_config['kwargs']['training_config']['log_every'])
 
     if env_config['env_id'].split('-')[0] == 'NoCrash':
-        env = NoCrashEnv(carla_map=carla_map, host=host, port=port, obs_configs=observation_config,
+        env = NoCrashEnv(carla_map_train=carla_map_train, carla_map_val=carla_map_val, host=host, port=port, obs_configs=observation_config,
                          reward_configs=reward_configs, terminal_configs=terminal_configs,
-                         weather_group=weather_group, route_description=route_description,
+                         weather_group_train=weather_group_train, weather_group_val=weather_group_val, route_description=route_description,
                          background_traffic=background_traffic, carla_fps=carla_fps, tm_port=tm_port, seed=seed)
     elif env_config['env_id'].split('-')[0] == 'Endless':
-        env = EndlessEnv(carla_map=carla_map, host=host, port=port, obs_configs=observation_config,
+        env = EndlessEnv(carla_map_train=carla_map_train, carla_map_val=carla_map_val, host=host, port=port, obs_configs=observation_config,
                          terminal_configs=terminal_configs, reward_configs=reward_configs,
                          num_zombie_vehicles=num_zombie_vehicles, num_zombie_walkers=num_zombie_walkers,
-                         weather_group=weather_group, carla_fps=carla_fps, tm_port=tm_port, seed=seed)
-    elif env_config['env_id'].split('-')[0] == 'CoRL2017':
-        env = CoRL2017Env(carla_map=carla_map, host=host, port=port, obs_configs=observation_config,
-                          terminal_configs=terminal_configs, reward_configs=reward_configs,
-                          weather_group=weather_group, route_description=route_description, task_type=task_type,
-                          carla_fps=carla_fps, tm_port=tm_port, seed=seed)
-    elif env_config['env_id'].split('-')[0] == 'LeaderBoard':
-        env = LeaderboardEnv(carla_map=carla_map, host=host, port=port, obs_configs=observation_config,
-                             reward_configs=reward_configs, terminal_configs=terminal_configs, weather_group=weather_group,
-                             routes_group=routes_group, carla_fps=carla_fps, tm_port=tm_port, seed=seed)
+                         weather_group_train=weather_group_train, weather_group_val=weather_group_val, carla_fps=carla_fps, tm_port=tm_port, seed=seed)
     else:
         env = None
         raise Exception('Unknown Environment!')
@@ -154,7 +165,7 @@ def main():
     eval_idx = 0
     scores, steps_array = [], []
     best_score = -np.inf
-    metrics_reward = False
+
     
     if train:
         wandb.init(project='il_rl', name=experiment_name, config=agent_config, dir=experiment_path)
@@ -166,7 +177,6 @@ def main():
 
         # evaluate agent.
         if (not train) or (steps_eval > eval_freq) or (steps == 0):
-            metrics_reward = True
             num_episodes = eval_average_episodes if train else n_episodes
             eval_idx, best_score, scores, steps_array = evaluate_agent(env=env, agent=agent, logfile=logfile, step_train=steps, episode_train=ep-1,
                                                                        num_episodes=num_episodes, eval_idx=eval_idx, best_score=best_score, steps_array=steps_array, scores_eval=scores, maximum_speed=maximum_speed, train=train)
@@ -211,14 +221,7 @@ def main():
             
             logfile.save_metrics(metrics, steps)
             
-            if metrics_reward:
-                if 'hybrid' in experiment_name and 'hybrid2' not in experiment_name:
-                    reward_name = 'reward_hybrid'
-                else: 
-                    reward_name = 'reward'
-                    
-                metrics[reward_name] = scores[-1]
-                metrics_reward = False 
+          
                 
             wandb.log(data=metrics, step=steps)
 
