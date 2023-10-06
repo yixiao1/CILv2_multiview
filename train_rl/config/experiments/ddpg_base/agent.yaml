@@ -1,7 +1,7 @@
 entry_point: train_rl.agents.ddpg_base.agent:Agent
 kwargs:
   training_config:
-    device: cuda:1
+    device: cuda:2
     lr: 0.001
     weight_decay: 0.0
     discount_factor: 0.99 # common.
@@ -9,21 +9,20 @@ kwargs:
     target_update_interval: 1 # common.
     repeat_action: 2
     n_step: 1
+    grad_clip: 100.0
     log_every: 1000
   exploration_config:
     std_clip: 0.3
     std_schedule_init: 1.0
     std_schedule_final: 0.1
     std_schedule_duration: 500000 # should be 0.1 * maximum steps
-  critic_config:
-    entry_point: agents.models.rl_networks.critic_network_drqv2_256:CriticNetwork
-    fc_dims: 512 # common. 
+  critic_config: 
     tau: 0.01
   memory_config:
     capacity: 100000 # common (curl) (100000)
     num_workers: 4
     obs_info:
-      latent:
+      state:
         shape: (512,)
         dtype: np.float32
 

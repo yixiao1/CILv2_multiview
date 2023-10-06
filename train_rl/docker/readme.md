@@ -12,7 +12,13 @@
 
     docker run -it --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --network=host -v /home/danc/PhD/autonomous_driving/CARLA_0.9.13:/root/CARLA_0.9.13 -v /home/danc/PhD/autonomous_driving/CILv2_multiview:/root/CILv2_multiview danielc11/cil:0.0  bash
 
+    Local
+
     docker run -it --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --network=host -v /home/danc/PhD/autonomous_driving/CARLA_0.9.13:/root/CARLA_0.9.13 -v /home/danc/PhD/autonomous_driving/CILv2_multiview:/root/CILv2_multiview -v /home/danc/results/CILv2_multiview:/root/results/CILv2_multiview danielc11/cil:0.0  bash
+
+    DeepLar
+    
+    docker run -it --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --network=host -v /home/danc/CARLA_0.9.13:/root/CARLA_0.9.13 -v /home/danc/CILv2_multiview:/root/CILv2_multiview -v /results/CILv2_multiview:/root/results/CILv2_multiview danielc11/cil:0.0  bash
 
 ## Attach to a running container
 

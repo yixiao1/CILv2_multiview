@@ -5,7 +5,7 @@ import argparse
 import sys
 import numpy as np
 import wandb
-import importlib
+
 
 from yaml.loader import SafeLoader
 from colorama import Fore
@@ -35,7 +35,7 @@ def main():
     args = vars(parser.parse_args(args=arglist))
 
     experiment_name = args['experiment_name']
-    experiment_path = f'{os.getenv("HOME")}/results/il_rl/{experiment_name}'
+    experiment_path = f'{os.getenv("HOME")}/results/CILv2_multiview/{experiment_name}'
     train_test_config_name = args['train_test_config']
 
     train = True if train_test_config_name == 'train.yaml' else False
@@ -92,28 +92,15 @@ def main():
         'background_traffic', None)
     task_type = env_config['env_configs'].get('task_type', None)
     routes_group = env_config['env_configs'].get('routes_group', None)
-
-
-    module_name = os.path.basename(il_agent_config['agent']).split('.')[0]
-    sys.path.insert(0, os.path.dirname(il_agent_config['agent']))
-    module_agent = importlib.import_module(module_name)
-    agent_class_name = getattr(module_agent, 'get_entry_point')()
-    
-    
-    agent_instance = getattr(module_agent, agent_class_name) \
-        (il_agent_config['agent-config'], save_driving_vision=False,
-            save_driving_measurement=False)
         
     # init agent.
     agent_config['kwargs']['experiment_path'] = experiment_path
     maximum_speed = env_config['env_configs']['reward']['kwargs']['maximum_speed']
-    agent_config['kwargs']['maximum_speed'] = maximum_speed
     agent_config['kwargs']['init_memory'] = train
-    agent_config['kwargs']['il_agent'] = agent_instance
+    agent_config['kwargs']['il_agent_config'] = il_agent_config
     module_str, class_str = agent_config['entry_point'].split(':')
     _Class = getattr(import_module(module_str), class_str)
     agent = _Class(**agent_config.get('kwargs', {}))
-
 
     # load weights.
     if not train:
@@ -168,7 +155,7 @@ def main():
 
     
     if train:
-        wandb.init(project='il_rl', name=experiment_name, config=agent_config, dir=experiment_path)
+        wandb.init(project='CILv2_multiview', name=experiment_name, config=agent_config, dir=experiment_path)
     
     # agent.watch_models()
     

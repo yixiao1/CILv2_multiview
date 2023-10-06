@@ -5,6 +5,25 @@ import json
 
 from yaml.loader import SafeLoader
 
+class DotDict(dict):
+    """
+    Dot notation access to dictionary attributes, recursively.
+    """
+    def __getattr__(self, attr):
+        value = self.get(attr)
+        if isinstance(value, dict):
+            return DotDict(value)
+        return value
+
+    __setattr__ = dict.__setitem__
+
+    def __delattr__(self, attr):
+        del self[attr]
+
+    def __missing__(self, key):
+        self[key] = DotDict()
+        return self[key]
+
 def get_env_config_from_train_test_config(experiment_name, config_name):
     experiment_path = f"{os.getenv('HOME')}/results/rlad2/{experiment_name}"
     train_test_config = get_config(f'{experiment_path}/configs/{config_name}')

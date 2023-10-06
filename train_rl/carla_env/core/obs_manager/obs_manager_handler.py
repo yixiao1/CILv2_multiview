@@ -27,5 +27,5 @@ class ObsManagerHandler(object):
     def _init_obs_managers(self):
         self._obs_managers = {}
         for obs_id, obs_config in self._obs_configs.items():
-            ObsManager = getattr(import_module('carla_env.core.obs_manager.'+obs_config["module"]), 'ObsManager')
+            ObsManager = getattr(import_module('train_rl.carla_env.core.obs_manager.'+obs_config["module"]), 'ObsManager')
             self._obs_managers[obs_id] = ObsManager(obs_config)

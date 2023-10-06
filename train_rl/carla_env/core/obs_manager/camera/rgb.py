@@ -111,7 +111,7 @@ class ObsManager(ObsManagerBase):
 
         np_img = np.reshape(np_img, (carla_image.height, carla_image.width, 4))
         np_img = np_img[:, :, :3]
-        np_img = np_img[:, :, ::-1]
+        # np_img = np_img[:, :, ::-1]
 
         # np_img = np.moveaxis(np_img, -1, 0)
         # image = cv2.resize(image, (self._res_x, self._res_y), interpolation=cv2.INTER_AREA)

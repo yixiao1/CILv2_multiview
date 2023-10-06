@@ -14,7 +14,7 @@ class ValeoNoDetPx(object):
         self._min_thresh_lat_dist = 3.5
 
         self._eval_mode = eval_mode
-        self._eval_time = 1200
+        self._eval_time = 300
 
     def get(self, timestamp):
         # Done condition 1: vehicle blocked

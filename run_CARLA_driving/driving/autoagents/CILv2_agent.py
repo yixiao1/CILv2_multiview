@@ -106,10 +106,10 @@ class CILv2_agent(object):
         set_type_of_process('drive', root=os.environ["TRAINING_RESULTS_ROOT"])
         
         self._model = Models(g_conf.MODEL_TYPE, g_conf.MODEL_CONFIGURATION)
-        if torch.cuda.device_count() > 1 and g_conf.DATA_PARALLEL:
-            print("Using multiple GPUs parallel! ")
-            print(torch.cuda.device_count(), 'GPUs to be used: ', os.environ["CUDA_VISIBLE_DEVICES"])
-            self._model = DataParallelWrapper(self._model)
+        # if torch.cuda.device_count() > 1 and g_conf.DATA_PARALLEL:
+        #     print("Using multiple GPUs parallel! ")
+        #     print(torch.cuda.device_count(), 'GPUs to be used: ', os.environ["CUDA_VISIBLE_DEVICES"])
+        #     self._model = DataParallelWrapper(self._model)
         self.checkpoint = torch.load(
             os.path.join(exp_dir, 'checkpoints', self._model.name + '_' + str(checkpoint_number) + '.pth'))
         print(self._model.name + '_' + str(checkpoint_number) + '.pth', "loaded from ",

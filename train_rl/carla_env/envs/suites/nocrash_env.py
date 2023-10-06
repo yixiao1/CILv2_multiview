@@ -1,8 +1,8 @@
 import json
 import os
 
-from carla_env.envs.base_env import CarlaEnv
-from carla_env.utils import config_utils
+from train_rl.carla_env.envs.base_env import CarlaEnv
+from train_rl.carla_env.utils import config_utils
 
 
 

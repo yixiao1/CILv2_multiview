@@ -8,7 +8,6 @@ from train_rl.carla_env.core.obs_manager.object_finder.pedestrian import ObsMana
 from train_rl.carla_env.utils.traffic_light import TrafficLightHandler
 from train_rl.carla_env.utils.hazard_actor import lbc_hazard_vehicle, lbc_hazard_walker
 
-from utilities.networks import encode_traffic_light_state
 
 class ValeoAction(object):
 
@@ -68,12 +67,6 @@ class ValeoAction(object):
         # if light_state == carla.TrafficLightState.Green:
         #     dist_rl = max(0.0, np.linalg.norm(light_loc[0:2])-5.0)
         
-        
-        dist_danger = min(dist_veh, dist_ped)
-        
-        dist_danger = True if dist_danger < 3.0 else False
-        
-
         # stop sign
         stop_sign = self._ego_vehicle.criteria_stop._target_stop_sign
         stop_loc = None
@@ -117,15 +110,6 @@ class ValeoAction(object):
         
         reward = r_speed + r_position + r_rotation + terminal_reward + r_action
    
-        if light_state == carla.TrafficLightState.Red or light_state == carla.TrafficLightState.Yellow:
-            light_state_encoded = True
-        else:
-            light_state_encoded = False
-            
-        if light_state == carla.TrafficLightState.Red or light_state == carla.TrafficLightState.Yellow or light_state == carla.TrafficLightState.Green:
-            traffic_light_present = True
-        else:
-            traffic_light_present = False
         
         
         debug_texts = {'r_speed':f'{r_speed:.2f}',
@@ -133,10 +117,7 @@ class ValeoAction(object):
                        'r_rotation':f'{r_rotation:.2f}',
                        'r_action':f'{r_action:.2f}',
                        'r_terminal':f'{terminal_reward:.2f}',
-                       'desired_speed': desired_speed,
-                       'light_state':light_state_encoded,
-                       'traffic_light_present': traffic_light_present,
-                       'dist_danger':dist_danger}
+                       'desired_speed': desired_speed}
         
         reward_debug = {
             'debug_texts': debug_texts

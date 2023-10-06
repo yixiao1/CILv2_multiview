@@ -131,7 +131,7 @@ class LogFile():
 
         env_config_name = train_test_config['env_name']
         # in IL_RL folder.
-        env_config_path = f"{os.getenv('TRAINING_ROOT')}/config/envs/{env_config_name}"
+        env_config_path = f"{os.getenv('TRAINING_ROOT')}/train_rl/config/envs/{env_config_name}"
         with open(env_config_path) as f:
             env_config = yaml.load(f, Loader=SafeLoader)
 
@@ -163,7 +163,7 @@ class LogFile():
                                                                         'observation': filtered_obs,
                                                                         'action': action,
                                                                         'reward': reward}, format_number)
-        monitor_image = observation['monitor']['data']
+        monitor_image = observation['rgb_backontop']['data']
         self.monitor_buffer[episode].append(monitor_image)
         
         if done:
@@ -210,15 +210,13 @@ class LogFile():
             json.dump(logfile, f, indent=4)
     
     def filter_observation(self, observation):
-        speed = observation['speed']
-        gnss = observation['gnss']
-        waypoints = observation['waypoints']
-        control = observation['control']
+        speed = observation['SPEED']
+        gnss = observation['GPS']
+
 
         filtered_obs = {'speed': convert_numpy_dict_to_list_dict(speed),
-                        'gnss': convert_numpy_dict_to_list_dict(gnss),
-                        'waypoints': convert_numpy_dict_to_list_dict(waypoints),
-                        'control': convert_numpy_dict_to_list_dict(control)}
+                        'gnss': convert_numpy_dict_to_list_dict(gnss)}
+                        
         return filtered_obs
 
     def update_episodes_saved(self, episode, step):

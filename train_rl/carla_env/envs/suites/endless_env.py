@@ -2,9 +2,10 @@ from train_rl.carla_env.envs.base_env import CarlaEnv
 
 
 class EndlessEnv(CarlaEnv):
-    def __init__(self, carla_map, host, port, obs_configs,  terminal_configs, reward_configs, num_zombie_vehicles, num_zombie_walkers, weather_group, carla_fps, tm_port, seed):
-        all_tasks = self.build_all_tasks(num_zombie_vehicles, num_zombie_walkers, weather_group)
-        super().__init__(carla_map, host, port, obs_configs, terminal_configs, reward_configs, all_tasks, carla_fps, tm_port, seed)
+    def __init__(self, carla_map_train, carla_map_val, host, port, obs_configs,  terminal_configs, reward_configs, num_zombie_vehicles, num_zombie_walkers, weather_group_train, weather_group_val, carla_fps, tm_port, seed):
+        all_tasks_train = self.build_all_tasks(num_zombie_vehicles, num_zombie_walkers, weather_group_train)
+        all_tasks_val = self.build_all_tasks(num_zombie_vehicles, num_zombie_walkers, weather_group_val)
+        super().__init__(carla_map_train, carla_map_val, host, port, obs_configs, terminal_configs, reward_configs, all_tasks_train, all_tasks_val, carla_fps, tm_port, seed)
 
     @staticmethod
     def build_all_tasks(num_zombie_vehicles, num_zombie_walkers, weather_group):

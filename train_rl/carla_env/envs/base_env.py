@@ -17,11 +17,19 @@ from train_rl.utilities.common import set_random_seed
 
 
 class CarlaEnv():
-    def __init__(self, carla_map, host, port, obs_configs, terminal_configs, reward_configs, all_tasks, carla_fps, tm_port, seed):
-        self._all_tasks = all_tasks
+    def __init__(self, carla_map_train, carla_map_val, host, port, obs_configs, terminal_configs, reward_configs, all_tasks_train, all_tasks_val, carla_fps, tm_port, seed):
+        self._all_tasks_train = all_tasks_train
+        self._all_tasks_val = all_tasks_val
         self._obs_configs = obs_configs
-        self._carla_map = carla_map
+        self._carla_map_train = carla_map_train
+        self._carla_map_val = carla_map_val
+        self._reward_configs = reward_configs
+        self._terminal_configs = terminal_configs
         self.carla_fps = carla_fps
+        self.port = port 
+        self.host = host
+        self.val = False
+
 
         self.seed = seed
 
@@ -29,7 +37,7 @@ class CarlaEnv():
  
         self._tm_port = tm_port
 
-        self._init_client(carla_map=carla_map, host=host, port=port)
+        self._init_client(carla_map=carla_map_train, host=host, port=port)
 
         # define observation space handler.
         self._om_handler = ObsManagerHandler(obs_configs=obs_configs)
@@ -53,17 +61,24 @@ class CarlaEnv():
 
         self._task_idx = 0
         self._shuffle_task = True
-        self._task = self._all_tasks[self._task_idx].copy()
-
+        self._task = self._all_tasks_train[self._task_idx].copy()
+        
+        
     def set_task_idx(self, task_idx):
         self._task_idx = task_idx
         self._shuffle_task = False
-        self._task = self._all_tasks[self._task_idx].copy()
+        if self.val:
+            self._task = self._all_tasks_val[self._task_idx].copy()
+        else:
+            self._task = self._all_tasks_train[self._task_idx].copy()
 
     @property
     def num_tasks(self):
-        return len(self._all_tasks)
-
+        if self.val:
+            return len(self._all_tasks_val)
+        else:
+            return len(self._all_tasks_train)
+    
     @property
     def task(self):
         return self._task
@@ -81,17 +96,6 @@ class CarlaEnv():
 
         self._client = client
 
-    #    # make sure that server and client versions are the same.
-    #     client_ver = self._client.get_client_version()
-    #     server_ver = self._client.get_server_version()
-    #     if client_ver == server_ver:
-    #         print(
-    #             f" {Fore.GREEN} Success {Fore.RESET}  Client version: {client_ver}, Server version: {server_ver}")
-    #     else:
-    #         print(
-    #             f" {Fore.RED} Error {Fore.RESET}  Client version: {client_ver}, Server version: {server_ver}")
-    #         raise Exception("Versions mismatch!")
-
         self._world = self._client.load_world(carla_map)
         self._tm = self._client.get_trafficmanager(self._tm_port)
 
@@ -102,6 +106,33 @@ class CarlaEnv():
         self._world.tick()
 
         TrafficLightHandler.reset(self._world)
+        
+        
+    def change_world(self, val):
+        self.clean()
+        if val:
+            self._world = self._client.load_world(self._carla_map_val)
+            self.val = True
+        else:
+            self._world = self._client.load_world(self._carla_map_train)
+            self.val = False
+
+        self._tm = self._client.get_trafficmanager(self._tm_port)
+        self._set_sync_mode(True)
+        self._tm.set_random_device_seed(self.seed)
+        self._world.tick()
+        TrafficLightHandler.reset(self._world)
+
+
+        self._om_handler = ObsManagerHandler(obs_configs=self._obs_configs)
+        self._ev_handler = EgoVehicleHandler(
+            self._client, self._reward_configs, self._terminal_configs)
+        self._zw_handler = ZombieWalkerHandler(self._client)
+        self._zv_handler = ZombieVehicleHandler(
+            self._client, self._tm.get_port())
+        self._sa_handler = ScenarioActorHandler(self._client)
+        self._w_handler = WeatherHandler(self._world)
+        
 
     def _set_sync_mode(self, sync):
         settings = self._world.get_settings()
@@ -115,11 +146,15 @@ class CarlaEnv():
     def reset(self):
         if self._shuffle_task:
             self._task_idx = np.random.choice(self.num_tasks)
-            self._task = self._all_tasks[self._task_idx].copy()
+            if self.val:
+                self._task = self._all_tasks_val[self._task_idx].copy()
+            else: 
+                self._task = self._all_tasks_train[self._task_idx].copy()
+                
         self.clean()
 
         self._w_handler.reset(self._task['weather'])
-
+                
         ev_spawn_location = self._ev_handler.reset(
             self._task['ego_vehicles'])
 
@@ -153,15 +188,10 @@ class CarlaEnv():
         # get obeservations
         obs_dict = self._om_handler.get_observation()
 
-        # assume no traffic light is present in the beggining.
-        # obs_dict['traffic_light'] = False
-        # obs_dict['traffic_light_presnet'] = False
-        # obs_dict['dist_danger'] = False
-        obs_dict['desired_speed'] = 6.0
 
-        obs_dict['reward'] = [1.0, 0.0, 0.0, 0.0, 0.0]
+        obs_dict['is_first'] = True
+        obs_dict['is_last'] = False
         
-  
         return obs_dict
 
     def clean(self):
@@ -196,19 +226,13 @@ class CarlaEnv():
         # get observations
         obs_dict = self._om_handler.get_observation()
 
-        # obs_dict['traffic_light'] = info['reward_debug']['debug_texts']['light_state']
-        # obs_dict['traffic_light_present'] = info['reward_debug']['debug_texts']['traffic_light_present']
-        # obs_dict['dist_danger'] = info['reward_debug']['debug_texts']['dist_danger']
-        obs_dict['desired_speed'] = info['reward_debug']['debug_texts']['desired_speed']
-        obs_dict['reward'] = [info['reward_debug']['debug_texts']['r_speed'], 
-                              info['reward_debug']['debug_texts']['r_position'], 
-                              info['reward_debug']['debug_texts']['r_rotation'],
-                              info['reward_debug']['debug_texts']['r_action'], 
-                              info['reward_debug']['debug_texts']['r_terminal']]
-        
-        
+            
         # update weather
         self._w_handler.tick(snap_shot.timestamp.delta_seconds)
+        
+        
+        obs_dict['is_first'] = False
+        obs_dict['is_last'] = done
 
         return obs_dict, reward, done, info
 

@@ -1,9 +1,8 @@
 import torch 
 import torch.nn as nn 
-import torch.nn.functional as F 
-import torch.optim as optimzer
 
-from utilities.networks import weights_init
+
+from train_rl.utilities.networks import weights_init
 
 class CriticNetwork(nn.Module):
     def __init__(self, state_size):

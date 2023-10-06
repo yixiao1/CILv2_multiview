@@ -114,7 +114,7 @@ class EgoVehicleHandler(object):
     @staticmethod
     def _build_instance(config, ego_vehicle):
         module_str, class_str = config['entry_point'].split(':')
-        _Class = getattr(import_module('carla_env.core.task_actor.ego_vehicle.'+module_str), class_str)
+        _Class = getattr(import_module('train_rl.carla_env.core.task_actor.ego_vehicle.'+module_str), class_str)
         return _Class(ego_vehicle, **config.get('kwargs', {}))
 
     def apply_control(self, control):
