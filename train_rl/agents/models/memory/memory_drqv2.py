@@ -40,6 +40,7 @@ class ReplayBufferStorage:
         self.param_noise = param_noise
         self._old_episode = None
         self._preload()
+        self._n_episodes = 0
     
     def __len__(self):
         return self._num_transitions
@@ -88,6 +89,7 @@ class ReplayBufferStorage:
         ts = datetime.datetime.now().strftime('%Y%m%dT%H%M%S')
         eps_fn = f'{ts}_{eps_idx}_{eps_len}.npz'
         save_episode(episode, self._replay_dir / eps_fn)
+        self._n_episodes += 1
 
 
 class ReplayBuffer(IterableDataset):

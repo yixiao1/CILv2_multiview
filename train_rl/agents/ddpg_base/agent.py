@@ -48,8 +48,8 @@ class Agent():
             self.replay_loader = make_replay_loader(replay_dir=replay_dir, obs_info=self.obs_info, max_size=memory_config['capacity'], batch_size=self.batch_size, num_workers=memory_config['num_workers'], nstep=self.n_step, discount=self.discount_factor)
         
         # critic
-        self.critic = CriticNetwork(state_size=self.state_size)
-        self.critic_target = CriticNetwork(state_size=self.state_size)
+        self.critic = CriticNetwork(state_size=self.state_size).to(self.device)
+        self.critic_target = CriticNetwork(state_size=self.state_size).to(self.device)
 
         # hard update using tau=1.
         update_target_network(self.critic_target, self.critic, tau=1)
@@ -118,7 +118,6 @@ class Agent():
     def encode(self, obs):
         
         # HAD TO CHANGE THE PROCESS_COMMAND!
-        
         # use forward from the CILv2, with the exception of the action.
         # detach the latent from the graph.
         self.norm_rgb = [[self.il_agent.process_image(obs[camera_type]).unsqueeze(0).to(self.device) for camera_type in self.g_conf.DATA_USED]]
@@ -126,7 +125,6 @@ class Agent():
 
         self.norm_speed = [torch.FloatTensor([self.il_agent.process_speed(obs['speed'])]).to(self.device)]
 
-       
        
         if self.g_conf.DATA_COMMAND_ONE_HOT:
             cmd = obs['command']
@@ -192,7 +190,7 @@ class Agent():
 
         steer, throttle, brake = self.il_agent.process_control_outputs(action)
         controls = carla.VehicleControl(throttle= float(throttle), steer=float(steer), brake=float(brake))
-
+        
         return action, controls
 
     def sample_action(self, state, std, clip=None):
@@ -202,7 +200,7 @@ class Agent():
         return action
         
     def determinitistic_action(self, state):
-        return self.il_agent._model._model.action_output(state).unsqueeze(1)
+        return self.il_agent._model._model.action_output(state)
     
     def random_action(self, obs):
 
@@ -219,33 +217,17 @@ class Agent():
         obs_['rgb_central'] = obs['rgb_central']['data']
         obs_['rgb_right'] = obs['rgb_right']['data']
         obs_['speed'] = obs['SPEED']['forward_speed']
-        obs_['GPS'] = obs['GPS']['gnss']
+        # obs_['GPS'] = obs['GPS']['gnss']
         obs_['command'] = obs['GPS']['command']
-        obs_['IMU'] = obs['GPS']['imu']
+        # obs_['IMU'] = obs['GPS']['imu']
 
         return obs_
 
-    def convert_obs_into_torch(self, obs, unsqueeze=False):
-        for key, value in obs.items():
-            if unsqueeze:
-                obs[key] = torch.from_numpy(
-                    value).to(self.device).unsqueeze(0)
-            else:
-                obs[key] = torch.from_numpy(value).to(self.device)
-        return obs
-
-    def convert_obs_into_device(self, obs, unsqueeze=False):
-        for key, value in obs.items():
-            if unsqueeze:
-                obs[key] = value.to(self.device).unsqueeze(0)
-            else:
-                obs[key] = value.to(self.device)
-        return obs
 
     def remember(self, obs, action, reward, next_obs, done):
         obs = None
         next_obs = self.filter_obs(next_obs)
-        next_obs = {'state' : self.encode(next_obs).detach().cpu().numpy()}
+        next_obs = {'state' : self.encode(next_obs).squeeze(0).detach().cpu().numpy()}
         
         self.replay_storage.add(
             action=action, reward=reward, next_obs=next_obs, done=done)
@@ -262,17 +244,15 @@ class Agent():
 
         metrics = dict()
         
-        if self.train_ctn < 512:
+        if self.train_ctn < 512 or self.replay_storage._n_episodes < 4:
             return metrics
 
         # sample batch from memory.
         state_batch, action_batch, reward_batch, discount_batch, next_state_batch, done_batch = tuple(
             next(self.replay_iter))
 
-        state_batch = self.convert_obs_into_device(
-            state_batch)
-        next_state_batch = self.convert_obs_into_device(
-            next_state_batch)
+        state_batch = state_batch['state'].to(self.device)
+        next_state_batch = next_state_batch['state'].to(self.device)
         
         action_batch = action_batch.to(self.device)
         reward_batch = reward_batch.to(self.device)

@@ -59,8 +59,6 @@ def main():
     
     il_agent_config = get_config_with_env_var(il_agent_config_path)
     
- 
-
 
     env_config_name = train_test_config['env_name']
     env_config_path = f"{TRAINING_ROOT}/train_rl/config/envs/{env_config_name}"
@@ -152,6 +150,7 @@ def main():
     eval_idx = 0
     scores, steps_array = [], []
     best_score = -np.inf
+    metrics_reward = False
 
     
     if train:
@@ -164,6 +163,7 @@ def main():
 
         # evaluate agent.
         if (not train) or (steps_eval > eval_freq) or (steps == 0):
+            metrics_reward = True
             num_episodes = eval_average_episodes if train else n_episodes
             eval_idx, best_score, scores, steps_array = evaluate_agent(env=env, agent=agent, logfile=logfile, step_train=steps, episode_train=ep-1,
                                                                        num_episodes=num_episodes, eval_idx=eval_idx, best_score=best_score, steps_array=steps_array, scores_eval=scores, maximum_speed=maximum_speed, train=train)
@@ -208,7 +208,10 @@ def main():
             
             logfile.save_metrics(metrics, steps)
             
-          
+            if metrics_reward:
+                    
+                metrics['reward'] = scores[-1]
+                metrics_reward = False 
                 
             wandb.log(data=metrics, step=steps)
 
