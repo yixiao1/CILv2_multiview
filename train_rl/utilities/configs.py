@@ -25,7 +25,7 @@ class DotDict(dict):
         return self[key]
 
 def get_env_config_from_train_test_config(experiment_name, config_name):
-    experiment_path = f"{os.getenv('HOME')}/results/rlad2/{experiment_name}"
+    experiment_path = f"{os.getenv('HOME')}/results/CILv2_multiview/{experiment_name}"
     train_test_config = get_config(f'{experiment_path}/configs/{config_name}')
     env_config_name = train_test_config['env_name']
     env_config = get_config(f"{experiment_path}/configs/{env_config_name}")

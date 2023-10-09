@@ -5,6 +5,7 @@ import yaml
 import numpy as np
 import csv
 
+from PIL import Image
 from datetime import datetime
 from yaml.loader import SafeLoader
 
@@ -164,6 +165,7 @@ class LogFile():
                                                                         'action': action,
                                                                         'reward': reward}, format_number)
         monitor_image = observation['rgb_backontop']['data']
+
         self.monitor_buffer[episode].append(monitor_image)
         
         if done:
@@ -212,11 +214,13 @@ class LogFile():
     def filter_observation(self, observation):
         speed = observation['SPEED']
         gnss = observation['GPS']
+        waypoints = observation['waypoints']
+        control = observation['control']
 
-
-        filtered_obs = {'speed': convert_numpy_dict_to_list_dict(speed),
-                        'gnss': convert_numpy_dict_to_list_dict(gnss)}
-                        
+        filtered_obs = {'SPEED': convert_numpy_dict_to_list_dict(speed),
+                        'GPS': convert_numpy_dict_to_list_dict(gnss),
+                        'waypoints': convert_numpy_dict_to_list_dict(waypoints),
+                        'control': convert_numpy_dict_to_list_dict(control)}
         return filtered_obs
 
     def update_episodes_saved(self, episode, step):

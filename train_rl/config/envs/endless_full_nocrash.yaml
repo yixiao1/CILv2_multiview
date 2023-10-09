@@ -10,7 +10,7 @@
     reward:
       entry_point: reward.valeo_action_updated:ValeoAction
       kwargs : 
-        maximum_speed: 5
+        maximum_speed: 11
     terminal: 
       entry_point: terminal.valeo_no_det_px:ValeoNoDetPx
       kwargs : {}

@@ -49,17 +49,16 @@ class ValeoAction(object):
 
         desired_spd_veh = desired_spd_ped = desired_spd_rl = desired_spd_stop = self.maximum_speed
 
-        dist_veh = 10
+ 
         if hazard_vehicle_loc is not None:
             dist_veh = max(0.0, np.linalg.norm(hazard_vehicle_loc[0:2])-8.0)
             desired_spd_veh = self.maximum_speed * np.clip(dist_veh, 0.0, 5.0)/5.0
 
-        dist_ped = 10
+ 
         if hazard_ped_loc is not None:
             dist_ped = max(0.0, np.linalg.norm(hazard_ped_loc[0:2])-6.0)
             desired_spd_ped = self.maximum_speed * np.clip(dist_ped, 0.0, 5.0)/5.0
 
-        dist_rl = -1
         if (light_state == carla.TrafficLightState.Red or light_state == carla.TrafficLightState.Yellow):
             dist_rl = max(0.0, np.linalg.norm(light_loc[0:2])-5.0)
             desired_spd_rl = self.maximum_speed * np.clip(dist_rl, 0.0, 5.0)/5.0

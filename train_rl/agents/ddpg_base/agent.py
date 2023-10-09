@@ -8,7 +8,6 @@ import importlib
 import sys
 import carla
 
-
 from colorama import Fore
 
 from train_rl.agents.models.rl_networks.critic_network import CriticNetwork
@@ -68,7 +67,8 @@ class Agent():
         self.optimizer_actor = optimizer.Adam(self.il_agent._model.parameters(), lr=training_config['lr'])
         
         # create code to save the actor (using the same way of CILv2), and the critic, as an additional file.
-        self.cil_il_agent_model_path = il_agent_config['agent-config'].rsplit('/', 1)[0] + f"/checkpoints/CILv2_multiview_{experiment_name}.pth"
+        name = f"/checkpoints/CILv2_multiview_{experiment_name}.pth"
+        self.cil_il_agent_model_path = il_agent_config['agent-config'].rsplit('/', 1)[0] + name
         
         self.il_agent_model_path = f"{experiment_path}/weights/CILv2_multiview.pth"
         self.il_agent_optim_path = f"{experiment_path}/weights/optimizers/CILv2_multiview_optimizer.pth"
@@ -187,7 +187,7 @@ class Agent():
             
         else:
             action = self.determinitistic_action(state)
-
+            
         action = action.detach().cpu().numpy().squeeze()
 
         steer, throttle, brake = self.il_agent.process_control_outputs(action)
@@ -245,7 +245,8 @@ class Agent():
     def remember(self, obs, action, reward, next_obs, done):
         obs = None
         next_obs = self.filter_obs(next_obs)
-        next_obs = self.encode(next_obs)
+        next_obs = {'state' : self.encode(next_obs).detach().cpu().numpy()}
+        
         self.replay_storage.add(
             action=action, reward=reward, next_obs=next_obs, done=done)
 

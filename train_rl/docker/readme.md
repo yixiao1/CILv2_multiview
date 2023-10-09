@@ -8,7 +8,7 @@
 
 ## Spawn the container - interactive
 
-    docker run -it --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --network=host -v /home/danc/results/rlad2:/root/results/rlad2 -v /home/danc/rlad2:/root/rlad2 danielc11/rlad2:0.2 bash
+    docker run -it --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --network=host -v /home/danc/results/CILv2_multiview:/root/results/CILv2_multiview -v /home/danc/CILv2_multiview:/root/CILv2_multiview danielc11/CILv2_multiview:0.2 bash
 
     docker run -it --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --network=host -v /home/danc/PhD/autonomous_driving/CARLA_0.9.13:/root/CARLA_0.9.13 -v /home/danc/PhD/autonomous_driving/CILv2_multiview:/root/CILv2_multiview danielc11/cil:0.0  bash
 
