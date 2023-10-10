@@ -1,0 +1,32 @@
+entry_point: train_rl.agents.ddpg_warmup.agent:Agent
+kwargs:
+  training_config:
+    device: cuda:2
+    lr_actor: 0.0001
+    lr_critic: 0.001
+    weight_decay: 0.0
+    discount_factor: 0.99 # common.
+    batch_size: 256 # commom is 256. 
+    target_update_interval: 1 # common.
+    repeat_action: 1
+    n_step: 1
+    grad_clip: 100.0
+    log_every: 1000
+    critic_warmup: 10000
+  exploration_config:
+    std_clip: 0.3
+    std_schedule_init: 0.5
+    std_schedule_final: 0.1
+    std_schedule_duration: 500000 # should be 0.1 * maximum steps
+  critic_config: 
+    tau: 0.01
+  memory_config:
+    capacity: 500000 # common (curl) (100000)
+    num_workers: 4
+    obs_info:
+      state:
+        shape: (512,)
+        dtype: np.float32
+
+
+    
