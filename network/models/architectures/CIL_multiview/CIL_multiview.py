@@ -35,8 +35,13 @@ class CIL_multiview(nn.Module):
 
         if g_conf.CMD_SPD_TOKENS:
             self.sequence_length += 2
-            if self.act_tokens_pos is not None:
-                self.act_tokens_pos = [2, 3]
+            self.act_tokens_pos = [i + 2 for i in self.act_tokens_pos] if self.act_tokens_pos is not None else None
+
+        self.num_register_tokens = max(0, g_conf.NUM_REGISTER_TOKENS)
+        if self.num_register_tokens > 0:
+            self.register_tokens = nn.Parameter(torch.empty(1, self.num_register_tokens, self.params['TxEncoder']['d_model']).normal_(std=0.02))
+            self.sequence_length += self.num_register_tokens
+            self.act_tokens_pos = [i + self.num_register_tokens for i in self.act_tokens_pos] if self.act_tokens_pos is not None else None
 
 
         if self.params['TxEncoder']['learnable_pe']:
@@ -102,12 +107,15 @@ class CIL_multiview(nn.Module):
         e_p, resnet_inter = self.encoder_embedding_perception(x)  # [B*S*cam, dim, h, w]
         e_p = rearrange(e_p, '(B S cam) dim h w -> B (S cam h w) dim', S=S, cam=cam)  # [B, S*cam*h*w, D]
 
-        # Add extra tokens, if sppecified
+        # Add extra tokens, if specified
+        n = e_p.shape[0]  # B
         if not g_conf.NO_ACT_TOKENS:
-            n = e_p.shape[0]  # B
             first_tokens = [self.tfx_steer_token.expand(n, -1, -1), self.tfx_accel_token.expand(n, -1, -1)]
         else:
             first_tokens = []
+
+        if self.num_register_tokens > 0:
+            first_tokens = [self.register_tokens.expand(n, -1, -1), *first_tokens]
 
         # Concatenate the first tokens to the image embeddings
         e_p = torch.cat([*first_tokens, e_p], dim=1)  # [B, S*cam*h*w + K, D], K = 2 if tokens are used
@@ -215,8 +223,9 @@ class CIL_multiview(nn.Module):
                 attn_weights = attn_weights[-1]  # [B, S*cam*H*W/P^2 + K, S*cam*H*W/P^2 + K]
                 # Return only the attention weights of the last layer for the [ACC] and [STR] tokens
                 attn_act = attn_weights[:, self.act_tokens_pos, -self.res_out_h * self.res_out_w * S * cam:]  # [B, t, S*cam*(H//P)^2]
-                # Normalize the attention weights to be in the range [0, 1]
-                attn_act = (attn_act - attn_act.min(dim=2, keepdim=True).values) / (attn_act.max(dim=2, keepdim=True).values - attn_act.min(dim=2, keepdim=True).values)  # [B, t+2, S*cam*(H//P)^2]
+                # min-max normalization; [B, t+2, S*cam*(H//P)^2]
+                attn_act = (attn_act - attn_act.min(dim=2, keepdim=True).values) /\
+                           (attn_act.max(dim=2, keepdim=True).values - attn_act.min(dim=2, keepdim=True).values)
                 if attn_refinement:
                     attn_p2p = attn_weights[:, -self.res_out_h * self.res_out_w * S * cam:, -self.res_out_h * self.res_out_w * S * cam:]  # [B, S*cam*(H//P)^2, S*cam*(H//P)^2]
                     attn_p2p = rearrange(attn_p2p, 'b (n1 n2) (n3 n4) -> b n1 n2 n3 n4', n1=self.res_out_h, n3=self.res_out_h)  # [B, H//P, S*cam*W//P, H//P, S*cam*W//P]

@@ -204,7 +204,7 @@ class CallBack(object):
         self._data_provider.register_sensor(tag, sensor_type, sensor)
 
     def __call__(self, data):
-        if isinstance(data, carla.libcarla.Image):
+        if isinstance(data, carla.libcarla.Image) or isinstance(data, carla.libcarla.OpticalFlowImage):
             self._parse_image_cb(data, self._tag)
         elif isinstance(data, carla.libcarla.LidarMeasurement):
             self._parse_lidar_cb(data, self._tag)
@@ -221,16 +221,18 @@ class CallBack(object):
 
     # Parsing CARLA physical Sensors
     def _parse_image_cb(self, image, tag):
+        frame = image.frame
         if 'ss' in tag:
             array = image
-            #image.save_to_disk('tutorial/new_sem_output/%.6d.jpg' % image.frame, carla.ColorConverter.CityScapesPalette)
         else:
+            if 'opticalflow' in tag:
+                image = image.get_color_coded_flow()
             array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
             array = copy.deepcopy(array)
             array = np.reshape(array, (image.height, image.width, 4))
             array = array[:, :, :3]
             array = array[:, :, ::-1]
-        self._data_provider.update_sensor(tag, array, image.frame)
+        self._data_provider.update_sensor(tag, array, frame)
 
     def _parse_lidar_cb(self, lidar_data, tag):
         points = np.frombuffer(lidar_data.raw_data, dtype=np.dtype('f4'))

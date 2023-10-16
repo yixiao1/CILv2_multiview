@@ -22,6 +22,9 @@ MAX_ALLOWED_RADIUS_SENSOR = 100.0
 
 SENSORS_LIMITS = {
     'sensor.camera.rgb': 7,
+    'sensor.camera.semantic_segmentation': 7,
+    'sensor.camera.depth': 7,
+    'sensor.camera.optical_flow': 7,
     'sensor.lidar.ray_cast': 1,
     'sensor.other.radar': 2,
     'sensor.other.gnss': 1,
@@ -52,6 +55,8 @@ class AgentWrapper(object):
         'sensor.speedometer',
         'sensor.camera.rgb',
         'sensor.camera',
+        'sensor.camera.depth',
+        'sensor.camera.optical_flow',
         'sensor.lidar.ray_cast',
         'sensor.other.radar',
         'sensor.other.gnss',
@@ -108,9 +113,9 @@ class AgentWrapper(object):
                         print("\nUsing the same lens_circle camera as leaderboard setting\n")
                         bp.set_attribute('lens_circle_multiplier', str(3.0))
                         bp.set_attribute('lens_circle_falloff', str(3.0))
-                        bp.set_attribute('chromatic_aberration_intensity', str(0.5))
-                        bp.set_attribute('chromatic_aberration_offset', str(0))
-
+                        if sensor_spec['type'].startswith('sensor.camera.rgb'):
+                            bp.set_attribute('chromatic_aberration_intensity', str(0.5))
+                            bp.set_attribute('chromatic_aberration_offset', str(0))
                     sensor_location = carla.Location(x=sensor_spec['x'], y=sensor_spec['y'],
                                                      z=sensor_spec['z'])
                     sensor_rotation = carla.Rotation(pitch=sensor_spec['pitch'],

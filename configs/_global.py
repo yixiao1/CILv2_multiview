@@ -102,6 +102,7 @@ _g_conf.NEW_COMMAND_SPEED_FC = False  # Originally had a FC layer for the comman
 _g_conf.LEARNABLE_ACTION_RATIO = False  # Ratio of actions between patches and specialized action tokens is learnable
 _g_conf.EARLY_COMMAND_SPEED_FUSION = True  # Fusion of the command and speed embeddings is done before the camera encoder
 _g_conf.LATE_COMMAND_SPEED_FUSION = False  # Fusion of the command and speed embeddings is done before each steering and acceleration encoders
+_g_conf.NUM_REGISTER_TOKENS = 0  # From: https://arxiv.org/abs/2309.16588
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder
