@@ -47,15 +47,17 @@ from driving.utils.route_indexer import RouteIndexer
 from driving.utils.server_manager import ServerManagerDocker, find_free_port
 
 sensors_to_icons = {
-    'sensor.camera.rgb':        'carla_camera',
+    'sensor.camera.rgb':                    'carla_camera',
+    'sensor.camera.depth':                  'carla_depth',
     'sensor.camera.semantic_segmentation':  'carla_ss',
-    'sensor.lidar.ray_cast':    'carla_lidar',
-    'sensor.other.radar':       'carla_radar',
-    'sensor.other.gnss':        'carla_gnss',
-    'sensor.other.imu':         'carla_imu',
-    'sensor.opendrive_map':     'carla_opendrive_map',
-    'sensor.speedometer':       'carla_speedometer',
-    'sensor.can_bus':           'carla_canbus'
+    'sensor.camera.optical_flow':           'carla_optical_flow',
+    'sensor.lidar.ray_cast':                'carla_lidar',
+    'sensor.other.radar':                   'carla_radar',
+    'sensor.other.gnss':                    'carla_gnss',
+    'sensor.other.imu':                     'carla_imu',
+    'sensor.opendrive_map':                 'carla_opendrive_map',
+    'sensor.speedometer':                   'carla_speedometer',
+    'sensor.can_bus':                       'carla_canbus'
 }
 
 def seed_everything(seed=0):
@@ -266,17 +268,21 @@ class Evaluator(object):
         try:
             self._agent_watchdog.start()
             agent_class_name = getattr(self.module_agent, 'get_entry_point')()
-            vision_save_path = os.path.join(os.environ['SENSOR_SAVE_PATH'], config.package_name,
-                                            args.checkpoint.split('/')[-1].split('.')[-2], config.name,
-                                            str(config.repetition_index)) \
-                if args.save_driving_vision else False
-            measurement_save_path = os.path.join(os.environ['SENSOR_SAVE_PATH'], config.package_name,
-                                                 args.checkpoint.split('/')[-1].split('.')[-2], config.name,
-                                                 str(config.repetition_index)) \
-                if args.save_driving_measurement else False
-            self.agent_instance = getattr(self.module_agent, agent_class_name) \
-                (args.agent_config, save_driving_vision=vision_save_path,
-                 save_driving_measurement=measurement_save_path, save_to_hdf5 = args.save_to_hdf5)
+
+            # for data collection
+            if args.data_collection:
+                vision_save_path = os.path.join(os.environ['DATASET_PATH'], config.package_name, config.name)
+                self.agent_instance = getattr(self.module_agent, agent_class_name) \
+                    (args.agent_config, save_driving_vision=vision_save_path)
+
+            # for saving benchmark driving episodes
+            else:
+                vision_save_path = os.path.join(os.environ['SENSOR_SAVE_PATH'], config.package_name,
+                                                args.checkpoint.split('/')[-1].split('.')[-2], config.name,
+                                                str(config.repetition_index)) if args.save_driving_vision else False
+                self.agent_instance = getattr(self.module_agent, agent_class_name) \
+                    (args.agent_config, save_driving_vision=vision_save_path,
+                     save_driving_measurement=args.save_driving_measurement, save_to_hdf5=args.save_to_hdf5)
 
             config.agent = self.agent_instance
 
@@ -483,6 +489,7 @@ def main():
     parser.add_argument('--save-only-failure', action="store_true", help=' to save the driving visualization only for failures')
     parser.add_argument('--save-driving-measurement', action="store_true", help=' to save the driving measurements')
     parser.add_argument('--save-to-hdf5', action="store_true", help=' to save the driving data into hdf5 file')
+    parser.add_argument('--data-collection', action="store_true", help=' to collect dataset')
     parser.add_argument('--fps', default=10, help='The frame rate of CARLA world')
 
     arguments = parser.parse_args()
