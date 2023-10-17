@@ -224,9 +224,10 @@ class CallBack(object):
         frame = image.frame
         if 'ss' in tag:
             array = image
+        elif 'opticalflow' in tag:
+            # Cannot pickle 'carla.libcarla.OpticalFlowPixel', so a workaround is:
+            array = image.raw_data
         else:
-            if 'opticalflow' in tag:
-                image = image.get_color_coded_flow()
             array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
             array = copy.deepcopy(array)
             array = np.reshape(array, (image.height, image.width, 4))

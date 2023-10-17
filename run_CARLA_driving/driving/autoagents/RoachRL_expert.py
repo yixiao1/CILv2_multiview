@@ -196,7 +196,7 @@ class RoachRL_expert(object):
         ]
         self.to_save_sensor_tags = ['rgb_central', 'rgb_left', 'rgb_right',
                                     'depth_central', 'depth_left', 'depth_right',
-                                    'ss_central', 'ss_left', 'ss_right']
+                                    'ss_central', 'ss_left', 'ss_right', 'opticalflow_central']
 
         return sensors
 
@@ -235,7 +235,9 @@ class RoachRL_expert(object):
 
         for sensor_type in self.to_save_sensor_tags:
             try:
-                if 'rgb' in sensor_type:
+                if 'flow' in sensor_type:
+                    np.save(os.path.join(self.vision_save_path, sensor_type+str(self.datapoint_count).zfill(6) + '.npy'), self.input_data[sensor_type][1])
+                elif 'rgb' in sensor_type:
                     Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path,
                                                                                                    sensor_type+str(self.datapoint_count).zfill(6) + '.png'))
                 else:
