@@ -2,6 +2,7 @@ import os
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+import torchvision.transforms as transforms
 
 import time
 import shutil
@@ -10,9 +11,13 @@ from typing import List
 from configs import g_conf, set_type_of_process, merge_with_yaml
 from network.models_console import Models
 from _utils.training_utils import seed_everything, DataParallelWrapper, DataParallelDPPWrapper, check_saved_checkpoints, update_learning_rate
-from _utils.utils import extract_targets, extract_other_inputs, extract_commands, print_train_info, test_stop
+from _utils import utils
 from _utils.evaluation import evaluation_saving
 from logger import _logger, StdoutLogger
+import cv2
+import PIL.Image
+import numpy as np
+from einops import reduce, rearrange
 
 
 def update_early_stopping(flags, rank, world_size):
@@ -77,39 +82,52 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     update_learning_rate(optimizer, iteration=model._current_iteration - 1,
                                          total_iterations=total_iterations)
 
-
             if world_size > 1:
-                src_images = [[data['current'][i][camera_type].to(f'cuda:{model.device_ids[0]}') for camera_type in g_conf.DATA_USED] for i in range(len(data['current']))]
-                src_directions = [extract_commands(data['current'][i]['can_bus']['direction']).to(f'cuda:{model.device_ids[0]}') for i in
-                                  range(len(data['current']))]
-                src_s = [extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
-                                         ignore=['direction']).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                src_images = [[data['current'][i][camera_type].to(f'cuda:{model.device_ids[0]}') 
+                               for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] 
+                               for i in range(len(data['current']))]
+                src_directions = [
+                    utils.extract_commands(data['current'][i]['can_bus']['direction']).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                src_s = [utils.extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
+                                                    ignore=['direction']).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
-                    tgt_a = [extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['future']))]
+                    tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['future']))]
                 else:
-                    tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                    tgt_a = [utils.extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                if g_conf.ATTENTION_LOSS:
+                    src_atts_left = [data['current'][i]['virtual_attention_left_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                    src_atts_central = [data['current'][i]['virtual_attention_central_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                    src_atts_right = [data['current'][i]['virtual_attention_right_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+
+                    tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+            
             else:
-                src_images = [[data['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED] for i in range(len(data['current']))]
-                src_directions = [extract_commands(data['current'][i]['can_bus']['direction']).cuda() for i in
+                src_images = [[data['current'][i][camera_type].cuda() 
+                               for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] 
+                               for i in range(len(data['current']))]
+                src_directions = [utils.extract_commands(data['current'][i]['can_bus']['direction']).cuda() for i in
                                   range(len(data['current']))]
-                src_s = [extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
+                src_s = [utils.extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
                                          ignore=['direction']).cuda() for i in range(len(data['current']))]
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
-                    tgt_a = [extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda() for i in range(len(data['future']))]
+                    tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda() for i in range(len(data['future']))]
                 else:
-                    tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda() for i in range(len(data['current']))]
+                    tgt_a = [utils.extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda() for i in range(len(data['current']))]
+
+                if g_conf.ATTENTION_LOSS:
+                    src_atts_left = [data['current'][i]['virtual_attention_left_'].cuda() for i in range(len(data['current']))]
+                    src_atts_central = [data['current'][i]['virtual_attention_central_'].cuda() for i in range(len(data['current']))]
+                    src_atts_right = [data['current'][i]['virtual_attention_right_'].cuda() for i in range(len(data['current']))]
+
+                    tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
 
 
-            # src_images = src_images.to(f'cuda:{model.device_ids[0]}')
-            # src_directions = src_directions.to(f'cuda:{model.device_ids[0]}')
-            # src_s = src_s.to(f'cuda:{model.device_ids[0]}')
-            # model.to(f'cuda:{model.device_ids[0]}')
             if g_conf.USE_AUTOCAST:
                 with torch.cuda.amp.autocast():
-                    if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
-                        action_outputs, (cmd_out, spd_out) = model.forward(src_images, src_directions, src_s)
-                    else:
-                        action_outputs = model.forward(src_images, src_directions, src_s)
+                    # if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
+                    #     action_outputs, (cmd_out, spd_out) = model.forward(src_images, src_directions, src_s)
+                    # else:
+                    action_outputs = model.forward(src_images, src_directions, src_s)
 
                     loss_params = {
                         'action_output': action_outputs,
@@ -120,36 +138,54 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     if g_conf.ACCELERATION_AS_ACTION:
                         loss, steer_loss, acceleration_loss = model.loss(loss_params)
                         if rank == 0:
-                            acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                        acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
+                            acc_time = utils.print_train_info(
+                                g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                                acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
                     else:
                         loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
                         if rank == 0:
-                            acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                        acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
+                            acc_time = utils.print_train_info(
+                                g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                                acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
             else:
-                if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
-                    action_outputs, (cmd_out, spd_out) = model.forward(src_images, src_directions, src_s)
-                else:
-                    action_outputs = model.forward(src_images, src_directions, src_s)
-                if isinstance(action_outputs, tuple):
-                    action_output_patches, action_output_tokens = action_outputs
+                # if g_conf.CMD_SPD_TOKENS and g_conf.PREDICT_CMD_SPD:
+                #     action_outputs, (cmd_out, spd_out) = model.forward(src_images, src_directions, src_s)
+                # else:
+                action_outputs, resnet_inter, att_out = model.forward(src_images, src_directions, src_s)
+                # if isinstance(action_outputs, tuple):
+                #     action_output_patches, action_output_tokens = action_outputs
                 loss_params = {
                     'action_output': action_outputs,
                     'targets_action': tgt_a,
                     'variable_weights': g_conf.LOSS_WEIGHT
                 }
+                if g_conf.ATTENTION_LOSS:
+                    if g_conf.EARLY_ATTENTION:
+                        # TODO: do something with the resnet_inter
+                        resnet_inter = resnet_inter[-1]  # [B, 512, 10, 10] for a 300x300 RGB input
+                        resnet_inter = reduce(resnet_inter, 'b c h w -> b (h w)', reduction='mean')
+                        loss_params.update({'attention_output': resnet_inter, 'targets_attention': tgt_att})
+                        # TODO: shapes don't match, we gotta join them and then normalize s.t. sum = 1 for KL divergence
+                    else:
+                        # Just the average of the attention map of the last layer of the Encoder
+                        loss_params.update({'attention_output': att_out[-1].mean(dim=1), 'targets_attention': tgt_att})
 
                 if g_conf.ACCELERATION_AS_ACTION:
-                    loss, steer_loss, acceleration_loss = model.loss(loss_params)
+                    if g_conf.ATTENTION_LOSS:
+                        loss, steer_loss, acceleration_loss, att_loss = model.loss(loss_params)
+                    else:
+                        loss, steer_loss, acceleration_loss = model.loss(loss_params)
+                        att_loss = None
                     if rank == 0:
-                        acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                    acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
+                        acc_time = utils.print_train_info(
+                            g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                            acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), att_loss_data=att_loss)
                 else:
-                    loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
+                    loss, steer_loss, throttle_loss, brake_loss, att_loss = model.loss(loss_params)
                     if rank == 0:
-                        acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                    acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
+                        acc_time = utils.print_train_info(
+                            g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                            acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item, att_loss_data=att_loss)
 
             time_start = time.time()
 
@@ -174,6 +210,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 else:
                     _logger.add_scalar('Loss_throttle', throttle_loss.item(), model._current_iteration)
                     _logger.add_scalar('Loss_brake', brake_loss.item(), model._current_iteration)
+                if att_loss is not None:
+                    _logger.add_scalar('Loss_attention', att_loss.item(), model._current_iteration)
 
                  # Extra logging
                 _logger.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], model._current_iteration)
@@ -193,7 +231,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 if g_conf.LEARNABLE_ACTION_RATIO:
                     _logger.add_scalar('Action ratio', model._model.action_ratio.item(), model._current_iteration)
 
-            if test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
+            if utils.test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
                 print('\nTraining finished !!')
                 break
 
@@ -211,6 +249,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
             del tgt_a
             del src_s
             del action_outputs
+            if g_conf.ATTENTION_LOSS:
+                del src_atts_left
+                del src_atts_central
+                del src_atts_right
+                del tgt_att
         else:
             continue
         break
@@ -289,7 +332,7 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
         # model = DataParallelWrapper(model)
         # gpus_list_int = [int(el) for el in gpus_list]
         model.to(device_id)
-        model = DataParallelDPPWrapper(model, device_ids=[device_id], find_unused_parameters=True)
+        model = DataParallelDPPWrapper(model, device_ids=[device_id], find_unused_parameters=False)
 
     # To load a specific checkpoint
     if g_conf.LOAD_CHECKPOINT:

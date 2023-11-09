@@ -131,3 +131,10 @@ dmypy.json
 .pyre/
 
 .idea/
+
+# Results
+run_CARLA_driving/results
+
+# Test data
+test_data/
+videos/

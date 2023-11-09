@@ -275,7 +275,7 @@ class CILv2_agent(object):
         """
         
         self.control = carla.VehicleControl()
-        self.norm_rgb = [[self.process_image(self.input_data[camera_type][1]).unsqueeze(0).cuda() for camera_type in g_conf.DATA_USED]]
+        self.norm_rgb = [[self.process_image(self.input_data[camera_type][1]).unsqueeze(0).cuda() for camera_type in g_conf.DATA_USED if 'rgb' in camera_type]]
         self.norm_speed = [torch.cuda.FloatTensor([self.process_speed(self.input_data['SPEED'][1]['speed'])]).unsqueeze(0)]
         #
         if g_conf.DATA_COMMAND_ONE_HOT:
@@ -289,9 +289,12 @@ class CILv2_agent(object):
 
         outputs = self._model.forward_eval(self.norm_rgb, self.direction, self.norm_speed,
                                            attn_rollout=False, attn_refinement=False)
+
+        # Output of the model will be the actions, resnet features and the attention weights
         actions_outputs = outputs[0]
         self.attn_weights = outputs[-1]
 
+        # Hand-crafted control outputs
         self.steer, self.throttle, self.brake = self.process_control_outputs(actions_outputs.detach().cpu().numpy().squeeze())
 
         # Pass to the controller
@@ -411,7 +414,7 @@ class CILv2_agent(object):
             # Do something different according to the model name
             if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
                 cams = []
-                for i in range(len(g_conf.DATA_USED)):
+                for i in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
                     rgb_img = inverse_normalize(self.norm_rgb[-1][i],
                                                 g_conf.IMG_NORMALIZATION['mean'],
                                                 g_conf.IMG_NORMALIZATION['std'])
@@ -450,7 +453,7 @@ class CILv2_agent(object):
 
             else:
                 cams = []
-                for i in range(len(g_conf.DATA_USED)):
+                for i in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
                     rgb_img = inverse_normalize(self.norm_rgb[-1][i],
                                                 g_conf.IMG_NORMALIZATION['mean'],
                                                 g_conf.IMG_NORMALIZATION['std'])
@@ -469,7 +472,7 @@ class CILv2_agent(object):
                 grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
 
                 gradcams_acc = []
-                for cam_id in range(len(g_conf.DATA_USED)):
+                for cam_id in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
                     att = grayscale_cam_acc[cam_id, :]
                     alpha = min(0.6, accel_attn_weights.squeeze()[cam_id].item())
                     cmap_att = np.delete(self.cmap_2(att), 3, 2)
@@ -485,7 +488,7 @@ class CILv2_agent(object):
                 grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
 
                 gradcams_str = []
-                for cam_id in range(len(g_conf.DATA_USED)):
+                for cam_id in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
                     att = grayscale_cam_str[cam_id, :]
                     alpha = min(0.6, steer_attn_weights.squeeze()[cam_id].item())
                     cmap_att = np.delete(self.cmap_2(att), 3, 2)
@@ -539,9 +542,11 @@ class CILv2_agent(object):
                     '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
                 ]
             else:
+                act_output = self._model.params['action_output'].get('type', None)
+                act_query = True if (act_output is not None and 'decoder' in act_output) else False
                 view_titles = [
                     'RGB Cameras Input',
-                    'P2P Attention Maps'
+                    'ACT q Attention' if act_query else 'P2P Attention Maps'
                 ]
 
             # third person

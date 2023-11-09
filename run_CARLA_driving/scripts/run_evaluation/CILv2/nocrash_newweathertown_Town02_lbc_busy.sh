@@ -12,9 +12,9 @@ nocrash_newweathertown_busy () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CIL_ViT_oneseq/CILv2_3cam_vitb32_Town01Full_oneseq_bs256_fPE_wmupcdown_lr1e4_preACT_noCLS_out1MLP_hres_CMDSPD/config80.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2_attention/CILv2_3cam_Town01_8hdata_AttentionLossKL_BilinearDownsampling_notBinarized/config45.json \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=9 \
+    --gpus=5 \
     --fps=20 \
     --PedestriansSeed=0 \
     --trafficManagerSeed=0 \

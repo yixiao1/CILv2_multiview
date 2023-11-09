@@ -95,7 +95,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, layer_id = 4):
+    def __init__(self, block, layers, layer_id: int = 4):
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -135,30 +135,18 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.conv1(x)      #[B, 3, 170, 600]
+        x = self.conv1(x)      # [B, 3, 170, 600]
         x = self.bn1(x)
-        x0 = self.relu(x)      #[B, 64, 85, 300]
-        x = self.maxpool(x0)   #[B, 64, 43, 150]
+        x0 = self.relu(x)      # [B, 64, 85, 300]
+        x = self.maxpool(x0)   # [B, 64, 43, 150]
 
-        x1 = self.layer1(x)    #[B, 64, 43, 150]
-        x2 = self.layer2(x1)   #[B, 128, 22, 75]
-        x3 = self.layer3(x2)   #[B, 256, 11, 38]
-        x4 = self.layer4(x3)   #[B, 512, 6, 19]
+        x1 = self.layer1(x)    # [B, 64, 43, 150]
+        x2 = self.layer2(x1)   # [B, 128, 22, 75]
+        x3 = self.layer3(x2)   # [B, 256, 11, 38]
+        x4 = self.layer4(x3)   # [B, 512, 6, 19]
 
-        if self.layer_id == 0:
-            return x0, [x0]
-
-        elif self.layer_id == 1:
-            return x1, [x0, x1]
-
-        elif self.layer_id == 2:
-            return x2, [x0, x1, x2]
-
-        elif self.layer_id == 3:
-            return x3, [x0, x1, x2, x3]
-
-        elif self.layer_id == 4:
-            return x4, [x0, x0, x1, x2, x3, x4]
+        inter_rep = [x0, x1, x2, x3, x4]
+        return inter_rep[self.layer_id], inter_rep[:self.layer_id+1]
 
     def get_backbone_output_shape(self, input_shape):
         x = torch.zeros(input_shape)    # we create a same shape tensor in order to get the output shape of backbone

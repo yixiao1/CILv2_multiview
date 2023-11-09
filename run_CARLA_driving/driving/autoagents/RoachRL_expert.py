@@ -219,36 +219,18 @@ class RoachRL_expert(object):
         Execute one step of navigation.
         :return: control
         """
+        if not os.path.exists(self.vision_save_path):
+            os.makedirs(self.vision_save_path)
+
         policy_input = self._wrapper_class.process_obs(self.input_data, self._wrapper_kwargs['input_states'], train=False)
 
-        actions, _, _, _, _, _ = self._policy.forward(
-            policy_input, deterministic=True, clip_action=True)
+        actions, _, _, _, _, _ = self._policy.forward(policy_input, deterministic=True, clip_action=True)
         control = self._wrapper_class.process_act(actions, self._wrapper_kwargs['acc_as_action'], train=False)
 
         steer = control.steer
         throttle = control.throttle
         brake = control.brake
         cmd = self.waypointer.tick_roach(self.input_data['GPS'][1], self.input_data['IMU'][1])['command'][0]
-
-        if not os.path.exists(self.vision_save_path):
-            os.makedirs(self.vision_save_path)
-
-        for sensor_type in self.to_save_sensor_tags:
-            try:
-                if 'flow' in sensor_type:
-                    np.save(os.path.join(self.vision_save_path, sensor_type+str(self.datapoint_count).zfill(6) + '.npy'), self.input_data[sensor_type][1])
-                elif 'rgb' in sensor_type:
-                    Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path,
-                                                                                                   sensor_type+str(self.datapoint_count).zfill(6) + '.png'))
-                else:
-                    if 'ss' in sensor_type:
-                        self.input_data[sensor_type][1].save_to_disk(os.path.join(self.vision_save_path, sensor_type+str(self.datapoint_count).zfill(6) + '.png'), carla.ColorConverter.CityScapesPalette)
-                    elif 'depth' in sensor_type or 'flow' in sensor_type:
-                        # sdata = np.dot(self.input_data[sensor_type][1][:, :, :3], [65536.0, 256.0, 1.0])
-                        # sdata /= 16777216.0  # (256.0 * 256.0 * 256.0)
-                        Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, sensor_type+str(self.datapoint_count).zfill(6) + '.png'))
-            except:
-                raise RuntimeError('Sensor type not found!')
 
         acc = -1 * brake if throttle == 0.0 else throttle
 
@@ -262,7 +244,13 @@ class RoachRL_expert(object):
         data.update({'reverse': control.reverse})
         data.update({'speed': self.input_data['SPEED'][1]['speed']})
         data.update({'direction': float(cmd)})
-        with open(os.path.join(self.vision_save_path, 'can_bus' + str(self.datapoint_count).zfill(6) + '.json'), 'w') as fo:
+        data.update({'accelerometer_x': np.nan_to_num(self.input_data['IMU'][1][0])})
+        data.update({'accelerometer_y': np.nan_to_num(self.input_data['IMU'][1][1])})
+        data.update({'accelerometer_z': np.nan_to_num(self.input_data['IMU'][1][2])})
+        data.update({'gyroscope_x': np.nan_to_num(self.input_data['IMU'][1][3])})
+        data.update({'gyroscope_y': np.nan_to_num(self.input_data['IMU'][1][4])})
+        data.update({'gyroscope_z': np.nan_to_num(self.input_data['IMU'][1][5])})
+        with open(os.path.join(self.vision_save_path, f'can_bus{self.datapoint_count:06d}.json'), 'w') as fo:
             jsonObj = {}
             jsonObj.update(data)
             fo.seek(0)
@@ -270,6 +258,23 @@ class RoachRL_expert(object):
             fo.close()
 
         self.datapoint_count += 1
+
+        for sensor_type in self.to_save_sensor_tags:
+            try:
+                file_name_string = f'{sensor_type}{self.datapoint_count:06d}'  # e.g., rgb_central000001
+                if 'flow' in sensor_type:
+                    np.save(os.path.join(self.vision_save_path, f'{file_name_string}.npy'), self.input_data[sensor_type][1])
+                elif 'rgb' in sensor_type:
+                    Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.png'))
+                else:
+                    if 'ss' in sensor_type:
+                        self.input_data[sensor_type][1].save_to_disk(os.path.join(self.vision_save_path, f'{file_name_string}.png'))
+                    elif 'depth' in sensor_type or 'flow' in sensor_type:
+                        # sdata = np.dot(self.input_data[sensor_type][1][:, :, :3], [65536.0, 256.0, 1.0])
+                        # sdata /= 16777216.0  # (256.0 * 256.0 * 256.0)
+                        Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.png'))
+            except:
+                raise RuntimeError('Sensor type not found!')
 
         return control
 

@@ -15,6 +15,7 @@ class CILv2_multiview_attention(nn.Module):
         super(CILv2_multiview_attention, self).__init__()
         cil_model = importlib.import_module('network.models.architectures.CIL_multiview')
         cil_model = getattr(cil_model, g_conf.MODEL_TYPE)
+        self.params = params
         self._model = cil_model(params, rank)
         self.name = g_conf.MODEL_TYPE
 
@@ -24,7 +25,8 @@ class CILv2_multiview_attention(nn.Module):
             self._criterion = Loss(g_conf.LOSS)
             self._train_loader, self._val_loaders = \
                 make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
-                                 g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'], num_process=params['num_process'])
+                                 g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'],
+                                 num_process=params['num_process'])
 
             if rank == 0:
                 print('\n================================= Dataset Info ========================================')

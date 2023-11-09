@@ -1,12 +1,15 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
 
 from configs import g_conf
 from collections import OrderedDict
-from typing import Union
+from typing import Union, List
 
 import matplotlib.pyplot as plt
 import os
+
+from einops import rearrange
 
 
 class CIL_multiview_Evaluator(object):
@@ -14,23 +17,40 @@ class CIL_multiview_Evaluator(object):
     Evaluate
     """
     def __init__(self, name):
-        self.reset()
-        self.name = name
-
-    def reset(self):
         self._action_batch_errors_mat = 0
+        self.attentions_loss_pointwise = 0
         self._total_num = 0
         self._metrics = {}
         self.steers = []
         self.accelerations= []
         self.gt_steers = []
         self.gt_accelerations = []
+        self.attentions = []
+        self.gt_attentions = []
 
-    def process(self, action_outputs: Union[torch.Tensor, tuple], targets_action: torch.Tensor):
+        self.name = name
+
+    def reset(self):
+        self._action_batch_errors_mat = 0
+        self.attentions_loss_pointwise = 0
+        self._total_num = 0
+        self._metrics = {}
+        self.steers = []
+        self.accelerations= []
+        self.gt_steers = []
+        self.gt_accelerations = []
+        self.attentions = []
+        self.gt_attentions = []
+
+    def process(self, 
+                action_outputs: Union[torch.Tensor, tuple], 
+                targets_action: torch.Tensor, 
+                attention_outputs: torch.Tensor = None,
+                targets_attention: torch.Tensor = None):
         """
         Compute the errors sum for the outputs and targets of the neural network in val dataset
         """
-        if isinstance(action_outputs, tuple) or isinstance(action_outputs, list):
+        if isinstance(action_outputs, (tuple, list)):
             action_outputs = action_outputs[0]
         B = action_outputs.shape[0]
         self._total_num += B
@@ -39,6 +59,11 @@ class CIL_multiview_Evaluator(object):
         self.accelerations += list(action_outputs[:, 1].detach().cpu().numpy())
         self.gt_steers += list(targets_action[-1][:, 0].detach().cpu().numpy())
         self.gt_accelerations += list(targets_action[-1][:, 1].detach().cpu().numpy())
+        if None not in (attention_outputs, targets_attention):
+            attention_outputs = rearrange(attention_outputs, 'B ... -> B (...)')
+            self.attentions.append(attention_outputs)
+            self.gt_attentions.append(targets_attention)
+            self.attentions_loss_pointwise += F.kl_div((attention_outputs + 1e-12).log(), targets_attention, reduction='none')  
         actions_loss_mat_normalized = torch.clip(action_outputs, -1, 1) - targets_action[-1]  # (B, len(g_conf.TARGETS))
 
         # unnormalize the outputs and targets to compute actual error
@@ -49,7 +74,7 @@ class CIL_multiview_Evaluator(object):
             pass
 
     def evaluate(self, current_epoch, dataset_name):
-        self.metrics_compute(self._action_batch_errors_mat)
+        self.metrics_compute(self._action_batch_errors_mat, self.attentions_loss_pointwise)
         results = OrderedDict({self.name: self._metrics})
 
         def plot_and_save_results(data: Union[list, np.ndarray],
@@ -97,11 +122,15 @@ class CIL_multiview_Evaluator(object):
 
         return results
 
-    def metrics_compute(self, action_errors_mat):
+    def metrics_compute(self, action_errors_mat: torch.Tensor, att_loss_pointwise: torch.Tensor = torch.tensor(0.0)) -> None:
 
         self._metrics.update({'MAE_steer': torch.sum(action_errors_mat, 0)[0] / self._total_num})
         if g_conf.ACCELERATION_AS_ACTION:
             self._metrics.update({'MAE_acceleration': torch.sum(action_errors_mat, 0)[1] / self._total_num})
         else:
             pass
-        self._metrics.update({'MAE': torch.sum(action_errors_mat) / self._total_num})
+
+        if g_conf.ATTENTION_LOSS:
+            self._metrics.update({'MKLdiv_attention': att_loss_pointwise.sum() / self._total_num})
+        att_loss = att_loss_pointwise.sum() if g_conf.ATTENTION_LOSS else torch.tensor(0.0)
+        self._metrics.update({'MAE': (att_loss + torch.sum(action_errors_mat)) / self._total_num})

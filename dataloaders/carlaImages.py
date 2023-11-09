@@ -7,6 +7,7 @@ from torch.utils import data
 from dataloaders.transforms import train_transform, val_transform, canbus_normalization
 
 from configs import g_conf
+from typing import Union
 
 
 class carlaImages(data.Dataset):
@@ -21,7 +22,7 @@ class carlaImages(data.Dataset):
         self.dataset_name = ''
 
         for dataset_name in dataset_list:
-            self.dataset_name += dataset_name.split('/')[-1]
+            self.dataset_name += dataset_name.split(os.sep)[-1]
 
         for dataset_name in dataset_list:
             self.images_base = os.path.join(self.root, dataset_name)
@@ -29,8 +30,12 @@ class carlaImages(data.Dataset):
             canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
             all_cam_paths_dict = {}
             for camera_type in g_conf.DATA_USED:
-                img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
-                all_cam_paths_dict.update({camera_type: img_paths})
+                if 'virtual_attention' in camera_type:
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.jpg')
+                    all_cam_paths_dict.update({camera_type: img_paths})
+                else:
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
+                    all_cam_paths_dict.update({camera_type: img_paths})
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 
             # with multiple frames input we also need to ensure the frames are from the same episode
@@ -84,7 +89,11 @@ class carlaImages(data.Dataset):
             datapoint = self.data[index - (g_conf.ENCODER_INPUT_FRAMES_NUM - 1 - n) * g_conf.ENCODER_STEP_INTERVAL]
             sample = {'can_bus': datapoint['can_bus']}
             for camera_type in g_conf.DATA_USED:
-                img = Image.open(datapoint[camera_type]).convert('RGB')
+                if 'virtual_attention' in camera_type:
+                    img = Image.open(datapoint[camera_type]).convert('L')
+                # TODO: sensor type, not always rgb
+                else:
+                    img = Image.open(datapoint[camera_type]).convert('RGB')
                 sample.update({camera_type: img})
 
             if self.split == 'train':
@@ -139,7 +148,7 @@ class carlaImages(data.Dataset):
                 raise RuntimeError(f'The number of images and canbus data are not matched! Num {camera_type} images: {len(img_paths)}, Num canbus data: {len(canbus_paths)}')
 
         for i in range(len(canbus_paths)):
-            datapoint = {}
+            datapoint = dict()
             datapoint['can_bus'] = dict()
             f = open(canbus_paths[i], 'r')
             canbus_data = json.loads(f.read())
@@ -152,12 +161,16 @@ class carlaImages(data.Dataset):
 
         return full_dataset
 
-    def recursive_glob(self, rootdir='.', prefix='', suffix=''):
+    def recursive_glob(self, rootdir: Union[str, os.PathLike] = os.getcwd(), prefix: str = None, suffix: str = None):
         """Performs recursive glob with given suffix and rootdir
             :param rootdir is the root directory
             :param prefix is the start prefix to be searched
             :param suffix is the suffix to be searched
         """
+        if prefix is None:
+            prefix = ''
+        if suffix is None:
+            suffix = ''
         return [os.path.join(looproot, filename)
                 for looproot, _, filenames in sorted(os.walk(rootdir))
                 for filename in sorted(filenames) if filename.startswith(prefix) and filename.endswith(suffix)]

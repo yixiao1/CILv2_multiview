@@ -7,13 +7,12 @@ from contextlib import contextmanager
 import torch
 import torch.nn as nn
 
-from _utils.utils import extract_targets, extract_commands, \
-    write_model_results, is_result_better, extract_other_inputs, draw_offline_evaluation_results, eval_done
+from _utils import utils
 from configs import g_conf
 from logger import _logger
 from dataloaders.transforms import inverse_normalize
 from network.models.architectures.CIL_multiview.evaluator import CIL_multiview_Evaluator
-
+from einops import reduce
 
 def get_model_state(model: nn.Module) -> OrderedDict:
     """ Get the state of a model """
@@ -72,21 +71,37 @@ def evaluation_on_model(model: nn.Module,
         with inference_context(model), torch.no_grad():
             for idx, x in enumerate(data_loader):
                 # Extract the inputs
-                src_images = [[x['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED] for i in range(len(x['current']))]
-                src_directions = [extract_commands(x['current'][i]['can_bus']['direction']).cuda() for i in range(len(x['current']))]
-                src_speeds = [extract_other_inputs(x['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
+                src_images = [[x['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] for i in range(len(x['current']))]
+                src_directions = [utils.extract_commands(x['current'][i]['can_bus']['direction']).cuda() for i in range(len(x['current']))]
+                src_speeds = [utils.extract_other_inputs(x['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
                                                    ignore=['direction']).cuda() for i in range(len(x['current']))]
 
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
-                    tgt_a = [extract_targets(x['future'][i]['can_bus_future'],
+                    tgt_a = [utils.extract_targets(x['future'][i]['can_bus_future'],
                                              g_conf.TARGETS).cuda() for i in range(len(x['future']))]
                 else:
-                    tgt_a = [extract_targets(x['current'][i]['can_bus'],
+                    tgt_a = [utils.extract_targets(x['current'][i]['can_bus'],
                                              g_conf.TARGETS).cuda() for i in range(len(x['current']))]
 
-                action_outputs = model.forward_eval(src_images, src_directions, src_speeds)
+                if g_conf.ATTENTION_LOSS:
+                    src_atts_left = [x['current'][i]['virtual_attention_left_'].cuda() for i in range(len(x['current']))]
+                    src_atts_central = [x['current'][i]['virtual_attention_central_'].cuda() for i in range(len(x['current']))]
+                    src_atts_right = [x['current'][i]['virtual_attention_right_'].cuda() for i in range(len(x['current']))]
+
+                    tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+                else:
+                    tgt_att = None
+
+
+                action_outputs, resnet_inter, att_out = model.forward_eval(src_images, src_directions, src_speeds)
                 torch.cuda.synchronize()
-                evaluator.process(action_outputs, tgt_a)
+                if g_conf.EARLY_ATTENTION:
+                    # TODO: check shapes match
+                    resnet_inter = resnet_inter[-1]
+                    resnet_inter = reduce(resnet_inter, 'b c h w -> b (h w)', reduction='mean')
+                    evaluator.process(action_outputs, tgt_a, resnet_inter, tgt_att)
+                else:
+                    evaluator.process(action_outputs, tgt_a, att_out, tgt_att)
 
                 """
                 ################################################
@@ -96,21 +111,35 @@ def evaluation_on_model(model: nn.Module,
 
                 if idx in list(range(0, min(g_conf.EVAL_IMAGE_WRITING_NUMBER, len(data_loader)))):
                     # saving only one per batch to save time
-                    eval_images = [[x['current'][i][camera_type][:1].cuda() for camera_type in g_conf.DATA_USED] for i
-                                   in range(len(x['current']))]
-                    eval_directions = [extract_commands(x['current'][i]['can_bus']['direction'])[:1].cuda() for i in
+                    eval_images = [[x['current'][i][camera_type][:1].cuda() for camera_type in g_conf.DATA_USED
+                                    if 'rgb' in camera_type] for i in range(len(x['current']))]
+                    eval_directions = [utils.extract_commands(x['current'][i]['can_bus']['direction'])[:1].cuda() for i in
                                        range(len(x['current']))]
                     eval_speeds = [
-                        extract_other_inputs(x['current'][i]['can_bus'],
-                                             g_conf.OTHER_INPUTS,
-                                             ignore=['direction'])[:1].cuda() for i in range(len(x['current']))
+                        utils.extract_other_inputs(x['current'][i]['can_bus'],
+                                                   g_conf.OTHER_INPUTS,
+                                                   ignore=['direction'])[:1].cuda() for i in range(len(x['current']))
                     ]
+
+                    eval_att = None
+                    if g_conf.ATTENTION_LOSS:
+                        eval_atts_left = [x['current'][i]['virtual_attention_left_'].cuda() for i in range(len(x['current']))]
+                        eval_atts_central = [x['current'][i]['virtual_attention_central_'].cuda() for i in range(len(x['current']))]
+                        eval_atts_right = [x['current'][i]['virtual_attention_right_'].cuda() for i in range(len(x['current']))]
+
+                        eval_att = utils.prepare_target_attentions(eval_atts_left[0], 
+                                                                   eval_atts_central[0],
+                                                                   eval_atts_right[0],
+                                                                   binarize=g_conf.BINARIZE_ATTENTION)
+
                     input_frames = []
                     for frame in eval_images:
                         cams = []
-                        for i in range(len(g_conf.DATA_USED)):
-                            cams.append(inverse_normalize(frame[i], g_conf.IMG_NORMALIZATION['mean'],
-                                                          g_conf.IMG_NORMALIZATION['std']).detach().cpu().numpy().squeeze())
+                        for i in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
+                            cams.append(inverse_normalize(frame[i],
+                                                          g_conf.IMG_NORMALIZATION['mean'],
+                                                          g_conf.IMG_NORMALIZATION['std']).
+                                        detach().cpu().numpy().squeeze())
                         input_frames.append(cams)
 
                     # we save only the first of the batch
@@ -150,7 +179,7 @@ def save_model_if_better(results_dict: dict,
     if g_conf.PROCESS_NAME == 'train_val':
         dataset_name = list(results_dict.keys())[0]
         results = results_dict[dataset_name]
-        is_better_flag = is_result_better(g_conf.EXP_SAVE_PATH, model.name, dataset_name)
+        is_better_flag = utils.is_result_better(g_conf.EXP_SAVE_PATH, model.name, dataset_name)
         # compulsively saving all checkpoints
         if save_all:
             print(f'Checkpoint at iteration {model._current_iteration-1} / epoch {model._done_epoch} is saved')
@@ -189,7 +218,7 @@ def evaluation_saving(model: nn.Module, optimizers, early_stopping_flags, save_a
                 ((model._current_iteration-1)*g_conf.BATCH_SIZE <= len(model) * model._done_epoch):
 
             # check if the checkpoint has been evaluated
-            if not eval_done(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results',
+            if not utils.eval_done(os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results',
                                           g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME),
                              g_conf.VALID_DATASET_NAME, model._done_epoch):
                 print('\n---------------------------------------------------------------------------------------\n')
@@ -198,11 +227,12 @@ def evaluation_saving(model: nn.Module, optimizers, early_stopping_flags, save_a
                 model.eval()
                 results_dict = model._eval(model._current_iteration, model._done_epoch)
                 if results_dict is not None:
-                    write_model_results(g_conf.EXP_SAVE_PATH, model.name,
-                                        results_dict, acc_as_action=g_conf.ACCELERATION_AS_ACTION)
-                    draw_offline_evaluation_results(g_conf.EXP_SAVE_PATH,
-                                                    metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,
-                                                    x_range=g_conf.EVAL_SAVE_EPOCHES)
+                    utils.write_model_results(g_conf.EXP_SAVE_PATH, model.name, results_dict, 
+                                              acc_as_action=g_conf.ACCELERATION_AS_ACTION, att_loss=g_conf.ATTENTION_LOSS)
+                    utils.draw_offline_evaluation_results(
+                        g_conf.EXP_SAVE_PATH,
+                        metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,
+                        x_range=g_conf.EVAL_SAVE_EPOCHES)
                     is_better_flag, best_pred = save_model_if_better(results_dict, model, optimizers, save_all=save_all_checkpoints)
                     if g_conf.EARLY_STOPPING:
                         early_stopping_flags.append(not is_better_flag)

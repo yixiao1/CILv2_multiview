@@ -1,3 +1,5 @@
+from typing import Tuple, Any
+
 import torch
 import torch.nn as nn
 from einops import rearrange, reduce, einsum
@@ -21,10 +23,11 @@ class CIL_multiview(nn.Module):
         resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
         self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
                                                           layer_id=params['encoder_embedding']['perception']['res']['layer_id'])
-        _, self.res_out_dim, self.res_out_h, self.res_out_w = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] + g_conf.IMAGE_SHAPE)[params['encoder_embedding']['perception']['res'][ 'layer_id']]
-
+        out_shape = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] +
+                                                                                g_conf.IMAGE_SHAPE)[params['encoder_embedding']['perception']['res']['layer_id']]
+        _, self.res_out_dim, self.res_out_h, self.res_out_w = out_shape
         # Get the sequence length
-        self.sequence_length = len(g_conf.DATA_USED) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
+        self.sequence_length = len([c for c in g_conf.DATA_USED if 'rgb' in c]) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
 
         if not g_conf.NO_ACT_TOKENS:
             # Add the STR and ACC tokens as parameters
@@ -96,7 +99,7 @@ class CIL_multiview(nn.Module):
         """ Encode the observations into the representation space """
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
-        cam = len(g_conf.DATA_USED)  # Number of cameras
+        cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
 
         x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1) # [B, S, cam, 3, H, W]
         x = rearrange(x, 'B S cam C H W -> (B S cam) C H W')
@@ -130,9 +133,9 @@ class CIL_multiview(nn.Module):
         else:
             encoded_obs = e_p + e_d + e_s  # [B, S*cam*H*W/P^2 + K), D]; K = 2 w/tokens else 0
 
-        return encoded_obs, resnet_inter
+        return encoded_obs, resnet_inter  # TODO: user resnet_inter, 'early attention'; [B, 10, 10, 512]
 
-    def action_prediction(self, sequence: torch.Tensor, cam: int) -> torch.Tensor:
+    def action_prediction(self, sequence: torch.Tensor, cam: int) -> Tuple[torch.Tensor, Any, Any]:
         """ Predict the action from the encoded sequence """
         # Only use the action tokens [ACT] for the prediction
         if 'action_output' in self.params and self.params['action_output'].get('type', None) is not None:
@@ -147,6 +150,9 @@ class CIL_multiview(nn.Module):
                 # Output shapes: [B, 1, D], num_layers * [B, nhead, 1, 1], num_layers * [B, nhead, 1, N]
                 out, sa_weights, mha_weights = self.tfx_decoder(self.action_query.repeat(sequence.shape[0], 1, 1), sequence)
                 action_output = self.action_output(out.squeeze()).unsqueeze(1)  # [B, D] => [B, 1, t]
+
+                # Return the attention weights for visualization
+                return action_output, sa_weights, mha_weights
             elif action_output_type == 'baseline2_gapd':
                 # Get the action tokens and perform average pooling over the dimension D
                 action_output = reduce(sequence[:, self.act_tokens_pos], 'B t D -> B 1 t', 'mean')  # t = 2
@@ -159,14 +165,14 @@ class CIL_multiview(nn.Module):
             # Pass the patch representation through an MLP
             action_output = self.action_output(patches).unsqueeze(1)  # [B, D] => [B, 1, t]
 
-        return action_output
+        return action_output, None, None  # [B, 1, t]
 
     def forward(self, s, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
-        cam = len(g_conf.DATA_USED)  # Number of cameras
+        cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
 
-        encoded_obs, _ = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
+        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
 
         # Add positional embedding (fixed or learnable)
         if self.params['TxEncoder']['learnable_pe']:
@@ -175,17 +181,17 @@ class CIL_multiview(nn.Module):
             pe = self.positional_encoding(encoded_obs)
 
         # Transformer encoder multi-head self-attention layers
-        in_memory, _ = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
+        in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
 
-        # Get the action output
-        action_output = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
+        # Get the action output (if no decoder is used, the sa and mha weights are None)
+        action_output, _, _ = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
 
-        return action_output         # (B, 1, 1), (B, 1, len(TARGETS))
+        return action_output, resnet_inter, attn_weights  # [B, 1, len(TARGETS)], num_layers * [B, S*cam*h*w, S*cam*h*w]
 
     def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False, attn_refinement: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
-        cam = len(g_conf.DATA_USED)  # Number of cameras
+        cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
 
         encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
 
@@ -199,7 +205,7 @@ class CIL_multiview(nn.Module):
         in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
 
         # Get the action output
-        action_output = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
+        action_output, sa_weights, mha_weights = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
 
         # Attention stuff
         if attn_rollout:
@@ -213,7 +219,7 @@ class CIL_multiview(nn.Module):
                 attn_weights_stracc = attn_weights[-1][:, self.act_tokens_pos, -self.res_out_h * self.res_out_w * S * cam:]  # [B, t, S*cam*(H//P)^2]
                 # Normalize the attention weights to be in the range [0, 1], row-wise
                 attn_weights_t2t = attn_weights_t2t / attn_weights_t2t.sum(dim=2, keepdim=True)  # [B, t+2, t+2]
-                attn_weights_stracc = (attn_weights_stracc - attn_weights_stracc.min()) / (attn_weights_stracc.max() - attn_weights_stracc.min())  # [B, t, S*cam*(H//P)^2]
+                attn_weights_stracc = utils.min_max_norm(attn_weights_stracc)  # [B, t, S*cam*(H//P)^2]
                 attn_weights_stracc = rearrange(attn_weights_stracc, 'B T (S cam h w) -> B T h (S cam w)',
                                                 S=S, cam=cam, h=self.res_out_h)
                 # Give as a tuple
@@ -237,11 +243,17 @@ class CIL_multiview(nn.Module):
                 attn_weights = rearrange(attn_act, 'B T (S cam h w) -> B T h (S cam w)', S=S, cam=cam, h=self.res_out_h)  # [B, t, H//P, S*cam*W//P]
 
         else:
-            # We don't have any extra tokens, so let's just return the average attention weights of the last layer
-            attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
-            attn_weights = (attn_weights - attn_weights.min()) / (attn_weights.max() - attn_weights.min())  # [B, S*cam*(H//P)^2] or [B, N]
-            attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
-                                     h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
+            if None not in [sa_weights, mha_weights]:
+                attn_weights = mha_weights[-1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
+                attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
+                attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
+                                         h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
+            else:
+                # We don't have any extra tokens, so let's just return the average attention weights of the last layer
+                attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
+                attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
+                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)', S=S, cam=cam,
+                                         h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
 
         return action_output, resnet_inter, attn_weights
 

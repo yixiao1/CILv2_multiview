@@ -12,13 +12,12 @@ nocrash_newweathertown_empty () {
     --track=SENSORS \
     --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
     --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CIL_ViT_oneseq/CILv2_3cam_vitb32_Town01Full_oneseq_bs256_fPE_wmupcdown_lr1e4_preACT_noCLS_out1MLP_hres_CMDSPD_sensorEmb/config60.json \
+    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_Town01Full_20hdata/config35.json \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=2 \
+    --gpus=5 \
     --fps=20 \
-    --PedestriansSeed=0 \
-    --trafficManagerSeed=0 \
-    --save-driving-vision
+    --PedestriansSeed=2 \
+    --trafficManagerSeed=2
 }
 
 function_array=("nocrash_newweathertown_empty")

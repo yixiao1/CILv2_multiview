@@ -59,6 +59,8 @@ _g_conf.ERROR_LIST_CAM_AUGMENTATION = ['conti_front']
 _g_conf.ERROR_CAM_AUGMENTATION_PROB = 0.1  # max = 1.0
 _g_conf.DATA_NORMALIZATION = {}
 _g_conf.IMG_NORMALIZATION = {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]}   # ImageNet by default
+_g_conf.VIRTUAL_ATTENTION_INTERPOLATION = 'INTER_LINEAR'  # INTER_LINEAR, INTER_AREA, or INTER_NEAREST (others aren't worth it)
+_g_conf.BINARIZE_ATTENTION = False  # Binarize the attention map (attmap[attmap > 0] = 1)
 _g_conf.FC_LAYER_NORM = False  # Use LayerNorm on the FC layers
 _g_conf.EXP_SAVE_PATH = '_results'
 _g_conf.TARGETS = ['steer', 'throttle', 'brake']  # From the float data, the ones that the network should estimate
@@ -72,6 +74,7 @@ _g_conf.MASK_DIAGONAL_ATTMAP = False
 _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or an architecure name such as "fasterRcnn, deeplabv3", which means we use the same loss as this architectures
 _g_conf.LOSS_POW = 1
 _g_conf.LOSS_WEIGHT = {}
+_g_conf.ATTENTION_LOSS = False  # Use loss on the attention maps (must have a ground truth, virtual or real)
 _g_conf.LEARNING_RATE = 0.0002       # the max learning rate setting
 _g_conf.LEARNING_RATE_SCHEDULE = 'step'  # the learning rate schedule; 'step' -> StepLR, 'warmup_cooldown' -> linear warmup, cosine cooldown
 _g_conf.LEARNING_RATE_DECAY = True
@@ -103,6 +106,7 @@ _g_conf.LEARNABLE_ACTION_RATIO = False  # Ratio of actions between patches and s
 _g_conf.EARLY_COMMAND_SPEED_FUSION = True  # Fusion of the command and speed embeddings is done before the camera encoder
 _g_conf.LATE_COMMAND_SPEED_FUSION = False  # Fusion of the command and speed embeddings is done before each steering and acceleration encoders
 _g_conf.NUM_REGISTER_TOKENS = 0  # From: https://arxiv.org/abs/2309.16588
+_g_conf.EARLY_ATTENTION = False  # False for late attention (Tf. Enc. attention maps), True for early attention (resnet attention maps)
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder
@@ -118,7 +122,7 @@ _g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS = ['MAE']
 _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY = 2
 _g_conf.TRAIN_IMAGE_WRITING_NUMBER = 2
 _g_conf.TRAIN_IMAGE_LOG_FREQUENCY = 1000
-_g_conf.TRAIN_PRINT_LOG_FREQUENCY = 100
+_g_conf.TRAIN_PRINT_LOG_FREQUENCY = 25
 
 
 def merge_with_yaml(yaml_filename, process_type='train_val'):

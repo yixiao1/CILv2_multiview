@@ -1,5 +1,6 @@
 import sys
 from typing import Union, Any
+import os
 
 
 class StdoutLogger:
@@ -8,7 +9,7 @@ class StdoutLogger:
     def __init__(self, file_name: str = None, file_mode: str = "w", should_flush: bool = True):
         self.file = None
 
-        if file_name is not None:
+        if file_name is not None and os.path.isfile(file_name):
             self.file = open(file_name, file_mode)
 
         self.should_flush = should_flush

@@ -25,7 +25,7 @@ class Writer(object):
 
     def write_pseudo(self, pseudo_data, tag):
         try:
-            with open(os.path.join(self._full_path, tag + str(self._latest_id).zfill(6) + '.json'), 'r+') as fo:
+            with open(os.path.join(self._full_path, f'{tag}{self._latest_id:06d}.json'), 'r+') as fo:
                 jsonObj = json.load(fo)
                 jsonObj.update(pseudo_data)
                 fo.seek(0)

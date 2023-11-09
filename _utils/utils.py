@@ -8,6 +8,8 @@ from typing import Union, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.nn import DataParallel
+from einops import rearrange
+import cv2
 
 ########################################################
 ### Color plate
@@ -79,7 +81,7 @@ class DataParallelWrapper(DataParallel):
 
 #@timeit
 def print_train_info(log_frequency, final_epoch, batch_size, model,
-                     time_start, acc_time, loss_data, steer_loss_data, acc_loss_data, brake_loss_data=None):
+                     time_start, acc_time, loss_data, steer_loss_data, acc_loss_data, brake_loss_data=None, att_loss_data=None):
 
     epoch = model._current_iteration * batch_size / len(model)
 
@@ -104,6 +106,7 @@ def print_train_info(log_frequency, final_epoch, batch_size, model,
             msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Throttle Loss {acc_loss_data:.4f},"
         else:
             msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f},"
+        msg = f'{msg} Attention Loss {att_loss_data:.4f},' if att_loss_data is not None else msg
         msg = f"{msg} {log_frequency / acc_time:.2f} steps/s, ETA: {hours:0>2d}H:{minutes:0>2d}M:{seconds:0>2d}S"
         print(msg)
 
@@ -161,32 +164,22 @@ def draw_offline_evaluation_results(experiment_path: Union[str, os.PathLike],
             plt.close()
 
 
-def write_model_results(experiment_path, model_name, results_dict, acc_as_action=False):
+def write_model_results(experiment_path: Union[str, os.PathLike], model_name: str, results_dict: dict, acc_as_action: bool = False, att_loss: bool = False):
     for dataset_name, results in results_dict.items():
         results_file_csv = experiment_log_path(experiment_path, dataset_name)
         new_row = ""
         # first row if file doest exist
         if not os.path.exists(results_file_csv):
             new_row += "iteration, epoch, "
-            if acc_as_action:
-                new_row += "MAE_steer, MAE_acceleration, MAE"
-            else:
-                new_row += "MAE_steer, MAE_throttle, MAE_brake, MAE"
+            new_row += "MAE_steer, MAE_acceleration, " if acc_as_action else "MAE_steer, MAE_throttle, MAE_brake, "
+            new_row += "MKLdiv_attention, MAE\n" if att_loss else "MAE\n"
 
-            new_row += "\n"
         with open(results_file_csv, 'a') as f:
-            new_row += "{}, {:.2f}, ".format(results['iteration'], results['epoch'])
-            if acc_as_action:
-                new_row += "{:.4f}, {:.4f}, {:.4f}".format(results[model_name]['MAE_steer'],
-                                                           results[model_name]['MAE_acceleration'],
-                                                           results[model_name]['MAE'])
-            else:
-                new_row += "{:.4f}, {:.4f}, {:.4f}, {:.4f}".format(results[model_name]['MAE_steer'], results[model_name]['MAE_throttle'],
-                                                                   results[model_name]['MAE_brake'], results[model_name]['MAE'])
-
-            new_row += "\n"
+            new_row += f"{results['iteration']}, {results['epoch']:.2f}, {results[model_name]['MAE_steer']:.4f}, "
+            new_row += f"{results[model_name]['MAE_acceleration']:.4f}, " if acc_as_action else f"{results[model_name]['MAE_throttle']:.4f}, {results[model_name]['MAE_brake']:.4f}, "
+            new_row += f"{results[model_name]['MKLdiv_attention']:.4f}, {results[model_name]['MAE']:.4f}\n" if att_loss else f"{results[model_name]['MAE']:.4f}\n"
             f.write(new_row)
-        print (" The results have been saved in: ", results_file_csv)
+        print(f" -> The results have been saved in: {results_file_csv}")
 
 
 def eval_done(experiment_path, dataset_paths, epoch):
@@ -195,7 +188,7 @@ def eval_done(experiment_path, dataset_paths, epoch):
         if os.path.join(experiment_path, dataset_path.split('/')[-1]+'_result.csv') not in results_files:
             return False
         else:
-            epochs_list = read_results(os.path.join(experiment_path, dataset_path.split('/')[-1]+'_result.csv'), metric='epoch')
+            epochs_list = read_results(os.path.join(experiment_path, dataset_path.split(os.sep)[-1]+'_result.csv'), metric='epoch')
             if float(epoch) in epochs_list:
                 return True
             else:
@@ -214,7 +207,7 @@ def is_result_better(experiment_path, model_name, dataset_name):
     return False
 
 
-def extract_targets(data, targets=[], ignore=[]):
+def extract_targets(data, targets: list = None, ignore: list = None):
 
     """
     Method used to get to know which positions from the dataset are the targets
@@ -229,6 +222,10 @@ def extract_targets(data, targets=[], ignore=[]):
     """
 
     targets_vec = []
+    if targets is None:
+        targets = []
+    if ignore is None:
+        ignore = []
     for target_name in targets:
         if target_name in ignore:
             continue
@@ -237,7 +234,7 @@ def extract_targets(data, targets=[], ignore=[]):
     return torch.stack(targets_vec, 1).float().squeeze()
 
 
-def extract_other_inputs(data, other_inputs=[], ignore=[]):
+def extract_other_inputs(data, other_inputs: list = None, ignore: list = None):
     """
     Method used to get to know which positions from the dataset are the inputs
     for this experiments
@@ -249,7 +246,10 @@ def extract_other_inputs(data, other_inputs=[], ignore=[]):
     Raises
         value error when the configuration set targets that didn't exist in metadata
     """
-
+    if other_inputs is None:
+        other_inputs = []
+    if ignore is None:
+        ignore = []
     inputs_vec = []
     for input_name in other_inputs:
         if input_name in ignore:
@@ -262,14 +262,27 @@ def extract_commands(data):
     return torch.stack(data, 1).float()
 
 
+def prepare_target_attentions(left_img, central_img, right_img, binarize: bool = False):
+    """ Join the three attention maps from the cameras into one, and normalize them s.t. the sum is 1. """
+    concat = torch.cat((left_img, central_img, right_img), dim=3)
+    concat_flat = rearrange(concat, 'B c h w -> B (c h w)')
+    if binarize:
+        # Make all values 1 if they are greater than zero
+        concat_flat[concat_flat > 0] = 1
+        # Just to be safe, but shouldn't be possible
+        concat_flat[concat_flat < 0] = 0
+    # Normalize s.t. sum is 1
+    concat_flat = concat_flat / concat_flat.sum(dim=-1, keepdim=True)
+    return concat_flat
+
+
 def attn_rollout(attn_weights: List[torch.Tensor], layer: int = None) -> torch.Tensor:
     """ Perform attention rollout """
     att_map = torch.stack([attn_weights[i] for i in range(len(attn_weights))], dim=0)  # [L, C, S, S]
     num_layers, num_cams, S, _ = att_map.shape
 
     # Use the last layer if no layer is specified by the user
-    layer = layer if layer is not None else num_layers
-    layer = min(max(1, layer), num_layers)
+    layer = min(max(1, layer), num_layers) if layer is not None else num_layers
 
     eye = torch.eye(S, device=att_map.device)  # [S, S])
     attn_weights_rollout_cams = torch.empty(layer, num_cams, S, S, device=att_map.device)
@@ -308,7 +321,12 @@ def zero_diagonal_att_map(attn_weights: Union[torch.Tensor, List[torch.Tensor]])
         if len(attn_weights.shape) == 3:
             attn_weights = [attn_weights]
     att_map = torch.stack([attn_weights[i] for i in range(len(attn_weights))], dim=0)  # [L, C, S, S]
-    num_layers, num_cams, S, _ = att_map.shape
+    _, _, S, _ = att_map.shape
 
     att_map = att_map * (1 - torch.eye(S, device=att_map.device))  # [L, C, S, S]
     return att_map
+
+
+def min_max_norm(x: Union[np.array, torch.Tensor]) -> Union[np.array, torch.Tensor]:
+    """ Min-max normalization of array/tensor """
+    return (x - x.min()) / (x.max() - x.min())

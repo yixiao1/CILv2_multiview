@@ -60,6 +60,15 @@ export SENSOR_SAVE_PATH=/datafast/Datasets/dporres/CARLA/driving_record/
 export DRIVING_TEST_ROOT=/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving/
 ```
 
+In the ICREA server, except now we are using a new dataset root
+```bash
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/experiments/dporres/CILv2_multiview/scenario_runner:/datafast/experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/experiments/dporres/VisionTFM/
+export DATASET_PATH=/datafast/Datasets/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/Datasets/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving/
+```
+
 In the TDA1 server:
 ```bash
 export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/data2/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/data2/121-2/Experiments/dporres/CILv2_multiview/scenario_runner:/data2/121-2/Experiments/dporres/CILv2_multiview
@@ -78,6 +87,19 @@ python3 main.py --process-type train_val --gpus 0 1 --folder CILv2 --exp CILv2_3
 ```
 
 where `--process-type` defines the process type (could be either train_val or val_only), `--gpus` defines the gpus to be used (w.r.t. the `CUDA_VISIBLE_DEVICES` environment variable), `--folder` is the experiment folder defined inside [configs folder](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/tree/main/configs/CILv2), and `--exp` is the [configuration yaml file](https://github.com/yixiao1/Scaling-Self-Supervised-End-to-End-Driving-with-Multi-View-Attention-Learning/blob/main/configs/CILv2/CILv2_3cam_smalltest.yaml) defined for training.
+
+## Data preparation
+
+Once the data is collected, we may opt to downscale the dataset a priori, in order to speed up the trianing. We provide a bash script to do so, provided the following are installed:
+
+```bash
+sudo apt-get install tqdm parallel
+```
+
+Note that `tqdm` can be also installed with PyPI via: `pip install tqdm`. 
+
+
+
 
 ## CoRL 2023 Submission
 
