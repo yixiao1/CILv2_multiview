@@ -63,7 +63,7 @@ class CIL_multiview_Evaluator(object):
             attention_outputs = rearrange(attention_outputs, 'B ... -> B (...)')
             self.attentions.append(attention_outputs)
             self.gt_attentions.append(targets_attention)
-            self.attentions_loss_pointwise += F.kl_div((attention_outputs + 1e-12).log(), targets_attention, reduction='none')  
+            self.attentions_loss_pointwise += F.kl_div((attention_outputs + 1e-12).log(), targets_attention, reduction='sum')  
         actions_loss_mat_normalized = torch.clip(action_outputs, -1, 1) - targets_action[-1]  # (B, len(g_conf.TARGETS))
 
         # unnormalize the outputs and targets to compute actual error
@@ -131,6 +131,6 @@ class CIL_multiview_Evaluator(object):
             pass
 
         if g_conf.ATTENTION_LOSS:
-            self._metrics.update({'MKLdiv_attention': att_loss_pointwise.sum() / self._total_num})
+            self._metrics.update({'MKLdiv_attention': att_loss_pointwise / self._total_num})
         att_loss = att_loss_pointwise.sum() if g_conf.ATTENTION_LOSS else torch.tensor(0.0)
         self._metrics.update({'MAE': (att_loss + torch.sum(action_errors_mat)) / self._total_num})

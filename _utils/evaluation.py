@@ -34,7 +34,7 @@ def save_model(model: nn.Module, optimizer, best_pred: int) -> None:
     }
     torch.save(saving_dict,
                os.path.join(g_conf.EXP_SAVE_PATH, 'checkpoints',
-                            f'{model.name}_{model._done_epoch}_{model._current_iteration - 1}.pth'))
+                            f'{model.name}_{model._done_epoch}.pth'))
 
 
 @contextmanager

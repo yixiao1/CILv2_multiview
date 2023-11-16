@@ -2,7 +2,6 @@ import os
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-import torchvision.transforms as transforms
 
 import time
 import shutil
@@ -10,14 +9,11 @@ import resource
 from typing import List
 from configs import g_conf, set_type_of_process, merge_with_yaml
 from network.models_console import Models
-from _utils.training_utils import seed_everything, DataParallelWrapper, DataParallelDPPWrapper, check_saved_checkpoints, update_learning_rate
+from _utils.training_utils import seed_everything, DataParallelDPPWrapper, check_saved_checkpoints, update_learning_rate
 from _utils import utils
 from _utils.evaluation import evaluation_saving
 from logger import _logger, StdoutLogger
-import cv2
-import PIL.Image
-import numpy as np
-from einops import reduce, rearrange
+from einops import reduce
 
 
 def update_early_stopping(flags, rank, world_size):

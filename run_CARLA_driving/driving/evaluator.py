@@ -193,7 +193,10 @@ class Evaluator(object):
 
         town = config.town
         print('  port:', args.port)
-        self.world = self.client.load_world(town)
+        try:
+            self.world = self.client.load_world(town)
+        except RuntimeError as e:
+            raise RuntimeError(f"Error loading the world {town}: {e}")
         self.world.set_weather(config.weather)
         settings = self.world.get_settings()
         settings.fixed_delta_seconds = 1.0 / self.frame_rate
