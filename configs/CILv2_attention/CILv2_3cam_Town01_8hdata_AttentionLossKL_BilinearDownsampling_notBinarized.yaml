@@ -22,8 +22,8 @@ IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
 IMAGE_SHAPE: [3, 300, 300]  # Input image shape
-DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right'] # Multi-view cameras, it needs to be set in this order
-
+DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right', # Multi-view cameras, it needs to be set in this order
+            'virtual_attention_left_', 'virtual_attention_central_', 'virtual_attention_right_']  # Virtual attention maps per camera
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
 # Data normalization: might be changed depending on datasets
@@ -31,12 +31,12 @@ DATA_NORMALIZATION:
   steer: [-1.0, 1.0]
   acceleration: [-1.0, 1.0]
   speed: [-1.0, 11.0]     # m/s
-VIRTUAL_ATTENTION_INTERPOLATION: 'INTER_AREA'  # 'INTER_LINEAR' (bilinear), 'INTER_AREA', 'INTER_NEAREST'
+VIRTUAL_ATTENTION_INTERPOLATION: 'INTER_LINEAR'  # 'INTER_LINEAR' (bilinear), 'INTER_AREA', 'INTER_NEAREST'
 BINARIZE_ATTENTION: False
 
 # Loss Parameters #
-LOSS: 'Action_nospeed_L1'  # no speed L1 loss
-ATTENTION_LOSS: False
+LOSS: 'Action_nospeed_L1_Attention_KL'  # no speed L1 loss
+ATTENTION_LOSS: True
 LOSS_WEIGHT:
   actions:
     steer: 0.5
@@ -58,7 +58,7 @@ EVAL_BATCH_SIZE: 30
 EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
-EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
+EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MKLdiv_attention', 'MAE']
 
 ### Network Parameters ####
 # Encoder part#

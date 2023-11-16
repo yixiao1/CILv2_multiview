@@ -13,6 +13,7 @@ TRAIN_DATASET_NAME: ['Roach_carla0913_fps10_640x640_3cam_attention/training_Town
                     'Roach_carla0913_fps10_640x640_3cam_attention/training_Town01_dense_hardrainnoon',
                     'Roach_carla0913_fps10_640x640_3cam_attention/training_Town01_dense_wetnoon'] # Folders of the used training datasets. Should be inside DATASET_PATH folder
 VALID_DATASET_NAME: ['valid/valid_Town02_busy_clearnoon'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
+SUBSET_SIZE: 0.5  # 0.5 for ~4h data, 1.0 for 8h data
 
 ENCODER_INPUT_FRAMES_NUM: 1
 ENCODER_STEP_INTERVAL: 1
@@ -22,8 +23,8 @@ IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
 IMAGE_SHAPE: [3, 300, 300]  # Input image shape
-DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right'] # Multi-view cameras, it needs to be set in this order
-
+DATA_USED: ['resized_rgb_left', 'resized_rgb_central', 'resized_rgb_right', # Multi-view cameras, it needs to be set in this order
+            'virtual_attention_left_', 'virtual_attention_central_', 'virtual_attention_right_']  # Virtual attention maps per camera
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
 # Data normalization: might be changed depending on datasets
