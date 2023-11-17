@@ -275,7 +275,10 @@ class CILv2_agent(object):
         """
         
         self.control = carla.VehicleControl()
-        self.norm_rgb = [[self.process_image(self.input_data[camera_type][1]).unsqueeze(0).cuda() for camera_type in g_conf.DATA_USED if 'rgb' in camera_type]]
+        rgb_cameras = [c for c in g_conf.DATA_USED if 'rgb' in c]
+        # Remove 'resized_' from the camera name if it exists
+        rgb_cameras = [c[8:] if c.startswith('resized_') else c for c in rgb_cameras]
+        self.norm_rgb = [[self.process_image(self.input_data[c][1]).unsqueeze(0).cuda() for c in rgb_cameras]]
         self.norm_speed = [torch.cuda.FloatTensor([self.process_speed(self.input_data['SPEED'][1]['speed'])]).unsqueeze(0)]
         #
         if g_conf.DATA_COMMAND_ONE_HOT:
