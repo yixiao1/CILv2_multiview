@@ -88,7 +88,10 @@ def evaluation_on_model(model: nn.Module,
                     src_atts_central = [x['current'][i]['virtual_attention_central_'].cuda() for i in range(len(x['current']))]
                     src_atts_right = [x['current'][i]['virtual_attention_right_'].cuda() for i in range(len(x['current']))]
 
-                    tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+                    if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
+                        tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+                    elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
+                        tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
                 else:
                     tgt_att = None
 
@@ -98,7 +101,7 @@ def evaluation_on_model(model: nn.Module,
                 if g_conf.EARLY_ATTENTION:
                     # TODO: check shapes match
                     resnet_inter = resnet_inter[-1]
-                    resnet_inter = reduce(resnet_inter, 'b c h w -> b (h w)', reduction='mean')
+                    resnet_inter = reduce(resnet_inter, '(b cam) c h w -> b cam h w', reduction='mean', cam=len([c for c in g_conf.DATA_USED if 'attention' in c]))
                     evaluator.process(action_outputs, tgt_a, resnet_inter, tgt_att)
                 else:
                     evaluator.process(action_outputs, tgt_a, att_out, tgt_att)
@@ -184,7 +187,10 @@ def save_model_if_better(results_dict: dict,
         if save_all:
             print(f'Checkpoint at iteration {model._current_iteration-1} / epoch {model._done_epoch} is saved')
             if is_better_flag:
-                best_pred = results[model.name]['MAE']
+                try:
+                    best_pred = results[model.name]['MAE']
+                except KeyError:
+                    best_pred = results[model.name]['MeanError']
                 save_model_if_better.best_pred = best_pred
             else:
                 best_pred = save_model_if_better.best_pred if hasattr(save_model_if_better, "best_pred") else 0
@@ -195,7 +201,10 @@ def save_model_if_better(results_dict: dict,
         else:
             if is_better_flag:
                 print(f'Checkpoint at iteration {model._current_iteration-1} / epoch {model._done_epoch} is saved')
-                best_pred = results[model.name]['MAE']
+                try:
+                    best_pred = results[model.name]['MAE']
+                except KeyError:
+                    best_pred = results[model.name]['MeanError']
                 save_model_if_better.best_pred = best_pred
 
                 # Save the model

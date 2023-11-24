@@ -76,16 +76,6 @@ def Action_nospeed_Quantile(params: dict) -> Tuple[torch.Tensor, ...]:
         return loss, steer_loss, throttle_loss, brake_loss
 
 
-def Loss(loss: str):
-
-    if loss == 'Action_nospeed_L1':
-        return Action_nospeed_L1
-    elif loss == 'Action_nospeed_Quantile':
-        return Action_nospeed_Quantile
-    else:
-        raise NotImplementedError("The loss of this model type has not yet defined ")
-
-
 def Action_nospeed_LN(params):
     B = params['action_output'].shape[0]  # batch_size
 
@@ -186,6 +176,40 @@ def Action_nospeed_L1_Attention_KL(params):
 
         return loss, steer_loss, throttle_loss, brake_loss, att_loss
 
+
+def Action_nospeed_L1_Attention_L2(params):
+    B = params['action_output'].shape[0]  # batch_size
+
+    # SingleFrame model - we only take into account the last frame's action
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
+    actions_loss_mat = torch.abs(params['action_output'][:, -1, :] - params['targets_action'][-1])  # (B, 2)
+
+    steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
+
+    # Attention loss
+    att_loss = params['variable_weights']['attention'] * F.mse_loss(params['attention_output'], params['targets_attention'])
+
+    if g_conf.ACCELERATION_AS_ACTION:
+        acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
+        acceleration_loss = torch.sum(acceleration_loss) / B
+
+        loss = steer_loss + acceleration_loss + att_loss
+
+        return loss, steer_loss, acceleration_loss, att_loss
+
+    else:
+        throttle_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['throttle']
+        brake_loss = actions_loss_mat[:, 2] * params['variable_weights']['actions']['brake']
+        throttle_loss = torch.sum(throttle_loss) / B
+        brake_loss = torch.sum(brake_loss) / B
+
+        loss = steer_loss + throttle_loss + brake_loss + att_loss
+
+        return loss, steer_loss, throttle_loss, brake_loss, att_loss
+
+
 def Loss(loss):
     if loss == 'Action_nospeed_L1':
         return Action_nospeed_L1
@@ -197,5 +221,7 @@ def Loss(loss):
         return Action_nospeed_Quantile
     elif loss == 'Action_nospeed_L1_Attention_KL':
         return Action_nospeed_L1_Attention_KL
+    elif loss == 'Action_nospeed_L1_Attention_L2':
+        return Action_nospeed_L1_Attention_L2
     else:
-        raise NotImplementError(" The loss of this model type has not yet defined ")
+        raise NotImplementedError("The loss of this model type has not yet defined ")

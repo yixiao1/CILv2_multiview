@@ -90,12 +90,18 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['future']))]
                 else:
                     tgt_a = [utils.extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+
                 if g_conf.ATTENTION_LOSS:
                     src_atts_left = [data['current'][i]['virtual_attention_left_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
                     src_atts_central = [data['current'][i]['virtual_attention_central_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
                     src_atts_right = [data['current'][i]['virtual_attention_right_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
 
-                    tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+                    if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
+                        tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+                    elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
+                        tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
+                    else:
+                        raise ValueError(f'Error! We cannot use the {g_conf.LOSS} loss with attention!')
             
             else:
                 src_images = [[data['current'][i][camera_type].cuda() 
@@ -115,8 +121,10 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     src_atts_central = [data['current'][i]['virtual_attention_central_'].cuda() for i in range(len(data['current']))]
                     src_atts_right = [data['current'][i]['virtual_attention_right_'].cuda() for i in range(len(data['current']))]
 
-                    tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
-
+                    if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
+                        tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+                    elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
+                        tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
 
             if g_conf.USE_AUTOCAST:
                 with torch.cuda.amp.autocast():
@@ -157,11 +165,9 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 }
                 if g_conf.ATTENTION_LOSS:
                     if g_conf.EARLY_ATTENTION:
-                        # TODO: do something with the resnet_inter
-                        resnet_inter = resnet_inter[-1]  # [B, 512, 10, 10] for a 300x300 RGB input
-                        resnet_inter = reduce(resnet_inter, 'b c h w -> b (h w)', reduction='mean')
+                        resnet_inter = resnet_inter[-1]  # [cam*B, 512, 10, 10] for a 300x300 RGB input
+                        resnet_inter = reduce(resnet_inter, '(b cam) c h w -> b cam h w', reduction='mean', cam=len([c for c in g_conf.DATA_USED if 'attention' in c]))
                         loss_params.update({'attention_output': resnet_inter, 'targets_attention': tgt_att})
-                        # TODO: shapes don't match, we gotta join them and then normalize s.t. sum = 1 for KL divergence
                     else:
                         # Just the average of the attention map of the last layer of the Encoder
                         loss_params.update({'attention_output': att_out[-1].mean(dim=1), 'targets_attention': tgt_att})

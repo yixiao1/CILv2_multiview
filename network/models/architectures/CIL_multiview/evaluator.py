@@ -18,11 +18,11 @@ class CIL_multiview_Evaluator(object):
     """
     def __init__(self, name):
         self._action_batch_errors_mat = 0
-        self.attentions_loss_pointwise = 0
+        self.attentions_loss_pointwise = 0 if not g_conf.EARLY_ATTENTION else []
         self._total_num = 0
         self._metrics = {}
         self.steers = []
-        self.accelerations= []
+        self.accelerations = []
         self.gt_steers = []
         self.gt_accelerations = []
         self.attentions = []
@@ -32,11 +32,11 @@ class CIL_multiview_Evaluator(object):
 
     def reset(self):
         self._action_batch_errors_mat = 0
-        self.attentions_loss_pointwise = 0
+        self.attentions_loss_pointwise = 0 if not g_conf.EARLY_ATTENTION else []
         self._total_num = 0
         self._metrics = {}
         self.steers = []
-        self.accelerations= []
+        self.accelerations = []
         self.gt_steers = []
         self.gt_accelerations = []
         self.attentions = []
@@ -60,10 +60,15 @@ class CIL_multiview_Evaluator(object):
         self.gt_steers += list(targets_action[-1][:, 0].detach().cpu().numpy())
         self.gt_accelerations += list(targets_action[-1][:, 1].detach().cpu().numpy())
         if None not in (attention_outputs, targets_attention):
-            attention_outputs = rearrange(attention_outputs, 'B ... -> B (...)')
-            self.attentions.append(attention_outputs)
             self.gt_attentions.append(targets_attention)
-            self.attentions_loss_pointwise += F.kl_div((attention_outputs + 1e-12).log(), targets_attention, reduction='sum')  
+            if not g_conf.EARLY_ATTENTION:
+                attention_outputs = rearrange(attention_outputs, 'B ... -> B (...)')
+                self.attentions.append(attention_outputs)
+                self.attentions_loss_pointwise += F.kl_div((attention_outputs + 1e-12).log(), targets_attention, reduction='sum')
+            else:
+                self.attentions.append(attention_outputs)
+                self.attentions_loss_pointwise.append(F.mse_loss(attention_outputs, targets_attention, reduction='sum'))
+
         actions_loss_mat_normalized = torch.clip(action_outputs, -1, 1) - targets_action[-1]  # (B, len(g_conf.TARGETS))
 
         # unnormalize the outputs and targets to compute actual error
@@ -73,8 +78,24 @@ class CIL_multiview_Evaluator(object):
         else:
             pass
 
+    def compute_metrics(self, action_errors_mat: torch.Tensor, att_loss_pointwise: torch.Tensor = torch.tensor(0.0)) -> None:
+
+        self._metrics.update({'MAE_steer': torch.sum(action_errors_mat, 0)[0] / self._total_num})
+        if g_conf.ACCELERATION_AS_ACTION:
+            self._metrics.update({'MAE_acceleration': torch.sum(action_errors_mat, 0)[1] / self._total_num})
+        else:
+            pass
+
+        if g_conf.ATTENTION_LOSS:
+            if not g_conf.EARLY_ATTENTION:
+                avg_att_loss = torch.sum(att_loss_pointwise) / self._total_num
+            else:
+                avg_att_loss = sum(att_loss_pointwise) / self._total_num
+            self._metrics.update({'MeanError_attention': avg_att_loss})
+        self._metrics.update({'MeanError': torch.sum(action_errors_mat) / self._total_num + avg_att_loss})
+
     def evaluate(self, current_epoch, dataset_name):
-        self.metrics_compute(self._action_batch_errors_mat, self.attentions_loss_pointwise)
+        self.compute_metrics(self._action_batch_errors_mat, self.attentions_loss_pointwise)
         results = OrderedDict({self.name: self._metrics})
 
         def plot_and_save_results(data: Union[list, np.ndarray],
@@ -121,16 +142,3 @@ class CIL_multiview_Evaluator(object):
         save_frame_ids_different_signs(self.steers, self.gt_steers, f'steer-sign_{dataset_name}')
 
         return results
-
-    def metrics_compute(self, action_errors_mat: torch.Tensor, att_loss_pointwise: torch.Tensor = torch.tensor(0.0)) -> None:
-
-        self._metrics.update({'MAE_steer': torch.sum(action_errors_mat, 0)[0] / self._total_num})
-        if g_conf.ACCELERATION_AS_ACTION:
-            self._metrics.update({'MAE_acceleration': torch.sum(action_errors_mat, 0)[1] / self._total_num})
-        else:
-            pass
-
-        if g_conf.ATTENTION_LOSS:
-            self._metrics.update({'MKLdiv_attention': att_loss_pointwise / self._total_num})
-        att_loss = att_loss_pointwise.sum() if g_conf.ATTENTION_LOSS else torch.tensor(0.0)
-        self._metrics.update({'MAE': (att_loss + torch.sum(action_errors_mat)) / self._total_num})

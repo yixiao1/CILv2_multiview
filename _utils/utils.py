@@ -172,12 +172,12 @@ def write_model_results(experiment_path: Union[str, os.PathLike], model_name: st
         if not os.path.exists(results_file_csv):
             new_row += "iteration, epoch, "
             new_row += "MAE_steer, MAE_acceleration, " if acc_as_action else "MAE_steer, MAE_throttle, MAE_brake, "
-            new_row += "MKLdiv_attention, MAE\n" if att_loss else "MAE\n"
+            new_row += "MeanError_attention, MeanError\n" if att_loss else "MeanError\n"
 
         with open(results_file_csv, 'a') as f:
             new_row += f"{results['iteration']}, {results['epoch']:.2f}, {results[model_name]['MAE_steer']:.4f}, "
             new_row += f"{results[model_name]['MAE_acceleration']:.4f}, " if acc_as_action else f"{results[model_name]['MAE_throttle']:.4f}, {results[model_name]['MAE_brake']:.4f}, "
-            new_row += f"{results[model_name]['MKLdiv_attention']:.4f}, {results[model_name]['MAE']:.4f}\n" if att_loss else f"{results[model_name]['MAE']:.4f}\n"
+            new_row += f"{results[model_name]['MeanError_attention']:.4f}, {results[model_name]['MeanError']:.4f}\n" if att_loss else f"{results[model_name]['MeanError']:.4f}\n"
             f.write(new_row)
         print(f" -> The results have been saved in: {results_file_csv}")
 
@@ -196,7 +196,10 @@ def eval_done(experiment_path, dataset_paths, epoch):
 
 
 def is_result_better(experiment_path, model_name, dataset_name):
-    results_list= read_results(os.path.join(experiment_path, dataset_name + '_result.csv'), metric='MAE')
+    try:
+        results_list= read_results(os.path.join(experiment_path, dataset_name + '_result.csv'), metric='MAE')
+    except ValueError:
+        results_list = read_results(os.path.join(experiment_path, dataset_name + '_result.csv'), metric='MeanError')
     iter_list= read_results(os.path.join(experiment_path, dataset_name + '_result.csv'), metric='iteration')
     epoch_list= read_results(os.path.join(experiment_path, dataset_name + '_result.csv'), metric='epoch')
     if len(results_list) == 1:  # There is just one result so we save the check sure.
