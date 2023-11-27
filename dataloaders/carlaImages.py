@@ -12,14 +12,15 @@ from typing import Union
 
 class carlaImages(data.Dataset):
 
-    def __init__(self, model_name, base_dir, dataset_list, split="train", rank: int = 0):
-        print('')
+    def __init__(self, model_name, base_dir, dataset_list, split="train", rank: int = 0,
+                 resize_attention: 'tuple[int]' = (10, 10)):
         self.root = base_dir
         self.split = split
         self.data = []
         self.data_in_chunk = []
         self.model_name = model_name
         self.dataset_name = ''
+        self.resize_attention = resize_attention
 
         for dataset_name in dataset_list:
             self.dataset_name += dataset_name.split(os.sep)[-1]
@@ -97,11 +98,11 @@ class carlaImages(data.Dataset):
                 sample.update({camera_type: img})
 
             if self.split == 'train':
-                one_frame_data = self.transform_tr(sample)
+                one_frame_data = self.transform_tr(sample, resize_attention=self.resize_attention)
                 data_vec['current'].append(one_frame_data)
 
             elif self.split == 'val':
-                one_frame_data = self.transform_val(sample)
+                one_frame_data = self.transform_val(sample, resize_attention=self.resize_attention)
                 data_vec['current'].append(one_frame_data)
 
         # the output has time delay
@@ -185,8 +186,8 @@ class carlaImages(data.Dataset):
                 data.append(files)
         return data
 
-    def transform_tr(self, sample):
-        return train_transform(sample, g_conf.IMAGE_SHAPE)
+    def transform_tr(self, sample, resize_attention: 'tuple[int]'):
+        return train_transform(sample, g_conf.IMAGE_SHAPE, resize_attention)
 
-    def transform_val(self, sample):
-        return val_transform(sample, g_conf.IMAGE_SHAPE)
+    def transform_val(self, sample, resize_attention: 'tuple[int]'):
+        return val_transform(sample, g_conf.IMAGE_SHAPE, resize_attention)

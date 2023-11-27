@@ -17,6 +17,7 @@ class CILv2_multiview_attention(nn.Module):
         cil_model = getattr(cil_model, g_conf.MODEL_TYPE)
         self.params = params
         self._model = cil_model(params, rank)
+        self.resize_att_h, self.resize_att_w = self._model.resize_att_h, self._model.resize_att_w
         self.name = g_conf.MODEL_TYPE
 
         if g_conf.PROCESS_NAME == 'train_val':
@@ -26,7 +27,7 @@ class CILv2_multiview_attention(nn.Module):
             self._train_loader, self._val_loaders = \
                 make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
                                  g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'],
-                                 num_process=params['num_process'])
+                                 num_process=params['num_process'], res_attr=(self.resize_att_w, self.resize_att_h))
 
             if rank == 0:
                 print('\n================================= Dataset Info ========================================')

@@ -100,7 +100,7 @@ def evaluation_on_model(model: nn.Module,
                 torch.cuda.synchronize()
                 if g_conf.EARLY_ATTENTION:
                     # TODO: check shapes match
-                    resnet_inter = resnet_inter[-1]
+                    resnet_inter = resnet_inter[g_conf.RN_ATTENTION_LAYER]
                     resnet_inter = reduce(resnet_inter, '(b cam) c h w -> b cam h w', reduction='mean', cam=len([c for c in g_conf.DATA_USED if 'attention' in c]))
                     evaluator.process(action_outputs, tgt_a, resnet_inter, tgt_att)
                 else:

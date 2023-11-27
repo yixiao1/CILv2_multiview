@@ -37,7 +37,7 @@ def canbus_normalization(can_bus_dict, data_ranges):
             can_bus_dict['direction'] = [can_bus_dict['direction']-1]
     return can_bus_dict
 
-def train_transform(data, image_shape):
+def train_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)):
     """
         Apply transformations and augmentations. The
         output is from 0-1 float.
@@ -60,7 +60,7 @@ def train_transform(data, image_shape):
             pass
         elif 'virtual_attention' in camera_type:
             image = data[camera_type]
-            image = cv2.resize(np.array(image), (10, 10), interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
+            image = cv2.resize(np.array(image), resize_attention, interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
             image = TF.to_tensor(image)
             data[camera_type] = image
         else:
@@ -68,7 +68,7 @@ def train_transform(data, image_shape):
 
     return data
 
-def val_transform(data, image_shape):
+def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)):
     for camera_type in g_conf.DATA_USED:
         if 'rgb' in camera_type:
             image = data[camera_type]
@@ -85,7 +85,7 @@ def val_transform(data, image_shape):
             pass
         elif 'virtual_attention' in camera_type:
             image = data[camera_type]
-            image = cv2.resize(np.array(image), (10, 10), interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
+            image = cv2.resize(np.array(image), resize_attention, interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
             image = TF.to_tensor(image)
             data[camera_type] = image
     return data

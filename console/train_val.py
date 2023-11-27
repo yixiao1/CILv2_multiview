@@ -165,12 +165,22 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 }
                 if g_conf.ATTENTION_LOSS:
                     if g_conf.EARLY_ATTENTION:
-                        resnet_inter = resnet_inter[-1]  # [cam*B, 512, 10, 10] for a 300x300 RGB input
+                        # Sizes of tensors:
+                        #  - block 0 (RN_ATTENTION_LAYER=0): [cam*B, 64, 40, 40]
+                        #  - block 1 (RN_ATTENTION_LAYER=1): [cam*B, 64, 75, 75]
+                        #  - block 2 (RN_ATTENTION_LAYER=2): [cam*B, 128, 38, 38]
+                        #  - block 3 (RN_ATTENTION_LAYER=3): [cam*B, 256, 19, 19]
+                        #  - block 4 (RN_ATTENTION_LAYER=4 or -1): [cam*B, 512, 10, 10]
+                        resnet_inter = resnet_inter[g_conf.RN_ATTENTION_LAYER]  # [cam*B, C, H, W]
                         resnet_inter = reduce(resnet_inter, '(b cam) c h w -> b cam h w', reduction='mean', cam=len([c for c in g_conf.DATA_USED if 'attention' in c]))
-                        loss_params.update({'attention_output': resnet_inter, 'targets_attention': tgt_att})
+                        loss_params.update({'attention_output': resnet_inter,
+                                            'targets_attention': tgt_att})
                     else:
                         # Just the average of the attention map of the last layer of the Encoder
-                        loss_params.update({'attention_output': att_out[-1].mean(dim=1), 'targets_attention': tgt_att})
+                        loss_params.update(
+                            {'attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=1),
+                             'targets_attention': tgt_att
+                             })
 
                 if g_conf.ACCELERATION_AS_ACTION:
                     if g_conf.ATTENTION_LOSS:

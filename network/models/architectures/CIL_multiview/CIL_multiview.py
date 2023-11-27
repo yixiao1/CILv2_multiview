@@ -23,9 +23,13 @@ class CIL_multiview(nn.Module):
         resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
         self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
                                                           layer_id=params['encoder_embedding']['perception']['res']['layer_id'])
-        out_shape = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] +
-                                                                                g_conf.IMAGE_SHAPE)[params['encoder_embedding']['perception']['res']['layer_id']]
-        _, self.res_out_dim, self.res_out_h, self.res_out_w = out_shape
+        out_shapes = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] + g_conf.IMAGE_SHAPE)
+        _, self.res_out_dim, self.res_out_h, self.res_out_w = out_shapes[params['encoder_embedding']['perception']['res']['layer_id']]
+        
+        if g_conf.EARLY_ATTENTION:
+            _, _, self.resize_att_h, self.resize_att_w = out_shapes[g_conf.RN_ATTENTION_LAYER]
+        else:
+            self.resize_att_h, self.resize_att_w = self.res_out_h, self.res_out_w
         # Get the sequence length
         self.sequence_length = len([c for c in g_conf.DATA_USED if 'rgb' in c]) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
 
@@ -95,6 +99,10 @@ class CIL_multiview(nn.Module):
 
         self.train()
 
+    def get_resolutions(self):
+        """ Get the resolutions of the output of the ResNet backbone """
+        return self.res_out_dim, self.res_out_h, self.res_out_w
+
     def encode_observations(self, s, s_d, s_s):
         """ Encode the observations into the representation space """
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
@@ -107,6 +115,7 @@ class CIL_multiview(nn.Module):
         s = s_s[-1]  # [B, 1]
 
         # Image encoding into tokens for the Encoder input sequence
+        x = x.contiguous()
         e_p, resnet_inter = self.encoder_embedding_perception(x)  # [B*S*cam, dim, h, w]
         e_p = rearrange(e_p, '(B S cam) dim h w -> B (S cam h w) dim', S=S, cam=cam)  # [B, S*cam*h*w, D]
 
@@ -133,7 +142,7 @@ class CIL_multiview(nn.Module):
         else:
             encoded_obs = e_p + e_d + e_s  # [B, S*cam*H*W/P^2 + K), D]; K = 2 w/tokens else 0
 
-        return encoded_obs, resnet_inter  # TODO: user resnet_inter, 'early attention'; [B, 10, 10, 512]
+        return encoded_obs, resnet_inter
 
     def action_prediction(self, sequence: torch.Tensor, cam: int) -> Tuple[torch.Tensor, Any, Any]:
         """ Predict the action from the encoded sequence """

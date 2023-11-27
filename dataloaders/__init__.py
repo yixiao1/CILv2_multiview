@@ -1,4 +1,6 @@
 import os
+from typing import Union
+
 from configs import g_conf
 from . import carlaImages
 
@@ -7,8 +9,17 @@ from torch.utils.data import DataLoader, Subset
 from torch.utils.data.distributed import DistributedSampler
 
 
-def make_data_loader(model_name, base_dir, train_dataset_names, batch_size, valid_dataset_names, batch_size_eval, rank=0, num_process=1):
-    train_set = carlaImages.carlaImages(model_name, base_dir, train_dataset_names, split='train', rank=rank)
+def make_data_loader(model_name: str = 'CIL_multiview', 
+                     base_dir: Union[str, os.PathLike] = os.getcwd(), 
+                     train_dataset_names: 'list[str]' = ['test_dir/test_data1'], 
+                     batch_size: int = 120, 
+                     valid_dataset_names: 'list[str]' = ['valid_dir/valid_data1'], 
+                     batch_size_eval: int = 30, 
+                     rank: int = 0, num_process: int = 1,
+                     res_attr: 'tuple[int]' = (10, 10)):
+    """ Create the dataloader for the training and validation set """
+    train_set = carlaImages.carlaImages(
+        model_name, base_dir, train_dataset_names, split='train', rank=rank, resize_attention=res_attr)
     # Work with a subset of the dataset, if specified by the user in g_conf
     subset_size = int(len(train_set) * max(min(1.0, g_conf.SUBSET_SIZE), 0.0))
     train_set_indices = torch.randperm(len(train_set))[:subset_size]
@@ -23,7 +34,8 @@ def make_data_loader(model_name, base_dir, train_dataset_names, batch_size, vali
 
     val_loaders_list=[]
     for valid_dataset_name in valid_dataset_names:
-        val_set = carlaImages.carlaImages(model_name, base_dir, [valid_dataset_name], split='val', rank=rank)
+        val_set = carlaImages.carlaImages(model_name, base_dir, [valid_dataset_name], split='val', 
+                                          rank=rank, resize_attention=res_attr)
         val_loader = DataLoader(val_set,
                                 batch_size=batch_size_eval,
                                 shuffle=False,
