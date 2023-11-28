@@ -95,7 +95,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, layer_id: int = 4):
+    def __init__(self, block, layers: "list[int]" = [2, 2, 2, 2], layer_id: int = 4):
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -197,11 +197,15 @@ def resnet18(pretrained=False, **kwargs):
     return model
 
 
-def resnet34(pretrained=False, **kwargs):
+def resnet34(pretrained=False, num_input_channels=3, **kwargs):
     """Constructs a ResNet-34 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
+        num_input_channels (int): Number of input channels for the model
     """
+    # Remove 'num_input_channels' from kwargs if it exists
+    kwargs.pop('num_input_channels', None)
+    # Create the ResNet-34 model with the specified number of input channels
     model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
     if pretrained:
         model_dict = model_zoo.load_url(model_urls['resnet34'])
@@ -211,6 +215,18 @@ def resnet34(pretrained=False, **kwargs):
         state = model.state_dict()
         state.update(model_dict)
         model.load_state_dict(state)
+
+    # Modify the first convolutional layer if the number of input channels is different
+    if num_input_channels != 3:
+        # Save the original first layer if model is pretrained
+        original_first_layer = model.conv1
+        # Modify the first convolutional layer
+        model.conv1 = torch.nn.Conv2d(num_input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        if pretrained:
+            # Initialize the weights for the new first layer using the pre-trained weights
+            with torch.no_grad():
+                model.conv1.weight[:, :3] = original_first_layer.weight
 
     return model
 

@@ -109,6 +109,7 @@ _g_conf.NUM_REGISTER_TOKENS = 0  # From: https://arxiv.org/abs/2309.16588
 _g_conf.EARLY_ATTENTION = False  # False for late attention (Tf. Enc. attention maps), True for early attention (resnet attention maps)
 _g_conf.TFX_ENC_ATTENTION_LAYER = -1  # The layer of the encoder to use for the attention maps
 _g_conf.RN_ATTENTION_LAYER = -1  # The block of the ResNet to use for the attention maps
+_g_conf.ATTENTION_AS_INPUT = False  # Use the attention maps as fourth channel of the input
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

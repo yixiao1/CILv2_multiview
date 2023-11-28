@@ -37,7 +37,7 @@ def canbus_normalization(can_bus_dict, data_ranges):
             can_bus_dict['direction'] = [can_bus_dict['direction']-1]
     return can_bus_dict
 
-def train_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)):
+def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tuple[int]' = (10, 10)):
     """
         Apply transformations and augmentations. The
         output is from 0-1 float.
@@ -45,9 +45,7 @@ def train_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)
     for camera_type in g_conf.DATA_USED:
         if 'rgb' in camera_type:
             image = data[camera_type]
-            height = image_shape[1]
-            width = image_shape[2]
-            image = image.resize((width, height))  # Note: Bicubic interpolation by default
+            image = image.resize((image_shape[2], image_shape[1]))  # Note: Bicubic interpolation by default
             image = transforms.RandAugment(2, 10)(image) if g_conf.RAND_AUGMENT else image
             image - transforms.AugMix(severity=3, mixture_width=3, chain_depth=-1, alpha=1.0)(image) if g_conf.AUG_MIX else image
             image = transforms.ColorJitter(brightness=0.3)(image) if g_conf.COLOR_JITTER else image
@@ -58,10 +56,16 @@ def train_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)
             pass
         elif 'ss' in camera_type:
             pass
-        elif 'virtual_attention' in camera_type:
+        elif 'virtual_attention' in camera_type and not g_conf.ATTENTION_AS_INPUT:
             image = data[camera_type]
             image = cv2.resize(np.array(image), resize_attention, interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
             image = TF.to_tensor(image)
+            data[camera_type] = image
+        elif 'virtual_attention' in camera_type and g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = cv2.resize(np.array(image), (image_shape[2], image_shape[1]))
+            image = TF.to_tensor(image)
+            image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
         else:
             raise KeyError(f"The camera type is not defined: {camera_type}")

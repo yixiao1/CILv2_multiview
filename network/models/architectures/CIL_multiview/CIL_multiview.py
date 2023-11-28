@@ -22,7 +22,8 @@ class CIL_multiview(nn.Module):
         resnet_module = importlib.import_module('network.models.building_blocks.resnet_FM')
         resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
         self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
-                                                          layer_id=params['encoder_embedding']['perception']['res']['layer_id'])
+                                                          layer_id=params['encoder_embedding']['perception']['res']['layer_id'],
+                                                          num_input_channels=4 if g_conf.ATTENTION_AS_INPUT else 3)
         out_shapes = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] + g_conf.IMAGE_SHAPE)
         _, self.res_out_dim, self.res_out_h, self.res_out_w = out_shapes[params['encoder_embedding']['perception']['res']['layer_id']]
         
