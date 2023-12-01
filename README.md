@@ -90,7 +90,8 @@ where `--process-type` defines the process type (could be either train_val or va
 
 ## Data preparation
 
-Once the data is collected, we may opt to downscale the dataset a priori, in order to speed up the trianing. We provide a bash script to do so, provided the following are installed:
+Once the data is collected, we may opt to downscale the dataset a priori, in order to speed up the trianing. We provide 
+a python script to do so, provided the following are installed:
 
 ```bash
 sudo apt-get install tqdm parallel
@@ -98,8 +99,38 @@ sudo apt-get install tqdm parallel
 
 Note that `tqdm` can be also installed with PyPI via: `pip install tqdm`. 
 
+### Data Structure
+TODO
 
+### Clean Data Route
 
+If for some reason the data collection process has some errors (i.e., at the end of the route, the vehicle collides),
+we can
+
+### Fix Command Input
+
+During data collection, the command that is passed to the vehicle is usually given too late, and if we train with this
+data, the vehicle won't be able to make the set turn. To fix this, we order the route taken by a vehicle, extract the `.json`
+files with the given commands, and then re-write the commands with a delay of 0.5 seconds. To do so, run the following:
+
+```bash
+python data_analysis/data_tools.py command-fix --dataset-path=/path/to/dataset/root
+```
+
+where `--dataset-path` is the path to the dataset root, `--route-path` is the path to the route file, and `--delay` is
+
+### Downsampling the dataset
+
+To downsample the dataset, run the following with your desired parameters:
+
+```bash
+python data_analysis/data_tools.py resize-dataset --dataset-path=/path/to/dataset/root \\
+    --res=300x300 --img-ext=png
+```
+
+where `--dataset-path` is the path to the dataset root, `--res` is the desired resolution, and `--img-ext` is the image 
+extension. The script will save all resized images in the same folder, with the caveat of adding `'resized_'` to each 
+image name.
 
 ## CoRL 2023 Submission
 
