@@ -78,6 +78,25 @@ export SENSOR_SAVE_PATH=/data2/121-2/Datasets/CIL_Carla/CARLA/driving_record/
 export DRIVING_TEST_ROOT=/data2/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving/
 ```
 
+In the 104 server:
+```bash
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/104-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/104-1/Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/104-1/Experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/104-1/Experiments/dporres/VisionTFM/
+export DATASET_PATH=/datafast/104-1/Datasets/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/104-1/Datasets/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/104-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving/
+```
+
+In the 105 server:
+```bash
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/105-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/105-1//Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/105-1//Experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/105-1/Experiments/dporres/VisionTFM
+export DATASET_PATH=/datafast/105-1/Experiments/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/105-1/Experiments/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/105-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving
+```
+
+
 * Define a configuration file for training. Please refer to [the `CILv2_3cam_smalltest.yaml` file](./configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example
 
 * Run the `main.py` file (here, we use 2 gpus for training and validation)
