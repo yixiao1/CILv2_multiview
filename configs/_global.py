@@ -38,6 +38,7 @@ _g_conf.DATA_USED = ['rgb_left', 'rgb_central', 'rgb_right']
 _g_conf.DATA_INFORMATION = {'rgb_left': {'fov': 60, 'position': [0.0, 0.0, 0.0], 'rotation': [0.0, 0.0, 0.0]},
                             'rgb_central': {'fov': 60, 'position': [0.0, 0.0, 0.0], 'rotation': [0.0, 0.0, 0.0]},
                             'rgb_right': {'fov': 60, 'position': [0.0, 0.0, 0.0], 'rotation': [0.0, 0.0, 0.0]}}
+_g_conf.LENS_CIRCLE_SET = False
 _g_conf.IMAGE_SHAPE = [3, 88, 200]
 _g_conf.ENCODER_INPUT_FRAMES_NUM = 1
 _g_conf.ENCODER_STEP_INTERVAL = 1     # the pace step of frame you want to use. For example, if you want to have 5 sequential input images taking pre 20-frames as a step, you should set INPUT_FRAMES_NUM =5 and INPUT_FRAME_INTERVAL=20
@@ -186,7 +187,8 @@ def set_type_of_process(process_type, root, rank=0, ddp=False):
 
     """
 
-    if process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only' or process_type == 'drive':
+    if process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only' \
+            or process_type == 'drive':
         _g_conf.PROCESS_NAME = process_type
         if not os.path.exists(os.path.join(root, '_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME,
                                            'checkpoints')) and rank == 0:
@@ -195,22 +197,20 @@ def set_type_of_process(process_type, root, rank=0, ddp=False):
                                   'checkpoints'))
         if process_type != 'drive' and ddp:
             torch.distributed.barrier()
-        _g_conf.EXP_SAVE_PATH = os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME)
+        _g_conf.EXP_SAVE_PATH = os.path.join(root, '_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME)
 
     else:
         raise ValueError("Not found type of process")
 
     if (process_type == 'train_val' or process_type == 'train_only' or process_type == 'val_only') and rank == 0:
-        create_log(_g_conf.EXP_SAVE_PATH,
-                _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY,
-                _g_conf.TRAIN_IMAGE_LOG_FREQUENCY)
+        create_log(_g_conf.EXP_SAVE_PATH, _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY, _g_conf.TRAIN_IMAGE_LOG_FREQUENCY)
 
     _g_conf.immutable(True)
 
 
 def _merge_a_into_b(a, b, stack=None):
-    """Merge config dictionary a into config dictionary b, clobbering the
-    options in b whenever they are also specified in a.
+    """Merge config dictionary 'a' into config dictionary 'b', clobbering the
+    options in 'b' whenever they are also specified in 'a'.
     """
 
     assert isinstance(a, AttributeDict) or isinstance(a, dict), 'Argument `a` must be an AttrDict'

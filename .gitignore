@@ -136,5 +136,4 @@ dmypy.json
 run_CARLA_driving/results
 
 # Test data
-test_data/
 videos/

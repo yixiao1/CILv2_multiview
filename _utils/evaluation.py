@@ -3,6 +3,7 @@ from collections import OrderedDict
 import time
 import os
 from contextlib import contextmanager
+import json
 
 import torch
 import torch.nn as nn
@@ -36,12 +37,22 @@ def save_model(model: nn.Module, optimizer, best_pred: int) -> None:
                os.path.join(g_conf.EXP_SAVE_PATH, 'checkpoints',
                             f'{model.name}_{model._done_epoch}.pth'))
 
+    # Save the config{epoch:%02d}.json file consisting of the following dict:
+    config_dict = {
+        "agent_name": "CIL++",  # A bit irrelevant at the moment
+        "checkpoint": model._done_epoch,
+        "yaml": f'{g_conf.EXP_SAVE_PATH.split(os.sep)[-1]}.yaml',  # The name of the experiment, basically
+        "lens_circle_set": g_conf.LENS_CIRCLE_SET
+    }
+    with open(os.path.join(g_conf.EXP_SAVE_PATH, f'config{model._done_epoch:02d}.json'), 'w') as f:
+        json.dump(config_dict, f, indent=4)
+
 
 @contextmanager
 def inference_context(model: nn.Module):
     """
     A context where the model is temporarily changed to eval mode,
-    and restored to previous mode afterwards.
+    and restored to previous mode afterward.
 
     Args:
         model: a torch Module
@@ -218,7 +229,7 @@ def save_model_if_better(results_dict: dict,
     return is_better_flag, best_pred
 
 
-def evaluation_saving(model: nn.Module, optimizers, early_stopping_flags, save_all_checkpoints = False):
+def evaluation_saving(model: nn.Module, optimizers, early_stopping_flags, save_all_checkpoints: bool = False):
     """
     Evaluates but also saves if the model is better
     """

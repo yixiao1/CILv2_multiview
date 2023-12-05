@@ -74,7 +74,7 @@ def process_container(args) -> type(None):
     container_path, dataset_path = args
     container = container_path.split(os.sep)[-1]
 
-    json_path_list = glob.glob(os.path.join(container_path, 'can_bus*.json'))
+    json_path_list = glob(os.path.join(container_path, 'can_bus*.json'))
     utils.sort_nicely(json_path_list)
     command_list=[]
     dist=[]
@@ -268,7 +268,7 @@ def create_virtual_atts(dataset, depth_threshold, min_depth, processes_per_cpu: 
 @click.option('--dataset-path', help='Path to the root of your dataset to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
 def command_fix(dataset_path: Union[str, os.PathLike]):
     """ Manually fix a bug in the dataset wherein the command/direction is given too soon to the ego vehicle. """
-    all_containers_path_list = glob.glob(os.path.join(dataset_path, '*'))
+    all_containers_path_list = glob(os.path.join(dataset_path, '*'))
     utils.sort_nicely(all_containers_path_list)
 
     args = [(container_path, dataset_path) for container_path in all_containers_path_list]
