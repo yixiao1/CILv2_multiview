@@ -1,83 +1,69 @@
 #!/bin/bash
 
-# * To run nocrash benchmark for trained agent
+# * Run NoCrash benchmark for trained agent
 
-nocrash_newweathertown_empty () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
+# Check if exactly three arguments are provided
+if [ "$#" -lt 5 ]; then
+    echo "Usage: $0 GPU_ID (int) EXPERIMENT_FOLDER (str) EXPERIMENT_NAME (str) EPOCH (int) SCENARIO (empty, regular, busy) [RANDOM_SEED (optional, int)]"
+    exit 1
+fi
+
+# Assign the arguments to variables
+GPU_ID=$1
+EXPERIMENT_FOLDER=$2
+EXPERIMENT_NAME=$3
+EPOCH=$4
+SCENARIO=$5
+
+RANDOM_SEED=0  # Default; change when running multiple times to test for variance
+# Check if the fifth argument (RANDOM_SEED) is provided
+if [ ! -z "$6" ]; then
+    RANDOM_SEED=$5
+fi
+
+# Format EPOCH to have at least two digits (pad with a leading zero if necessary)
+EPOCH=$(printf "%02d" "$EPOCH")
+# Construct the path to the agent and scenario config files
+AGENT_CONFIG=$TRAINING_RESULTS_ROOT/_results/$EXPERIMENT_FOLDER/$EXPERIMENT_NAME/config"$EPOCH".json
+SCENARIO_FILE=$DRIVING_TEST_ROOT/data/nocrash/nocrash_newweathertown_"$SCENARIO"_Town02_lbc.json
+
+# Check if the scenario file exists
+if [ ! -f "$SCENARIO_FILE" ]; then
+    echo "Invalid scenario type or file does not exist. Expected 'empty', 'regular', or 'busy'."
+    exit 1
+fi
+
+python_command="python3 $DRIVING_TEST_ROOT/driving/evaluator.py \
     --debug=0 \
-    --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_empty_Town02_lbc.json  \
-    --routes=${DRIVING_TEST_ROOT}/data/nocrash \
+    --scenarios=$SCENARIO_FILE  \
+    --routes=$DRIVING_TEST_ROOT/data/nocrash \
     --repetitions=1 \
     --resume=True \
     --track=SENSORS \
-    --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
-    --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full/config80.json \
+    --agent=$DRIVING_TEST_ROOT/driving/autoagents/CILv2_agent.py \
+    --checkpoint=$DRIVING_TEST_ROOT/results/nocrash  \
+    --agent-config=$AGENT_CONFIG \
     --docker=carlasim/carla:0.9.13 \
-    --gpus=3 \
+    --gpus=$GPU_ID \
     --fps=20 \
-    --PedestriansSeed=0 \
-    --trafficManagerSeed=0 \
-    --save-driving-vision
-}
+    --PedestriansSeed=$RANDOM_SEED \
+    --trafficManagerSeed=$RANDOM_SEED"
 
-
-nocrash_newweathertown_regular () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
-    --debug=0 \
-    --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_regular_Town02_lbc.json  \
-    --routes=${DRIVING_TEST_ROOT}/data/nocrash \
-    --repetitions=1 \
-    --resume=True \
-    --track=SENSORS \
-    --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
-    --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full/config80.json \
-    --docker=carlasim/carla:0.9.13 \
-    --gpus=3 \
-    --fps=20 \
-    --PedestriansSeed=0 \
-    --trafficManagerSeed=0 \
-    --save-driving-vision
-}
-
-nocrash_newweathertown_busy () {
-    python3 ${DRIVING_TEST_ROOT}/driving/evaluator.py \
-    --debug=0 \
-    --scenarios=${DRIVING_TEST_ROOT}/data/nocrash/nocrash_newweathertown_busy_Town02_lbc.json  \
-    --routes=${DRIVING_TEST_ROOT}/data/nocrash \
-    --repetitions=1 \
-    --resume=True \
-    --track=SENSORS \
-    --agent=${DRIVING_TEST_ROOT}/driving/autoagents/CILv2_agent.py \
-    --checkpoint=${DRIVING_TEST_ROOT}/results/nocrash  \
-    --agent-config=${TRAINING_RESULTS_ROOT}/_results/CILv2/CILv2_3cam_vit_Town01Full/config80.json \
-    --docker=carlasim/carla:0.9.13 \
-    --gpus=3 \
-    --fps=20 \
-    --PedestriansSeed=0 \
-    --trafficManagerSeed=0 \
-    --save-driving-vision
-}
-
-function_array=(
-"nocrash_newweathertown_empty"
-"nocrash_newweathertown_regular"
-"nocrash_newweathertown_busy" )
-
+# Add the --save-driving-vision flag only for the "busy" scenario
+if [ "$SCENARIO" = "busy" ]; then
+    python_command+=" --save-driving-vision"
+fi
 
 # resume benchmark in case carla is crashed, until the benchmark is finished
 RED=$'\e[0;31m'
 NC=$'\e[0m'
-for run in "${function_array[@]}"; do
-    PYTHON_RETURN=1
-    until [ $PYTHON_RETURN == 0 ]; do
-      ${run}
-      PYTHON_RETURN=$?
-      echo "${RED} PYTHON_RETURN=${PYTHON_RETURN}!!! Start Over!!!${NC}" >&2
-      sleep 2
-    done
-    sleep 2
+PYTHON_RETURN=1
+until [ $PYTHON_RETURN == 0 ]; do
+  $python_command
+  PYTHON_RETURN=$?
+  echo "${RED} PYTHON_RETURN=${PYTHON_RETURN}!!! Start Over!!!${NC}" >&2
+  sleep 2
 done
+sleep 2
 
 echo "Bash script done."
