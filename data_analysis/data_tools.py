@@ -307,7 +307,7 @@ def clean_route(route_path: Union[str, os.PathLike], max_tick: int):
 @main.command(name='resize-dataset')
 @click.option('--dataset-path', help='Path to the root of your dataset to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
 @click.option('--res', 'target_resolution', help='Resolution (widthxheight) to resize the images to.', type=click.STRING, required=True)
-@click.option('--img-ext', 'ext', default='png', help='Image extension to look for.', type=click.STRING)
+@click.option('--img-ext', 'ext', default='png', help='Image extension to look for.', type=click.STRING, show_default=True)
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str, ext: str = 'png', processes_per_cpu: int = 1):
     """ Resize the dataset to a given resolution. """
