@@ -40,7 +40,7 @@ LOSS_WEIGHT:
   actions:
     steer: 0.5
     acceleration: 0.5
-  attention: 1.0
+  attention: 10.0
 
 # Optimizer Parameters #
 LEARNING_RATE: 0.0001
@@ -57,7 +57,7 @@ EVAL_BATCH_SIZE: 30
 EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
-EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MKLdiv_attention', 'MAE']
+EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MeanError_attention', 'MeanError']
 
 ### Network Parameters ####
 # Encoder part#

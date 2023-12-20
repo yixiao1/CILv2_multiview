@@ -79,13 +79,33 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                                          total_iterations=total_iterations)
 
             if world_size > 1:
-                src_images = [[data['current'][i][camera_type].to(f'cuda:{model.device_ids[0]}') 
-                               for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] 
-                               for i in range(len(data['current']))]
+                # Here: add attention masks
+                src_images = [[data['current'][i][camera_type].to(f'cuda:{model.device_ids[0]}')
+                               for camera_type in g_conf.DATA_USED if 'rgb' in camera_type]
+                              for i in range(len(data['current']))]
                 src_directions = [
                     utils.extract_commands(data['current'][i]['can_bus']['direction']).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
                 src_s = [utils.extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
                                                     ignore=['direction']).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                if g_conf.ATTENTION_AS_INPUT:
+                    if not g_conf.ATTENTION_FROM_UNET:
+                        src_attn_masks = [[data['current'][i][camera_type].to(f'cuda:{model.device_ids[0]}')
+                         for camera_type in g_conf.DATA_USED if 'virtual_attention' in camera_type]
+                            for i in range(len(data['current']))]
+                    else:
+                        src_attn_masks = None  # TODO: comes from UNet prediction!
+
+                    if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                        # Add the masks as the alpha channel in the src_images
+                        for i in range(len(src_images)):
+                            for j in range(len(src_images[i])):
+                                src_images[i][j] = torch.cat((src_images[i][j], src_attn_masks[i][j]), 1)
+                    else:
+                        # Element-wise multiplication of the masks with the src_images
+                        for i in range(len(src_images)):
+                            for j in range(len(src_images[i])):
+                                src_images[i][j] = src_images[i][j] * src_attn_masks[i][j]
+
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
                     tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['future']))]
                 else:
@@ -104,6 +124,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         raise ValueError(f'Error! We cannot use the {g_conf.LOSS} loss with attention!')
             
             else:
+                # Here: add attention masks
                 src_images = [[data['current'][i][camera_type].cuda() 
                                for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] 
                                for i in range(len(data['current']))]
@@ -111,6 +132,25 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                                   range(len(data['current']))]
                 src_s = [utils.extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
                                          ignore=['direction']).cuda() for i in range(len(data['current']))]
+                if g_conf.ATTENTION_AS_INPUT:
+                    if not g_conf.ATTENTION_FROM_UNET:
+                        src_attn_masks = [[data['current'][i][camera_type].cuda()
+                                           for camera_type in g_conf.DATA_USED if 'virtual_attention' in camera_type]
+                                          for i in range(len(data['current']))]
+                    else:
+                        src_attn_masks = None  # TODO: comes from UNet prediction!
+
+                    if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                        # Add the masks as the alpha channel in the src_images
+                        for i in range(len(src_images)):
+                            for j in range(len(src_images[i])):
+                                src_images[i][j] = torch.cat((src_images[i][j], src_attn_masks[i][j]), 1)
+                    else:
+                        # Element-wise multiplication of the masks with the src_images
+                        for i in range(len(src_images)):
+                            for j in range(len(src_images[i])):
+                                src_images[i][j] = src_images[i][j] * src_attn_masks[i][j]
+
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
                     tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda() for i in range(len(data['future']))]
                 else:

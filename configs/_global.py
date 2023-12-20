@@ -66,7 +66,7 @@ _g_conf.FC_LAYER_NORM = False  # Use LayerNorm on the FC layers
 _g_conf.EXP_SAVE_PATH = '_results'
 _g_conf.TARGETS = ['steer', 'throttle', 'brake']  # From the float data, the ones that the network should estimate
 _g_conf.ACCELERATION_AS_ACTION = False
-_g_conf.OTHER_INPUTS= ['speed'] # From the float data, the ones that are input to the neural network
+_g_conf.OTHER_INPUTS = ['speed']  # From the float data, the ones that are input to the neural network
 _g_conf.ACTION_TOKEN = False
 _g_conf.SPEED_TOKEN = False
 _g_conf.MASK_DIAGONAL_ATTMAP = False
@@ -110,7 +110,9 @@ _g_conf.NUM_REGISTER_TOKENS = 0  # From: https://arxiv.org/abs/2309.16588
 _g_conf.EARLY_ATTENTION = False  # False for late attention (Tf. Enc. attention maps), True for early attention (resnet attention maps)
 _g_conf.TFX_ENC_ATTENTION_LAYER = -1  # The layer of the encoder to use for the attention maps
 _g_conf.RN_ATTENTION_LAYER = -1  # The block of the ResNet to use for the attention maps
-_g_conf.ATTENTION_AS_INPUT = False  # Use the attention maps as fourth channel of the input
+_g_conf.ATTENTION_AS_INPUT = False  # Use the attention maps as part of the input to the model
+_g_conf.ATTENTION_AS_NEW_CHANNEL = True  # If the attention maps are used as input, they will be concatenated as a new channel; else, multiply element-wise the RGB values
+_g_conf.ATTENTION_FROM_UNET = False  # Attention maps will come from a UNet prediction
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

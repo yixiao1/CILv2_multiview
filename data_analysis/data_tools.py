@@ -192,7 +192,7 @@ def main():
 
 
 @main.command(name='prepare-ss')
-@click.option('--dataset', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
+@click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
@@ -223,9 +223,9 @@ def prepare_ss(dataset, processes_per_cpu: int = 1, debug: bool = False) -> type
 
 
 @main.command(name='create-virtual-attentions')
-@click.option('--dataset', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
-@click.option('--max-depth', 'depth_threshold',default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0))
-@click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera.', type=click.FloatRange(min=0.0))
+@click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
+@click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
+@click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
