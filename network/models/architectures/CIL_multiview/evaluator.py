@@ -92,6 +92,8 @@ class CIL_multiview_Evaluator(object):
             else:
                 avg_att_loss = sum(att_loss_pointwise) / self._total_num
             self._metrics.update({'MeanError_attention': avg_att_loss})
+        else:
+            avg_att_loss = 0.0
         self._metrics.update({'MeanError': torch.sum(action_errors_mat) / self._total_num + avg_att_loss})
 
     def evaluate(self, current_epoch, dataset_name):

@@ -106,11 +106,28 @@ def evaluation_on_model(model: nn.Module,
                 else:
                     tgt_att = None
 
+                if g_conf.ATTENTION_AS_INPUT:
+                    if not g_conf.ATTENTION_FROM_UNET:
+                        src_attn_masks = [[x['current'][i][camera_type].cuda()
+                                           for camera_type in g_conf.DATA_USED if 'virtual_attention' in camera_type]
+                                          for i in range(len(x['current']))]
+                    else:
+                        src_attn_masks = None  # TODO: comes from UNet prediction!
+
+                    if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                        # Add the masks as the alpha channel in the src_images
+                        for i in range(len(src_images)):
+                            for j in range(len(src_images[i])):
+                                src_images[i][j] = torch.cat((src_images[i][j], src_attn_masks[i][j]), 1)
+                    else:
+                        # Element-wise multiplication of the masks with the src_images
+                        for i in range(len(src_images)):
+                            for j in range(len(src_images[i])):
+                                src_images[i][j] = src_images[i][j] * src_attn_masks[i][j]
 
                 action_outputs, resnet_inter, att_out = model.forward_eval(src_images, src_directions, src_speeds)
                 torch.cuda.synchronize()
                 if g_conf.EARLY_ATTENTION:
-                    # TODO: check shapes match
                     resnet_inter = resnet_inter[g_conf.RN_ATTENTION_LAYER]
                     resnet_inter = reduce(resnet_inter, '(b cam) c h w -> b cam h w', reduction='mean', cam=len([c for c in g_conf.DATA_USED if 'attention' in c]))
                     evaluator.process(action_outputs, tgt_a, resnet_inter, tgt_att)

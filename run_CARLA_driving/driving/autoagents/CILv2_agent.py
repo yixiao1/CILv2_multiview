@@ -23,16 +23,20 @@ from typing import List
 
 import numpy as np
 import torchvision.transforms.functional as TF
+from torchvision import transforms
+
 from PIL import Image, ImageDraw, ImageFont
 import cv2
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+from _utils import utils
 
 from driving.utils.route_manipulation import downsample_route
 from driving.envs.sensor_interface import SensorInterface
 
 from configs import g_conf, merge_with_yaml, set_type_of_process
 from network.models_console import Models
+from network.models.building_blocks.u2net import U2NET
 from _utils.training_utils import DataParallelWrapper
 from dataloaders.transforms import encode_directions_4, encode_directions_6, inverse_normalize, decode_directions_4, \
     decode_directions_6
@@ -95,6 +99,7 @@ class CILv2_agent(object):
         self.brake = None
 
         self._model = None
+        self.u2net = None
         self.norm_rgb = None
         self.norm_speed = None
         self.checkpoint = None
@@ -138,12 +143,24 @@ class CILv2_agent(object):
             new_state_dict[name] = v
         self.checkpoint['model'] = new_state_dict
 
+
         if isinstance(self._model, torch.nn.DataParallel) or isinstance(self._model, torch.nn.parallel.DistributedDataParallel):
             self._model.module.load_state_dict(self.checkpoint['model'])
         else:
             self._model.load_state_dict(self.checkpoint['model'])
         self._model.cuda()
         self._model.eval()
+        
+        if g_conf.ATTENTION_AS_INPUT:
+            self.u2net = U2NET(3, 1)
+            u2net_model_dir = os.path.join(os.getcwd(), 'saved_models', 'u2net', 'u2net_bce_town01_8hrdata.pth')
+
+            if torch.cuda.is_available():
+                self.u2net.load_state_dict(torch.load(u2net_model_dir))
+                self.u2net.cuda()
+            else:
+                self.u2net.load_state_dict(torch.load(u2net_model_dir, map_location='cpu'))
+            self.u2net.eval()
 
         if self.plug_in_expert:
             self.setup_expert_agent(path_to_conf_file)
@@ -210,13 +227,16 @@ class CILv2_agent(object):
                  'width': 1088, 'height': 680, 'fov': 120, 'id': 'rgb_backontop', 'lens_circle_setting': False},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 'height': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 
+                 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': self.lens_circle_setting},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 'height': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 
+                 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': self.lens_circle_setting},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 'height': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 
+                 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': self.lens_circle_setting},
 
                 {'type': 'sensor.other.gnss', 'id': 'GPS'},
 
@@ -230,13 +250,16 @@ class CILv2_agent(object):
         else:
             sensors = [
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 'height': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 
+                 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': self.lens_circle_setting},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 'height': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 
+                 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': self.lens_circle_setting},
 
                 {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-                 'width': 300, 'height': 300, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': self.lens_circle_setting},
+                 'width': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 'height': 320 if g_conf.ATTENTION_AS_INPUT else g_conf.IMAGE_SHAPE[1], 
+                 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': self.lens_circle_setting},
 
                 {'type': 'sensor.other.gnss', 'id': 'GPS'},
 
@@ -279,6 +302,42 @@ class CILv2_agent(object):
         # Remove 'resized_' from the camera name if it exists
         rgb_cameras = [c[8:] if c.startswith('resized_') else c for c in rgb_cameras]
         self.norm_rgb = [[self.process_image(self.input_data[c][1]).unsqueeze(0).cuda() for c in rgb_cameras]]
+
+        # Use the pre-trained UNet to get the attention maps as input
+        if g_conf.ATTENTION_AS_INPUT:
+            # For now, we assume the attention will come as a prediction from the pre-trained UNet
+            # TODO: if g_conf.ATTENTION_FROM_UNET ...
+            assert self.u2net is not None, 'No U2Net model loaded!'
+
+            # Set the transform for each image
+            tr = transforms.Compose([
+                utils.RescaleT(320),
+                utils.ToTensorLab()])
+            
+
+            # Get all the masks/synthetic attention maps
+            for idx in range(len(rgb_cameras)):
+                # This can be optimized, but whatever, they're just 3 cameras for now
+                tr_img = tr(self.input_data[rgb_cameras[idx]][1]).unsqueeze(0)
+                tr_img = tr_img.type(torch.FloatTensor)
+                tr_img = torch.autograd.Variable(tr_img.cuda() if torch.cuda.is_available() else tr_img)
+
+                # Predict the mask
+                pred, *_ = self.u2net(tr_img)
+                pred = pred.squeeze()
+                mask = utils.min_max_norm(pred)  # type tensor, [320, 320], range [0, 1]
+                mask = mask.unsqueeze(0).unsqueeze(0)  # type tensor, [1, 1, 320, 320], range [0, 1]
+
+                # Resize the mask to the desired shape
+                if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                    # Append the attention map as a new channel to the input rgb image
+                    mask = TF.resize(TF.normalize(mask, [0.5], [0.5]), [g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]])
+                    self.norm_rgb[0][idx] = torch.cat((self.norm_rgb[0][idx], mask), dim=1)
+                else:
+                    # Do an element-wise multiplication between the attention map and the input rgb image
+                    mask = TF.resize(mask, [g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]])
+                    self.norm_rgb[0][idx] = self.norm_rgb[0][idx] * mask
+        
         self.norm_speed = [torch.cuda.FloatTensor([self.process_speed(self.input_data['SPEED'][1]['speed'])]).unsqueeze(0)]
         #
         if g_conf.DATA_COMMAND_ONE_HOT:

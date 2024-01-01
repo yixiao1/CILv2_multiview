@@ -5,6 +5,7 @@ import os
 import re
 from typing import Union, List, Tuple
 
+from skimage import transform
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.nn import DataParallel
@@ -333,3 +334,57 @@ def zero_diagonal_att_map(attn_weights: Union[torch.Tensor, List[torch.Tensor]])
 def min_max_norm(x: Union[np.array, torch.Tensor]) -> Union[np.array, torch.Tensor]:
     """ Min-max normalization of array/tensor """
     return (x - x.min()) / (x.max() - x.min())
+
+
+# Transformations for U2Net (adapted from https://github.com/xuebinqin/U-2-Net)
+
+
+class RescaleT(object):
+
+	def __init__(self,output_size):
+		assert isinstance(output_size,(int,tuple))
+		self.output_size = output_size
+
+	def __call__(self, image):
+
+		h, w = image.shape[:2]
+		# print("lbl_before :", np.unique(label))
+		if isinstance(self.output_size,int):
+			if h > w:
+				new_h, new_w = self.output_size*h/w,self.output_size
+			else:
+				new_h, new_w = self.output_size,self.output_size*w/h
+		else:
+			new_h, new_w = self.output_size
+
+		new_h, new_w = int(new_h), int(new_w)
+
+		# #resize the image to new_h x new_w and convert image from range [0,255] to [0,1]
+		img = transform.resize(image,(self.output_size,self.output_size),
+						 mode='constant')
+
+		return img
+
+class ToTensorLab(object):
+	"""Convert ndarrays in sample to Tensors."""
+	def __init__(self):
+		pass
+
+	def __call__(self, image):
+		# with rgb color
+		tmpImg = np.zeros((image.shape[0],image.shape[1],3))
+		image = image / np.max(image)
+		if image.shape[2]==1:
+			# Grayscale
+			tmpImg[:,:,0] = (image[:,:,0]-0.485)/0.229
+			tmpImg[:,:,1] = (image[:,:,0]-0.485)/0.229
+			tmpImg[:,:,2] = (image[:,:,0]-0.485)/0.229
+		else:
+			# RGB
+			tmpImg[:,:,0] = (image[:,:,0]-0.485)/0.229
+			tmpImg[:,:,1] = (image[:,:,1]-0.456)/0.224
+			tmpImg[:,:,2] = (image[:,:,2]-0.406)/0.225
+
+		tmpImg = tmpImg.transpose((2, 0, 1))
+
+		return torch.from_numpy(tmpImg)

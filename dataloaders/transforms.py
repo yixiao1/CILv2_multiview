@@ -65,7 +65,8 @@ def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tu
             image = data[camera_type]
             image = cv2.resize(np.array(image), (image_shape[2], image_shape[1]))
             image = TF.to_tensor(image)
-            image = TF.normalize(image, [0.5], [0.5])
+            if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
         else:
             raise KeyError(f"The camera type is not defined: {camera_type}")
@@ -87,10 +88,17 @@ def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)):
             pass
         elif 'ss' in camera_type:
             pass
-        elif 'virtual_attention' in camera_type:
+        elif 'virtual_attention' in camera_type and not g_conf.ATTENTION_AS_INPUT:
             image = data[camera_type]
             image = cv2.resize(np.array(image), resize_attention, interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
             image = TF.to_tensor(image)
+            data[camera_type] = image
+        elif 'virtual_attention' in camera_type and g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = cv2.resize(np.array(image), (image_shape[2], image_shape[1]))
+            image = TF.to_tensor(image)
+            if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
     return data
 

@@ -69,7 +69,7 @@ python_command="python3 $DRIVING_TEST_ROOT/driving/evaluator.py \
 
 # Add the --save-driving-vision flag only for the "busy" scenario
 if [ "$SAVE_DRIVING_VISION" = "true" ]; then
-    echo "Saving driving vision! Results will be found in $DATASET_PATH..."
+    echo "Saving driving vision! Results will be found in $DATASET_PATH/driving_record/nocrash_newweathertown_busy_Town02_lbc..."
     python_command+=" --save-driving-vision"
 fi
 
