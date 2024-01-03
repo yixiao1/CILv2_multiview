@@ -9,6 +9,9 @@ This module provides the base class for all autonomous agents
 
 from __future__ import print_function
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 from enum import Enum
 
 import matplotlib.colors

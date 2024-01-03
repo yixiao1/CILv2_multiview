@@ -3,7 +3,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import os
 from glob import glob
-from typing import Union
+from typing import Union, List, Tuple
 from tqdm import tqdm
 import click
 from dataloaders import transforms
@@ -153,8 +153,29 @@ def process_container(args) -> type(None):
 
 
 
-def find_files(directory: Union[str, os.PathLike], max_tick: int):
-    """ Find all the files in the specified directory that have a tick greater than the given maximum tick. """
+def parse_tick_ranges(range_str: str) -> Union[int, List[Tuple[int, int]]]:
+    """ Parse a string of tick ranges into a list of tuples. """
+    if '-' not in range_str:
+        return int(range_str)
+    ranges = []
+    for part in range_str.split(','):
+        start, end = map(int, part.split('-'))
+        ranges.append((start, end))
+    return ranges
+
+
+def is_tick_in_ranges(tick: int, 
+                      ranges: Union[int, List[Tuple[int, int]]]) -> bool:
+    """ Check if a tick is within any of the given ranges. If ranges is an int, 
+        check if tick is greater than it for elimination."""
+    if isinstance(ranges, int):
+        return tick > ranges
+    return any(start <= tick <= end for start, end in ranges)
+
+
+def find_files(directory: Union[str, os.PathLike], 
+               ranges: List[Tuple[int, int]]) -> List[str]:
+    """ Find all files in the directory with ticks within the given ranges. """
     pattern = r'(\d+)(?=\.\w+$)'  # Regex pattern to extract the number before the file extension
     selected_files = []
     # Iterate over all files in the directory
@@ -163,10 +184,9 @@ def find_files(directory: Union[str, os.PathLike], max_tick: int):
             match = re.search(pattern, entry.name)
             if match:
                 file_number = int(match.group(1))
-                if file_number > max_tick:
+                if is_tick_in_ranges(file_number, ranges):
                     selected_files.append(entry.path)
     return selected_files
-
  
 
 def resize_image(args: tuple) -> None:
@@ -280,13 +300,14 @@ def command_fix(dataset_path: Union[str, os.PathLike]):
 
 @main.command(name='clean-route')
 @click.option('--route-path', help='Path to the root of your route to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
-@click.option('--max-tick', default=None, help='Maximum tick to keep in the data.', type=click.IntRange(min=0), required=True)
-def clean_route(route_path: Union[str, os.PathLike], max_tick: int):
+@click.option('--remove-ticks', help='Ranges of ticks to remove or int; ranges will be removed (inclusive), int will be the max tick left in data (not included)', required=True)
+def clean_route(route_path: Union[str, os.PathLike], remove_ticks: str):
     """ Remove all files containing ticks greater than the given maximum tick in their file name.
         This is useful for removing the data from a specific route where the ego vehicle crashes, for
         example. WARNING: this is permanent, double check before running this command!!! """
     # First, find all the files in the route
-    all_files = find_files(route_path, max_tick)
+    tick_ranges = parse_tick_ranges(remove_ticks)
+    all_files = find_files(route_path, tick_ranges)
 
     # Ask the user one last time if they are sure; give the number of files to be deleted
     # as well as the route path
