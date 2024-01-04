@@ -217,8 +217,11 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name):
         right_img = cv2.imread(right_rgb[idx])
 
         concat_img = cv2.hconcat([left_img, central_img, right_img])
-        video.write(concat_img)
 
+        # Write the frame, but add the frame id to the image
+        cv2.putText(concat_img, f'Frame: {idx}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        video.write(concat_img)
+        
     video.release()
     print(f"Video for {weather}/{route} created successfully.")
 
