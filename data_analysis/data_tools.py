@@ -189,6 +189,40 @@ def find_files(directory: Union[str, os.PathLike],
     return selected_files
  
 
+def create_video_for_route(dataset_path, weather, route, fps, camera_name):
+    # Get the sensor data paths
+    paths = get_paths(data_root=os.path.join(dataset_path, weather, route), sensors=[camera_name])
+
+    assert len(paths) % 3 == 0, f"Error, sensor mismatch: missing cameras!"
+
+    num_data_route = len(paths) // 3
+    left_rgb = sorted([path for path in paths if 'left' in path])
+    central_rgb = sorted([path for path in paths if 'central' in path])
+    right_rgb = sorted([path for path in paths if 'right' in path])
+
+    # We will use the central camera as the reference for the video size
+    central_img = cv2.imread(central_rgb[0])
+    height, width, _ = central_img.shape
+
+    # Setup the video writer
+    if not os.path.exists(os.path.join(dataset_path, 'videos')):
+        os.makedirs(os.path.join(dataset_path, 'videos', weather), exist_ok=True)
+    video_name = os.path.join(dataset_path, 'videos', weather, f'{route}.mp4')
+    video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'mp4v'), fps, (3 * width, height))
+
+    # Create the videos by horizontally concatenating the 3 cameras
+    for idx in range(num_data_route):
+        left_img = cv2.imread(left_rgb[idx])
+        central_img = cv2.imread(central_rgb[idx])
+        right_img = cv2.imread(right_rgb[idx])
+
+        concat_img = cv2.hconcat([left_img, central_img, right_img])
+        video.write(concat_img)
+
+    video.release()
+    print(f"Video for {weather}/{route} created successfully.")
+
+
 def resize_image(args: tuple) -> None:
     """ Resize an image to the given target size at the original directory. """
     image_path, target_size = args
@@ -209,6 +243,46 @@ def resize_image(args: tuple) -> None:
 @click.group()
 def main():
     pass
+
+
+# ============================================================
+
+
+@main.command(name='visualize-routes')
+@click.option('--dataset-path', default='carla', help='Dataset root to visualize.', type=click.Path(exists=True))
+@click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0))
+@click.option('--camera-name', default='rgb', help='Beginning of the camera name', type=click.Choice(['rgb', 'resized_rgb']), show_default=True)
+# Additional params
+@click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
+def visualize_routes(dataset_path, fps, camera_name, processes_per_cpu: int = 1) -> type(None):
+    """ Generate one video per route in the dataset. The structure of the dataset is as follows: 
+            data_root/WEATHER/ROUTE/SENSOR_DATA 
+        where WEATHER is one of four weather types (ClearNoon, etc.), ROUTE is the route number, and
+        SENSOR_DATA is the sensor data for that route, ordered in time and starting in 00000.
+        We will save the videos at the root of the dataset, in a folder called 'videos'.
+    """
+    # Get all the weathers in the dataset
+    weathers = sorted([weather for weather in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, weather))])
+    weathers = [weather for weather in weathers if 'videos' not in weather]
+    print('Weathers found: ', weathers)
+
+    # Create a pool of worker processes
+    num_cpus = os.cpu_count()
+    pool = Pool(processes=num_cpus * processes_per_cpu)
+
+    # Schedule the video creation tasks
+    for weather in weathers:
+         # Create the videos folder
+        os.makedirs(os.path.join(dataset_path, 'videos', weather), exist_ok=True)
+
+        routes = sorted([route for route in os.listdir(os.path.join(dataset_path, weather)) if os.path.isdir(os.path.join(dataset_path, weather, route))])
+        for route in routes:
+            pool.apply_async(create_video_for_route, args=(dataset_path, weather, route, fps, camera_name))
+
+    pool.close()
+    pool.join()
+
+    print('Done!')
 
 
 @main.command(name='prepare-ss')
