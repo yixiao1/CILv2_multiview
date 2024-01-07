@@ -190,15 +190,27 @@ def find_files(directory: Union[str, os.PathLike],
  
 
 def create_video_for_route(dataset_path, weather, route, fps, camera_name):
+    
+    # Command to string
+    command_sign_dict = {
+                1.0: 'Turn Left',
+                2.0: 'Turn Right',
+                3.0: 'Go Straight',
+                4.0: 'Follow Lane',
+                5.0: 'Change Lane Left',
+                6.0: 'Change Lane Right'
+            }
     # Get the sensor data paths
-    paths = get_paths(data_root=os.path.join(dataset_path, weather, route), sensors=[camera_name])
+    paths = get_paths(data_root=os.path.join(dataset_path, weather, route), 
+                      sensors=[camera_name, 'cmd_fix_can_bus'])
 
-    assert len(paths) % 3 == 0, f"Error, sensor mismatch: missing cameras!"
+    assert len(paths) % 4 == 0, f"Error, missing some data!"
 
-    num_data_route = len(paths) // 3
     left_rgb = sorted([path for path in paths if 'left' in path])
     central_rgb = sorted([path for path in paths if 'central' in path])
     right_rgb = sorted([path for path in paths if 'right' in path])
+    can_bus = sorted([path for path in paths if 'cmd_fix_can_bus' in path])
+    num_data_route = len(can_bus)
 
     # We will use the central camera as the reference for the video size
     central_img = cv2.imread(central_rgb[0])
@@ -216,10 +228,36 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name):
         central_img = cv2.imread(central_rgb[idx])
         right_img = cv2.imread(right_rgb[idx])
 
+        # Get the speed, steering, acceleration, command from the can bus
+        with open(can_bus[idx]) as json_: 
+            data = json.load(json_)
+            speed = data['speed']  # [0, 1] adim
+            steering = data['steer']  # [-1, 1] adim
+            acceleration = data['acceleration']  # [0, 1] adim
+            command = command_sign_dict[data['direction']]  # string
+
+        # Write the frame idx in the left camera
+        cv2.putText(left_img, f'Frame: {idx}', (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                    (0, 0, 255), 2)
+        # Input: Add the command at the top of the central camera
+        cv2.putText(central_img, f'{command}', (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                    (255, 0, 0), 2)
+        # Input: Add the speed at the top of the right camera
+        cv2.putText(right_img, f'Speed: {speed:.2f} m/s', (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                    (255, 0, 0), 2)
+        # Output: Add the steering and acceleration at the bottom of the left and right cameras
+        cv2.putText(left_img, f'Steering: {steering:.2f}', (10, 270), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                    (0, 255, 255), thickness=2)
+        cv2.putText(right_img, f'Acceleration: {acceleration:.2f}', (10, 270), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                    (0, 255, 255), 2)
+        
         concat_img = cv2.hconcat([left_img, central_img, right_img])
 
-        # Write the frame, but add the frame id to the image
-        cv2.putText(concat_img, f'Frame: {idx}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         video.write(concat_img)
         
     video.release()
