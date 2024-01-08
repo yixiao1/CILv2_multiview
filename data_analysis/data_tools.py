@@ -235,9 +235,14 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name):
             steering = data['steer']  # [-1, 1] adim
             acceleration = data['acceleration']  # [0, 1] adim
             command = command_sign_dict[data['direction']]  # string
+        
+        # Get the frame number from the filename
+        pattern = r'(\d+)(?=\.\w+$)'
+        match = re.search(pattern, left_rgb[idx])
+        frame_number = int(match.group(1))
 
         # Write the frame idx in the left camera
-        cv2.putText(left_img, f'Frame: {idx}', (10, 30), 
+        cv2.putText(left_img, f'Frame: {frame_number:06d}', (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, 
                     (0, 0, 255), 2)
         # Input: Add the command at the top of the central camera
