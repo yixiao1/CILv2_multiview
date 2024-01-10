@@ -167,9 +167,9 @@ def parse_tick_ranges(range_str: str) -> Union[int, List[Tuple[int, int]]]:
 def is_tick_in_ranges(tick: int, 
                       ranges: Union[int, List[Tuple[int, int]]]) -> bool:
     """ Check if a tick is within any of the given ranges. If ranges is an int, 
-        check if tick is greater than it for elimination."""
+        check if tick is greater or equal than it for elimination."""
     if isinstance(ranges, int):
-        return tick > ranges
+        return tick >= ranges
     return any(start <= tick <= end for start, end in ranges)
 
 

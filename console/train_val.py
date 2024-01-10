@@ -140,16 +140,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     else:
                         src_attn_masks = None  # TODO: comes from UNet prediction!
 
-                    if g_conf.ATTENTION_AS_NEW_CHANNEL:
-                        # Add the masks as the alpha channel in the src_images
-                        for i in range(len(src_images)):
-                            for j in range(len(src_images[i])):
-                                src_images[i][j] = torch.cat((src_images[i][j], src_attn_masks[i][j]), 1)
-                    else:
-                        # Element-wise multiplication of the masks with the src_images
-                        for i in range(len(src_images)):
-                            for j in range(len(src_images[i])):
-                                src_images[i][j] = src_images[i][j] * src_attn_masks[i][j]
+                    # Add the masks as the alpha channel in the src_images or element-wise multiplication
+                    for i in range(len(src_images)):
+                        for j in range(len(src_images[i])):
+                            src_images[i][j] = torch.cat((src_images[i][j], src_attn_masks[i][j]), 1) \
+                                if g_conf.ATTENTION_AS_NEW_CHANNEL else src_images[i][j] * src_attn_masks[i][j]
 
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
                     tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda() for i in range(len(data['future']))]
