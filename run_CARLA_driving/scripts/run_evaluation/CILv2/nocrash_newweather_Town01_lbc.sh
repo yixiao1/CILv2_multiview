@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Run NoCrash benchmark for trained agent in Town02 for SoftRainSunset and WetSunset weathers
+# Run NoCrash benchmark for trained agent in Town01 for SoftRainSunset and WetSunset weathers
 
 # Check if at least five arguments are provided
 if [ "$#" -lt 5 ]; then
-    echo "Usage: $0 GPU_ID (int) EXPERIMENT_FOLDER (str) EXPERIMENT_NAME (str) EPOCH (int) SCENARIO {empty, regular, busy} [--random-seed (optional, int)] [--save-driving-vision (optional, bool)]"
+    echo "Usage: $0 GPU_ID (int) EXPERIMENT_FOLDER (str) EXPERIMENT_NAME (str) EPOCH (int) SCENARIO {empty, regular, dense} [--random-seed (optional, int)] [--save-driving-vision (optional, bool)]"
     exit 1
 fi
 
@@ -43,11 +43,11 @@ done
 EPOCH=$(printf "%02d" "$EPOCH")
 # Construct the path to the agent and scenario config files
 AGENT_CONFIG=$TRAINING_RESULTS_ROOT/_results/$EXPERIMENT_FOLDER/$EXPERIMENT_NAME/config"$EPOCH".json
-SCENARIO_FILE=$DRIVING_TEST_ROOT/data/nocrash/nocrash_newweathertown_"$SCENARIO"_Town02_lbc.json
+SCENARIO_FILE=$DRIVING_TEST_ROOT/data/nocrash/nocrash_newweather_"$SCENARIO"_Town01_lbc.json
 
 # Check if the scenario file exists
 if [ ! -f "$SCENARIO_FILE" ]; then
-    echo "Invalid scenario type or file does not exist. Expected 'empty', 'regular', or 'busy'."
+    echo "Invalid scenario type or file does not exist. Expected 'empty', 'regular', or 'dense'."
     exit 1
 fi
 
