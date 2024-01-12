@@ -501,6 +501,8 @@ class CarlaDataProvider(object):  # pylint: disable=too-many-public-methods
                     blueprints = [x for x in blueprints if not x.id.endswith('firetruck')]
                     blueprints = [x for x in blueprints if not x.id.endswith('ambulance')]
 
+            # Remove microlino?
+            blueprints = [x for x in blueprints if 'microlino' not in x.id]
             blueprints = sorted(blueprints, key=lambda bp: bp.id)
 
         except ValueError:
