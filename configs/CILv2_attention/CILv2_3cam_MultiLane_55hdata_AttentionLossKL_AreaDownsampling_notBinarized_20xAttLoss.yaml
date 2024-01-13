@@ -42,7 +42,7 @@ BINARIZE_ATTENTION: False
 
 # Loss Parameters #
 LOSS: 'Action_nospeed_L1_Attention_KL'  # no speed L1 loss
-ATTENTION_LOSS: False
+ATTENTION_LOSS: True
 LOSS_WEIGHT:
   actions:
     steer: 0.5
