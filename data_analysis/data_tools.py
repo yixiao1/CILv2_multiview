@@ -348,26 +348,26 @@ def visualize_routes(dataset_path, fps, camera_name, processes_per_cpu: int = 1)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def prepare_ss(dataset, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
     """ Convert the dataset's semantic segmentation images to RGB if they are not (if only one channel has all the info) """
     # First, start with getting all the subdirectories in the dataset; usual structure: data_root/subroute/route_00001/rgb_central06d.jpg, for example
-    subdatasets = sorted([subdir for subdir in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, subdir))])
+    subdatasets = sorted([subdir for subdir in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subdir))])
     print('Subdatasets found: ', subdatasets) if debug else None
 
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
         for subdata in subdatasets:
             # Get the routes in the subdataset
-            routes = sorted([route for route in os.listdir(os.path.join(dataset, subdata)) if os.path.isdir(os.path.join(dataset, subdata, route))])
+            routes = sorted([route for route in os.listdir(os.path.join(dataset_path, subdata)) if os.path.isdir(os.path.join(dataset_path, subdata, route))])
             print('Routes found: ', routes) if debug else None
 
             for route in routes:
                 # Get the sensor data paths
-                paths = get_paths(data_root=os.path.join(dataset, subdata, route))
+                paths = get_paths(data_root=os.path.join(dataset_path, subdata, route))
                 
                 # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
                 semantic_segmentation_paths = [path for path in paths if 'ss' in path]
 
-                args = [(path, dataset, subdata, route) for path in semantic_segmentation_paths]
+                args = [(path, dataset_path, subdata, route) for path in semantic_segmentation_paths]
                 for _ in tqdm(pool.imap(prepare_semantic_segmentation, args), total=len(args), desc=f'Preparing the semantic segmentation images [{subdata}/{route}]'):
                     pass
 
@@ -382,22 +382,22 @@ def prepare_ss(dataset, processes_per_cpu: int = 1, debug: bool = False) -> type
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def create_virtual_atts(dataset, depth_threshold, min_depth, noise_cat, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def create_virtual_atts(dataset_path, depth_threshold, min_depth, noise_cat, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
     """ Generate the virtual attention maps for the dataset using the depth and semantic segmentation images. """
     # First, start with getting all the subdirectories in the dataset; usual structure: data_root/subroute/route_00001/rgb_central06d.jpg, for example
-    subdatasets = sorted([subdir for subdir in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, subdir))])
+    subdatasets = sorted([subdir for subdir in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subdir))])
     print('Subdatasets found: ', subdatasets) if debug else None
 
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
         for subdata in subdatasets:
             # Get the routes in the subdataset
-            routes = sorted([route for route in os.listdir(os.path.join(dataset, subdata)) if
-                             os.path.isdir(os.path.join(dataset, subdata, route))])
+            routes = sorted([route for route in os.listdir(os.path.join(dataset_path, subdata)) if
+                             os.path.isdir(os.path.join(dataset_path, subdata, route))])
             print('Routes found: ', routes) if debug else None
 
             for route in routes:
                 # Get the sensor data paths
-                paths = get_paths(data_root=os.path.join(dataset, subdata, route))
+                paths = get_paths(data_root=os.path.join(dataset_path, subdata, route))
 
                 # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
                 depth_paths = [path for path in paths if 'depth' in path]
@@ -412,7 +412,7 @@ def create_virtual_atts(dataset, depth_threshold, min_depth, noise_cat, processe
                 # Prepare the semantic segmentation images before
 
                 args = [(idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth,
-                         num_data_route, dataset, subdata, route) for idx in range(num_data_route)]
+                         num_data_route, dataset_path, subdata, route) for idx in range(num_data_route)]
                 for _ in tqdm(pool.imap(process_map, args), total=num_data_route,
                               desc=f'Generating the virtual attention maps [{subdata}/{route}]'):
                     pass
