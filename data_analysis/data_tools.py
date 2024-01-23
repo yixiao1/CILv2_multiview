@@ -72,7 +72,7 @@ def process_map(args) -> type(None):
         fname_left = f'virtual_attention_left_{idx:06d}.jpg'
         fname_right = f'virtual_attention_right_{idx:06d}.jpg'
     else:
-        fname_central = f'virtual_attention_central_noise_{noise_cat}_{idx:06d}_.jpg'
+        fname_central = f'virtual_attention_central_noise_{noise_cat}_{idx:06d}.jpg'
         fname_left = f'virtual_attention_left_noise_{noise_cat}_{idx:06d}.jpg'
         fname_right = f'virtual_attention_right_noise_{noise_cat}_{idx:06d}.jpg'
 
