@@ -45,10 +45,11 @@ def prepare_semantic_segmentation(args) -> type(None):
         cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA))
 
 def process_map(args) -> type(None):
-    idx, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, dataset, subdata, route = args
+    idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, dataset, subdata, route = args
     *_, mask_merge_central = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx],
         segmented_path=semantic_segmentation_paths[idx],
+        noise_cat=noise_cat,
         depth_threshold=depth_threshold,
         min_depth=min_depth,
         central_camera=True
@@ -56,18 +57,29 @@ def process_map(args) -> type(None):
     *_, mask_merge_left = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx + num_data_route],
         segmented_path=semantic_segmentation_paths[idx + num_data_route],
+        noise_cat=noise_cat,
         depth_threshold=depth_threshold
     )
     *_, mask_merge_right = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx + num_data_route * 2],
         segmented_path=semantic_segmentation_paths[idx + num_data_route * 2],
+        noise_cat=noise_cat,
         depth_threshold=depth_threshold
     )
 
+    if noise_cat == 0:
+        fname_central = f'virtual_attention_central_{idx:06d}.jpg'
+        fname_left = f'virtual_attention_left_{idx:06d}.jpg'
+        fname_right = f'virtual_attention_right_{idx:06d}.jpg'
+    else:
+        fname_central = f'virtual_attention_central_noise_{noise_cat}_{idx:06d}_.jpg'
+        fname_left = f'virtual_attention_left_noise_{noise_cat}_{idx:06d}.jpg'
+        fname_right = f'virtual_attention_right_noise_{noise_cat}_{idx:06d}.jpg'
+
     # Save the masks, they are 2D numpy arrays, so we can use PIL
-    Image.fromarray(mask_merge_central).save(os.path.join(dataset, subdata, route, f'virtual_attention_central_{idx:06d}.jpg'))
-    Image.fromarray(mask_merge_left).save(os.path.join(dataset, subdata, route, f'virtual_attention_left_{idx:06d}.jpg'))
-    Image.fromarray(mask_merge_right).save(os.path.join(dataset, subdata, route, f'virtual_attention_right_{idx:06d}.jpg'))
+    Image.fromarray(mask_merge_central).save(os.path.join(dataset, subdata, route, fname_central))
+    Image.fromarray(mask_merge_left).save(os.path.join(dataset, subdata, route, fname_left))
+    Image.fromarray(mask_merge_right).save(os.path.join(dataset, subdata, route, fname_right))
 
 
 def process_container(args) -> type(None):
@@ -366,10 +378,11 @@ def prepare_ss(dataset, processes_per_cpu: int = 1, debug: bool = False) -> type
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
 @click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
 @click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
+@click.option('--noise-cat', 'noise_cat', default=0, help='Noise category to use for the virtual attention maps; Perlin Noise (PN) and Grid Perlin Noise (GPN). 0: No noise; 1: (global) GPN; 2: GPN on objects and PN on lines; 3: (global) PN', type=click.IntRange(min=0, max=3), show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def create_virtual_atts(dataset, depth_threshold, min_depth, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def create_virtual_atts(dataset, depth_threshold, min_depth, noise_cat, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
     """ Generate the virtual attention maps for the dataset using the depth and semantic segmentation images. """
     # First, start with getting all the subdirectories in the dataset; usual structure: data_root/subroute/route_00001/rgb_central06d.jpg, for example
     subdatasets = sorted([subdir for subdir in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, subdir))])
@@ -378,13 +391,14 @@ def create_virtual_atts(dataset, depth_threshold, min_depth, processes_per_cpu: 
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
         for subdata in subdatasets:
             # Get the routes in the subdataset
-            routes = sorted([route for route in os.listdir(os.path.join(dataset, subdata)) if os.path.isdir(os.path.join(dataset, subdata, route))])
+            routes = sorted([route for route in os.listdir(os.path.join(dataset, subdata)) if
+                             os.path.isdir(os.path.join(dataset, subdata, route))])
             print('Routes found: ', routes) if debug else None
 
             for route in routes:
                 # Get the sensor data paths
                 paths = get_paths(data_root=os.path.join(dataset, subdata, route))
-                
+
                 # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
                 depth_paths = [path for path in paths if 'depth' in path]
                 semantic_segmentation_paths = [path for path in paths if 'ss' in path]
@@ -397,8 +411,10 @@ def create_virtual_atts(dataset, depth_threshold, min_depth, processes_per_cpu: 
 
                 # Prepare the semantic segmentation images before
 
-                args = [(idx, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, dataset, subdata, route) for idx in range(num_data_route)]
-                for _ in tqdm(pool.imap(process_map, args), total=num_data_route, desc=f'Generating the virtual attention maps [{subdata}/{route}]'):
+                args = [(idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth,
+                         num_data_route, dataset, subdata, route) for idx in range(num_data_route)]
+                for _ in tqdm(pool.imap(process_map, args), total=num_data_route,
+                              desc=f'Generating the virtual attention maps [{subdata}/{route}]'):
                     pass
 
     print('Done!')
