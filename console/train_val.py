@@ -112,9 +112,9 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     tgt_a = [utils.extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
 
                 if g_conf.ATTENTION_LOSS:
-                    src_atts_left = [data['current'][i]['virtual_attention_left_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
-                    src_atts_central = [data['current'][i]['virtual_attention_central_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
-                    src_atts_right = [data['current'][i]['virtual_attention_right_'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                    src_atts_left = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                    src_atts_central = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                    src_atts_right = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
 
                     if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
@@ -152,9 +152,9 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     tgt_a = [utils.extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda() for i in range(len(data['current']))]
 
                 if g_conf.ATTENTION_LOSS:
-                    src_atts_left = [data['current'][i]['virtual_attention_left_'].cuda() for i in range(len(data['current']))]
-                    src_atts_central = [data['current'][i]['virtual_attention_central_'].cuda() for i in range(len(data['current']))]
-                    src_atts_right = [data['current'][i]['virtual_attention_right_'].cuda() for i in range(len(data['current']))]
+                    src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                    src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                    src_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
 
                     if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)

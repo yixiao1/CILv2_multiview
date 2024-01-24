@@ -95,9 +95,10 @@ def evaluation_on_model(model: nn.Module,
                                              g_conf.TARGETS).cuda() for i in range(len(x['current']))]
 
                 if g_conf.ATTENTION_LOSS:
-                    src_atts_left = [x['current'][i]['virtual_attention_left_'].cuda() for i in range(len(x['current']))]
-                    src_atts_central = [x['current'][i]['virtual_attention_central_'].cuda() for i in range(len(x['current']))]
-                    src_atts_right = [x['current'][i]['virtual_attention_right_'].cuda() for i in range(len(x['current']))]
+                    src_atts_left = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
+                    src_atts_central = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
+                    src_atts_right = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
+
 
                     if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
@@ -154,9 +155,9 @@ def evaluation_on_model(model: nn.Module,
 
                     eval_att = None
                     if g_conf.ATTENTION_LOSS:
-                        eval_atts_left = [x['current'][i]['virtual_attention_left_'].cuda() for i in range(len(x['current']))]
-                        eval_atts_central = [x['current'][i]['virtual_attention_central_'].cuda() for i in range(len(x['current']))]
-                        eval_atts_right = [x['current'][i]['virtual_attention_right_'].cuda() for i in range(len(x['current']))]
+                        eval_atts_left = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
+                        eval_atts_central = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
+                        eval_atts_right = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
 
                         eval_att = utils.prepare_target_attentions(eval_atts_left[0], 
                                                                    eval_atts_central[0],
