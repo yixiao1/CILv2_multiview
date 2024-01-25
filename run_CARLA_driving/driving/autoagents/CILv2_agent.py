@@ -42,7 +42,7 @@ from network.models_console import Models
 from network.models.building_blocks.u2net import U2NET
 from _utils.training_utils import DataParallelWrapper
 from dataloaders.transforms import encode_directions_4, encode_directions_6, inverse_normalize, decode_directions_4, \
-    decode_directions_6
+    decode_directions_6, get_virtual_noise_from_depth
 from driving.utils.waypointer import Waypointer
 from driving.utils.route_manipulation import interpolate_trajectory
 
@@ -272,6 +272,17 @@ class CILv2_agent(object):
 
                 {'type': 'sensor.can_bus', 'id': 'can_bus'}
             ]
+        
+        if g_conf.ATTENTION_AS_INPUT and g_conf.ATTENTION_NOISE_CATEGORY > 0:
+            # If > 0, the attention map is noisy, so we need a depth camera
+            sensors.extend([
+                {'type': 'sensor.camera.depth', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 
+                 'width': 320, 'height': 320, 'fov': 60, 'id': 'depth_central', 'lens_circle_setting': False},
+                {'type': 'sensor.camera.depth', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60.0,
+                 'width': 320, 'height': 320, 'fov': 60, 'id': 'depth_left', 'lens_circle_setting': False},
+                {'type': 'sensor.camera.depth', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
+                 'width': 320, 'height': 320, 'fov': 60, 'id': 'depth_right', 'lens_circle_setting': False}
+            ])
 
         return sensors
 
@@ -310,6 +321,12 @@ class CILv2_agent(object):
         if g_conf.ATTENTION_AS_INPUT:
             # For now, we assume the attention will come as a prediction from the pre-trained UNet
             # TODO: if g_conf.ATTENTION_FROM_UNET ...
+            if g_conf.ATTENTION_NOISE_CATEGORY > 0:
+                # If > 0, the attention map is noisy, so we need a depth camera
+                depth_cameras = ['depth_left', 'depth_central', 'depth_right']
+
+                self.depth_cameras = [self.process_depth(self.input_data[c][1], txt=c).unsqueeze(0).cuda() for c in depth_cameras]
+
             assert self.u2net is not None, 'No U2Net model loaded!'
 
             # Set the transform for each image
@@ -330,6 +347,10 @@ class CILv2_agent(object):
                 pred = pred.squeeze()
                 mask = utils.min_max_norm(pred)  # type tensor, [320, 320], range [0, 1]
                 mask = mask.unsqueeze(0).unsqueeze(0)  # type tensor, [1, 1, 320, 320], range [0, 1]
+
+                # Add noise to the attention map
+                if g_conf.ATTENTION_NOISE_CATEGORY > 0:
+                    mask = mask * self.depth_cameras[idx]
 
                 # Resize the mask to the desired shape
                 if g_conf.ATTENTION_AS_NEW_CHANNEL:
@@ -403,6 +424,13 @@ class CILv2_agent(object):
         obs_dict = self._obs_managers.get_observation()
         input_dict.update({'birdview': obs_dict})
         return input_dict
+
+    def process_depth(self, image, txt):
+        image = image[:, :, ::-1]  # BGR to RGB
+        image = Image.fromarray(image, mode='RGB')
+        image = get_virtual_noise_from_depth(image, g_conf.ATTENTION_NOISE_CATEGORY, txt)
+        image = TF.to_tensor(image)
+        return image
 
     def process_image(self, image):
         image = Image.fromarray(image)

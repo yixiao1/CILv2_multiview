@@ -113,6 +113,7 @@ _g_conf.RN_ATTENTION_LAYER = -1  # The block of the ResNet to use for the attent
 _g_conf.ATTENTION_AS_INPUT = False  # Use the attention maps as part of the input to the model
 _g_conf.ATTENTION_AS_NEW_CHANNEL = True  # If the attention maps are used as input, they will be concatenated as a new channel; else, multiply element-wise the RGB values
 _g_conf.ATTENTION_FROM_UNET = False  # Attention maps will come from a UNet prediction
+_g_conf.ATTENTION_NOISE_CATEGORY = 0  # 0 = no noise, if > 0, the attention map is noisy (randomly, for driving with output from U-Net)
 
 """#### Validation Related Parameters"""
 _g_conf.EVAL_SAVE_LAST_ATT_MAPS = True  # Save the attention map of the last layer of the Encoder

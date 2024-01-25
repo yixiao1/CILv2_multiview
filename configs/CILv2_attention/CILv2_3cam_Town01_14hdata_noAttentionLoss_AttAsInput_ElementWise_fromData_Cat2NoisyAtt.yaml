@@ -25,6 +25,7 @@ DATA_USED: ['resized_rgb_left', 'resized_rgb_central', 'resized_rgb_right',  # M
 ATTENTION_AS_INPUT: True  # If True, the attention map is used as input to the network
 ATTENTION_AS_NEW_CHANNEL: False  # If True, the attention map is used as a new channel (as 4th channel); False will mask the RGB image (element-wise multiplication)
 ATTENTION_FROM_UNET: False  # If True, the attention map comes from predictions by a U-Net
+ATTENTION_NOISE_CATEGORY: 2  # If > 0, the attention map is noisy (randomly, for driving with output from U-Net)
 
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)

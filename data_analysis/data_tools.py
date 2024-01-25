@@ -23,6 +23,9 @@ def get_paths(data_root: str, sensors: list = ['can_bus', 'depth', 'ss']) -> lis
     paths = glob(os.path.join(data_root, '**', '*'), recursive=True)
     # Filter out with the sensors + only files
     paths = [path for path in paths if (any(sensor in path for sensor in sensors) and os.path.isfile(path))]
+    # We might have to filter out the noise images if we are not using them
+    if 'virtual_attention' in sensors:
+        paths = [path for path in paths if 'noise' not in path]
     # Sort the paths
     return sorted(paths)
 
@@ -218,27 +221,27 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name):
 
     assert len(paths) % 4 == 0, f"Error, missing some data!"
 
-    left_rgb = sorted([path for path in paths if 'left' in path])
-    central_rgb = sorted([path for path in paths if 'central' in path])
-    right_rgb = sorted([path for path in paths if 'right' in path])
+    left_images = sorted([path for path in paths if 'left' in path])
+    central_images = sorted([path for path in paths if 'central' in path])
+    right_images = sorted([path for path in paths if 'right' in path])
     can_bus = sorted([path for path in paths if 'cmd_fix_can_bus' in path])
     num_data_route = len(can_bus)
 
     # We will use the central camera as the reference for the video size
-    central_img = cv2.imread(central_rgb[0])
+    central_img = cv2.imread(central_images[0])
     height, width, _ = central_img.shape
 
     # Setup the video writer
     if not os.path.exists(os.path.join(dataset_path, 'videos')):
         os.makedirs(os.path.join(dataset_path, 'videos', weather), exist_ok=True)
-    video_name = os.path.join(dataset_path, 'videos', weather, f'{route}.mp4')
+    video_name = os.path.join(dataset_path, 'videos', weather, f'{route}_{camera_name}.mp4')
     video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'mp4v'), fps, (3 * width, height))
 
     # Create the videos by horizontally concatenating the 3 cameras
     for idx in range(num_data_route):
-        left_img = cv2.imread(left_rgb[idx])
-        central_img = cv2.imread(central_rgb[idx])
-        right_img = cv2.imread(right_rgb[idx])
+        left_img = cv2.imread(left_images[idx])
+        central_img = cv2.imread(central_images[idx])
+        right_img = cv2.imread(right_images[idx])
 
         # Get the speed, steering, acceleration, command from the can bus
         with open(can_bus[idx]) as json_: 
@@ -250,7 +253,7 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name):
         
         # Get the frame number from the filename
         pattern = r'(\d+)(?=\.\w+$)'
-        match = re.search(pattern, left_rgb[idx])
+        match = re.search(pattern, left_images[idx])
         frame_number = int(match.group(1))
 
         # Write the frame idx in the left camera
@@ -309,7 +312,8 @@ def main():
 @main.command(name='visualize-routes')
 @click.option('--dataset-path', default='carla', help='Dataset root to visualize.', type=click.Path(exists=True))
 @click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0))
-@click.option('--camera-name', default='rgb', help='Beginning of the camera name', type=click.Choice(['rgb', 'resized_rgb']), show_default=True)
+@click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', 
+              type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3']), show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 def visualize_routes(dataset_path, fps, camera_name, processes_per_cpu: int = 1) -> type(None):
@@ -378,12 +382,18 @@ def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) ->
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
 @click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
 @click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
+# Noisy virtual attention maps
 @click.option('--noise-cat', 'noise_cat', default=0, help='Noise category to use for the virtual attention maps; Perlin Noise (PN) and Grid Perlin Noise (GPN). 0: No noise; 1: (global) GPN; 2: GPN on objects and PN on lines; 3: (global) PN', type=click.IntRange(min=0, max=3), show_default=True)
+@click.option('--seed', 'seed', default=None, help='Seed for the noise generation.', type=click.INT)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def create_virtual_atts(dataset_path, depth_threshold, min_depth, noise_cat, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def create_virtual_atts(dataset_path, depth_threshold, min_depth, noise_cat, seed, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
     """ Generate the virtual attention maps for the dataset using the depth and semantic segmentation images. """
+    # Set the seed for the noise generation, if specified
+    if seed is not None:
+        from _utils import training_utils
+        training_utils.seed_everything(seed)
     # First, start with getting all the subdirectories in the dataset; usual structure: data_root/subroute/route_00001/rgb_central06d.jpg, for example
     subdatasets = sorted([subdir for subdir in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subdir))])
     print('Subdatasets found: ', subdatasets) if debug else None

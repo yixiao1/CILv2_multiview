@@ -2,6 +2,7 @@ import torchvision.transforms.functional as TF
 import torchvision.transforms as transforms
 import numpy as np
 import cv2
+import PIL
 
 from configs import g_conf
 
@@ -266,6 +267,8 @@ def read_images(depth_path, segmented_path):
 
 
 def process_depth_image(depth_img):
+    if isinstance(depth_img, PIL.Image.Image):
+        depth_img = np.array(depth_img)
     depth_not_norm = np.add(depth_img[:, :, 2],
                             np.add(np.multiply(depth_img[:, :, 1], 256), np.multiply(depth_img[:, :, 0], 256 ** 2)))
     processed_depth = np.multiply(np.divide(depth_not_norm, 256 ** 3 - 1), 1000)
@@ -499,7 +502,7 @@ def get_virtual_attention_map(depth_path, segmented_path, noise_cat: int = 0, ce
     return depth_img, segmentation, mask_depth, mask_segmentation, boundary, merge_boundary, merge
 
 
-def get_virtual_noise_from_depth(depth_img, noise_cat: int = 0, depth_threshold: float = 20.0, min_depth: float = 2.3):
+def get_virtual_noise_from_depth(depth_img, noise_cat: int = 0, txt: str = ''):
     depth_img = process_depth_image(depth_img)
     # print(depth_img)
     width, height = depth_img.shape[1], depth_img.shape[0]
@@ -522,7 +525,7 @@ def get_virtual_noise_from_depth(depth_img, noise_cat: int = 0, depth_threshold:
     masked_noise_image = mask_noise * noise
     masked_noise_image = masked_noise_image.astype(np.uint8)
     # print(np.max(masked_noise_image))
-    cv2.imwrite("masked_noise_image.png", masked_noise_image)
+    # cv2.imwrite("masked_noise_image.png", masked_noise_image)
     merge = np.ones_like(depth_img) * 255
 
     # Merge with other masks
