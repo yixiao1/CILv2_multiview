@@ -4,7 +4,7 @@ MAGICAL_SEED: 1314520
 DATA_PARALLEL: True
 BATCH_SIZE: 512
 NUM_WORKER: 5
-NUMBER_EPOCH: 80
+NUMBER_EPOCH: 100
 TARGETS: ['steer', 'acceleration']  # the targets that the network should estimate
 ACCELERATION_AS_ACTION: True
 OTHER_INPUTS: ['speed', 'direction'] # extra input to the neural network
@@ -44,7 +44,7 @@ LOSS_WEIGHT:
 # Optimizer Parameters #
 LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
-LEARNING_RATE_DECAY_EPOCHES: [30, 50, 65]
+LEARNING_RATE_DECAY_EPOCHES: [30, 50, 65, 80]
 LEARNING_RATE_SCHEDULE: 'step'
 LEARNING_RATE_POLICY:
   name: 'normal'
