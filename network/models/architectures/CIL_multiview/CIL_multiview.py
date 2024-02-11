@@ -201,7 +201,9 @@ class CIL_multiview(nn.Module):
 
         return action_output, resnet_inter, attn_weights  # [B, 1, len(TARGETS)], num_layers * [B, S*cam*h*w, S*cam*h*w]
 
-    def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False, attn_refinement: bool = False):
+    def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False, 
+                     attn_refinement: bool = False, attn_p2p_refinement: bool = False,
+                     attn_p2p_affinity: bool = False, attn_p2p_affinity_mmul: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
         cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
@@ -262,9 +264,36 @@ class CIL_multiview(nn.Module):
                 attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
                                          h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
             else:
-                # We don't have any extra tokens, so let's just return the average attention weights of the last layer
-                attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
-                attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
+                # We don't have any extra tokens, so let's just return the average attention weights of the chosen layer
+                if attn_p2p_refinement:
+                    result = torch.ones_like(attn_weights[0].mean(dim=1).squeeze(1))
+                    for attn in attn_weights:
+                        attn_norm = utils.min_max_norm(attn.mean(dim=1).squeeze(1))
+                        result = result * attn_norm
+                    
+                    attn_weights = utils.min_max_norm(result)
+
+                    # attn_weights_l1 = attn_weights[1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
+                    # attn_weights_l1 = utils.min_max_norm(attn_weights_l1)  # [B, S*cam*(H//P)^2] or [B, N]
+
+                    # attn_weights_lL = attn_weights[-1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
+                    # attn_weights_lL = utils.min_max_norm(attn_weights_lL)
+                    
+                    # attn_weights = attn_weights_l1 * attn_weights_lL
+                    # attn_weights = utils.min_max_norm(attn_weights)
+                elif attn_p2p_affinity:  # Use this one
+                    result = torch.ones_like(attn_weights[0])
+                    for attn in attn_weights:
+                        result = result * attn
+                    attn_weights = utils.min_max_norm(result.mean(dim=1).squeeze(1))
+                elif attn_p2p_affinity_mmul:
+                    result = torch.ones_like(attn_weights[0])
+                    for attn in attn_weights:
+                        result = result @ attn
+                    attn_weights = utils.min_max_norm(result.mean(dim=1).squeeze(1))
+                else:
+                    attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
+                    attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
                 attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)', S=S, cam=cam,
                                          h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
 

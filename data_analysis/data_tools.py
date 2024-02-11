@@ -100,6 +100,22 @@ def process_container(args) -> type(None):
             command_list.append(command)
             dist.append(max(data['speed'], 0.0)* 0.1)
 
+            # If accelerometer and gyro were saved differently, join them
+            # That is, we have 'accelerometer_x': 0.0, 'accelerometer_y': 0.0, 'accelerometer_z': 0.0
+            # and 'gyroscope_x': 0.0, 'gyroscope_y': 0.0, 'gyroscope_z': 0.0.
+            # Replace these with "imu_acc": [0.0, 0.0, 0.0] and "imu_gyroscope": [0.0, 0.0, 0.0]
+            if 'accelerometer_x' in data:
+                data['imu_acc'] = [data.pop('accelerometer_x'), 
+                                   data.pop('accelerometer_y'), 
+                                   data.pop('accelerometer_z')]
+            if 'gyroscope_x' in data:
+                data['imu_gyroscope'] = [data.pop('gyroscope_x'), 
+                                         data.pop('gyroscope_y'), 
+                                         data.pop('gyroscope_z')]
+        # Save the file with the new data
+        with open(json_file, 'w') as fd:
+            json.dump(data, fd, indent=4, sort_keys=True)
+
     latest_cmd = 4.0
     change_points=[]
     dist_list = []

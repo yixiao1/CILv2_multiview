@@ -183,8 +183,8 @@ class RoachRL_expert(object):
             {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
              'width': 640, 'height': 640, 'fov': 60, 'id': 'ss_right', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.optical_flow', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'opticalflow_central', 'lens_circle_setting': False},
+            # {'type': 'sensor.camera.optical_flow', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+            #  'width': 640, 'height': 640, 'fov': 60, 'id': 'opticalflow_central', 'lens_circle_setting': False},
 
             {'type': 'sensor.other.gnss', 'id': 'GPS'},
 
@@ -196,7 +196,7 @@ class RoachRL_expert(object):
         ]
         self.to_save_sensor_tags = ['rgb_central', 'rgb_left', 'rgb_right',
                                     'depth_central', 'depth_left', 'depth_right',
-                                    'ss_central', 'ss_left', 'ss_right', 'opticalflow_central']
+                                    'ss_central', 'ss_left', 'ss_right']
 
         return sensors
 
@@ -244,12 +244,16 @@ class RoachRL_expert(object):
         data.update({'reverse': control.reverse})
         data.update({'speed': self.input_data['SPEED'][1]['speed']})
         data.update({'direction': float(cmd)})
-        data.update({'accelerometer_x': np.nan_to_num(self.input_data['IMU'][1][0])})
-        data.update({'accelerometer_y': np.nan_to_num(self.input_data['IMU'][1][1])})
-        data.update({'accelerometer_z': np.nan_to_num(self.input_data['IMU'][1][2])})
-        data.update({'gyroscope_x': np.nan_to_num(self.input_data['IMU'][1][3])})
-        data.update({'gyroscope_y': np.nan_to_num(self.input_data['IMU'][1][4])})
-        data.update({'gyroscope_z': np.nan_to_num(self.input_data['IMU'][1][5])})
+        data.update({'imu_acc': [
+            np.nan_to_num(self.input_data['IMU'][1][0]),  # accel x
+            np.nan_to_num(self.input_data['IMU'][1][1]),  # accel y
+            np.nan_to_num(self.input_data['IMU'][1][2])   # accel z
+        ]})
+        data.update({'imu_gyroscope': [
+            np.nan_to_num(self.input_data['IMU'][1][3]),  # gyro x
+            np.nan_to_num(self.input_data['IMU'][1][4]),  # gyro y
+            np.nan_to_num(self.input_data['IMU'][1][5])   # gyro z
+        ]})
         with open(os.path.join(self.vision_save_path, f'can_bus{self.datapoint_count:06d}.json'), 'w') as fo:
             jsonObj = {}
             jsonObj.update(data)

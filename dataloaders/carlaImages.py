@@ -32,7 +32,9 @@ class carlaImages(data.Dataset):
             all_cam_paths_dict = {}
             for camera_type in g_conf.DATA_USED:
                 if 'virtual_attention' in camera_type:
-                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.jpg')
+                    avoid = 'noise' if g_conf.ATTENTION_NOISE_CATEGORY == 0 else None
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, 
+                                                    suffix='.jpg', avoid=avoid)
                     all_cam_paths_dict.update({camera_type: img_paths})
                 else:
                     img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
@@ -162,7 +164,8 @@ class carlaImages(data.Dataset):
 
         return full_dataset
 
-    def recursive_glob(self, rootdir: Union[str, os.PathLike] = os.getcwd(), prefix: str = None, suffix: str = None):
+    def recursive_glob(self, rootdir: Union[str, os.PathLike] = os.getcwd(), 
+                       prefix: str = None, suffix: str = None, avoid: str = None):
         """Performs recursive glob with given suffix and rootdir
             :param rootdir is the root directory
             :param prefix is the start prefix to be searched
@@ -174,7 +177,7 @@ class carlaImages(data.Dataset):
             suffix = ''
         return [os.path.join(looproot, filename)
                 for looproot, _, filenames in sorted(os.walk(rootdir))
-                for filename in sorted(filenames) if filename.startswith(prefix) and filename.endswith(suffix)]
+                for filename in sorted(filenames) if filename.startswith(prefix) and filename.endswith(suffix) and (avoid is None or avoid not in filename)]
 
     def get_episode_chunk(self, data, rootdir='.', prefix='', suffix=''):
         for looproot, _, filenames in sorted(os.walk(rootdir)):
