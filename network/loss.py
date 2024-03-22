@@ -177,6 +177,55 @@ def Action_nospeed_L1_Attention_KL(params):
         return loss, steer_loss, throttle_loss, brake_loss, att_loss
 
 
+
+def Action_nospeed_Quantile_Attention_KL(params):
+    B = params['action_output'].shape[0]  # batch_size
+    tau = 0.5 if 'tau' not in params['variable_weights'] else params['variable_weights']['tau']  # 0.5 * L1 loss by default
+
+    # SingleFrame model - we only take into account the last frame's action
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
+
+    difference = params['action_output'][:, -1, :] - params['targets_action'][-1]  # (B, 2)
+    actions_loss_mat = torch.zeros_like(difference, device=difference.device)  # (B, 2)
+
+    # L1 loss on steering
+    actions_loss_mat[:, 0] = torch.abs(difference[:, 0])
+
+    # Quantile regression only on acceleration
+    ind = (difference[:, 1] < 0.0).type(torch.float)
+    actions_loss_mat[:, 1] = torch.abs((tau - ind) * difference[:, 1])
+
+    # Weight each action differently
+    steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
+
+
+    # Attention loss
+    eps = 1e-12  # For numerical stability
+    att_loss = params['variable_weights']['attention'] * F.kl_div((params['attention_output']+eps).log(),  # Transf. Encoder attention map (GAPn)
+                                                                  params['targets_attention'], # Ground truth attention map (virtual or human)
+                                                                  reduction='batchmean')
+
+    if g_conf.ACCELERATION_AS_ACTION:
+        acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
+        acceleration_loss = torch.sum(acceleration_loss) / B
+
+        loss = steer_loss + acceleration_loss + att_loss
+
+        return loss, steer_loss, acceleration_loss, att_loss
+
+    else:
+        throttle_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['throttle']
+        brake_loss = actions_loss_mat[:, 2] * params['variable_weights']['actions']['brake']
+        throttle_loss = torch.sum(throttle_loss) / B
+        brake_loss = torch.sum(brake_loss) / B
+
+        loss = steer_loss + throttle_loss + brake_loss + att_loss
+
+        return loss, steer_loss, throttle_loss, brake_loss, att_loss
+
+
 def Action_nospeed_L1_Attention_L2(params):
     B = params['action_output'].shape[0]  # batch_size
 
@@ -221,6 +270,8 @@ def Loss(loss):
         return Action_nospeed_Quantile
     elif loss == 'Action_nospeed_L1_Attention_KL':
         return Action_nospeed_L1_Attention_KL
+    elif loss == 'Action_nospeed_Quantile_Attention_KL':
+        return Action_nospeed_Quantile_Attention_KL
     elif loss == 'Action_nospeed_L1_Attention_L2':
         return Action_nospeed_L1_Attention_L2
     else:

@@ -100,7 +100,7 @@ def evaluation_on_model(model: nn.Module,
                     src_atts_right = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
 
 
-                    if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
+                    if 'Attention_KL' in g_conf.LOSS:
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
                     elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
                         tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)

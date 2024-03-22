@@ -220,7 +220,7 @@ def find_files(directory: Union[str, os.PathLike],
     return selected_files
  
 
-def create_video_for_route(dataset_path, weather, route, fps, camera_name):
+def create_video_for_route(dataset_path, weather, route, fps, camera_name, output_path=None):
     
     # Command to string
     command_sign_dict = {
@@ -248,9 +248,15 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name):
     height, width, _ = central_img.shape
 
     # Setup the video writer
-    if not os.path.exists(os.path.join(dataset_path, 'videos')):
-        os.makedirs(os.path.join(dataset_path, 'videos', weather), exist_ok=True)
-    video_name = os.path.join(dataset_path, 'videos', weather, f'{route}_{camera_name}.mp4')
+    if output_path is None:
+        output_path = os.path.join(dataset_path, 'videos')
+    else:
+        if not os.path.exists(output_path):
+            os.makedirs(output_path, exist_ok=True)
+    
+    if not os.path.exists(os.path.join(output_path, 'videos')):
+        os.makedirs(os.path.join(output_path, 'videos', weather), exist_ok=True)
+    video_name = os.path.join(output_path, 'videos', weather, f'{route}_{camera_name}.mp4')
     video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'mp4v'), fps, (3 * width, height))
 
     # Create the videos by horizontally concatenating the 3 cameras
@@ -330,9 +336,10 @@ def main():
 @click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0))
 @click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', 
               type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3']), show_default=True)
+@click.option('--out', 'output_path', help='Output path for the videos. If not specified/None, will be in the directory of the dataset.', default=None, show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
-def visualize_routes(dataset_path, fps, camera_name, processes_per_cpu: int = 1) -> type(None):
+def visualize_routes(dataset_path, fps, camera_name, output_path: str = None, processes_per_cpu: int = 1) -> type(None):
     """ Generate one video per route in the dataset. The structure of the dataset is as follows: 
             data_root/WEATHER/ROUTE/SENSOR_DATA 
         where WEATHER is one of four weather types (ClearNoon, etc.), ROUTE is the route number, and
@@ -350,12 +357,9 @@ def visualize_routes(dataset_path, fps, camera_name, processes_per_cpu: int = 1)
 
     # Schedule the video creation tasks
     for weather in weathers:
-         # Create the videos folder
-        os.makedirs(os.path.join(dataset_path, 'videos', weather), exist_ok=True)
-
         routes = sorted([route for route in os.listdir(os.path.join(dataset_path, weather)) if os.path.isdir(os.path.join(dataset_path, weather, route))])
         for route in routes:
-            pool.apply_async(create_video_for_route, args=(dataset_path, weather, route, fps, camera_name))
+            pool.apply_async(create_video_for_route, args=(dataset_path, weather, route, fps, camera_name, output_path))
 
     pool.close()
     pool.join()

@@ -47,6 +47,17 @@ def add_scalar(tag: str, value: float, iteration: int = None) -> None:
             tl.scalar_summary(tag, value, iteration)
     else:
         raise ValueError('iteration is not supposed to be None')
+    
+
+def add_histogram(tag: str, values: torch.Tensor, iteration: int = None) -> None:
+    """
+        For logging histogram of passed values.
+    """
+    if iteration is not None:
+        if iteration % TRAIN_LOG_FREQUENCY == 0:
+            tl.histogram_summary(tag, values, iteration)
+    else:
+        raise ValueError('iteration is not supposed to be None')
 
 
 def add_image(tag: str, images: torch.Tensor, num_images: int = 3, iteration: int = None) -> None:

@@ -3,6 +3,8 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
+import math
+
 import time
 import shutil
 import resource
@@ -116,7 +118,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     src_atts_central = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
                     src_atts_right = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
 
-                    if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
+                    if 'Attention_KL' in g_conf.LOSS:
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
                     elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
                         tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
@@ -156,7 +158,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
                     src_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
 
-                    if g_conf.LOSS == 'Action_nospeed_L1_Attention_KL':
+                    if 'Attention_KL' in g_conf.LOSS:
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
                     elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
                         tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
@@ -198,6 +200,20 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     'targets_action': tgt_a,
                     'variable_weights': g_conf.LOSS_WEIGHT
                 }
+
+                if g_conf.ADAPTIVE_QUANTILE_REGRESSION:
+                    difference = action_outputs[:, -1, :] - tgt_a[-1]
+                    aqr_tau = 0.5 + 0.4 * difference[:, -1].sign().mean().item()  # TODO: EMA?
+                    loss_params['variable_weights']['tau'] = aqr_tau
+                
+                elif g_conf.ADAPTIVE_QUANTILE_REGRESSION_SCHED:
+                    if model._current_iteration < total_iterations * 0.1:
+                        aqr_tau = 0.5
+                    else:
+                        alpha = 5 * math.pi / (9 * total_iterations)
+                        beta = - alpha * total_iterations / 10
+                        aqr_tau = 0.5 + 0.4 * math.sin(alpha * model._current_iteration + beta)
+
                 if g_conf.ATTENTION_LOSS:
                     if g_conf.EARLY_ATTENTION:
                         # Sizes of tensors:
@@ -277,6 +293,34 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 # Keep track of action ratio if it's learnable
                 if g_conf.LEARNABLE_ACTION_RATIO:
                     _logger.add_scalar('Action ratio', model._model.action_ratio.item(), model._current_iteration)
+
+                # Log steering difference w/ target
+                action_difference = action_outputs[:, -1, :] - tgt_a[-1]
+                _logger.add_histogram('sign(steer_out-tgt_steer)', 
+                                      action_difference[:, 0].sign().cpu().detach().numpy(), 
+                                      model._current_iteration)
+                _logger.add_scalar('Average sign(steer_out-tgt_steer)',
+                                   action_difference[:, 0].sign().mean().item(),
+                                   model._current_iteration)
+
+                _logger.add_histogram('steer_out-tgt_steer', 
+                                      action_difference[:, 0].cpu().detach().numpy(), 
+                                      model._current_iteration)
+
+                # Log acceleration difference w/ target
+                _logger.add_histogram('sign(acc_out-tgt_acc)', 
+                                      action_difference[:, 1].sign().cpu().detach().numpy(), 
+                                      model._current_iteration)
+                _logger.add_scalar('Average sign(acc_out-tgt_acc)',
+                                   action_difference[:, 1].sign().mean().item(),
+                                   model._current_iteration)
+
+                _logger.add_histogram('acc_out-tgt_acc', 
+                                      action_difference[:, 1].cpu().detach().numpy(), 
+                                      model._current_iteration)
+                
+                if g_conf.ADAPTIVE_QUANTILE_REGRESSION or g_conf.ADAPTIVE_QUANTILE_REGRESSION_SCHED:
+                    _logger.add_scalar('AQR - tau', aqr_tau, model._current_iteration)
 
             if utils.test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
                 print('\nTraining finished !!')

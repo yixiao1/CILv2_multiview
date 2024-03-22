@@ -70,6 +70,9 @@ _g_conf.OTHER_INPUTS = ['speed']  # From the float data, the ones that are input
 _g_conf.ACTION_TOKEN = False
 _g_conf.SPEED_TOKEN = False
 _g_conf.MASK_DIAGONAL_ATTMAP = False
+_g_conf.ACCEL_ROT_AS_INPUT = False  # Use the accelerometer data as input to the model
+_g_conf.ADAPTIVE_QUANTILE_REGRESSION = False  # Use AQR for acceleration loss
+_g_conf.ADAPTIVE_QUANTILE_REGRESSION_SCHED = False  # Schedule AQR for acceleration loss
 
 """#### Optimizer Related Parameters ####"""
 _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or an architecure name such as "fasterRcnn, deeplabv3", which means we use the same loss as this architectures

@@ -43,14 +43,14 @@ class Logger:
         summary = tf.compat.v1.Summary(value=img_summaries)
         self.writer.add_summary(summary, step)
 
-    def histogram_summary(self, tag, values, step, bins=1000):
+    def histogram_summary(self, tag, values, step, bins=120):
         """Log a histogram of the tensor of values."""
         values = np.asarray(values)
         # Create a histogram using numpy
         counts, bin_edges = np.histogram(values, bins=bins)
 
         # Fill the fields of the histogram proto
-        hist = tf.HistogramProto()
+        hist = tf.compat.v1.HistogramProto()
         hist.min = float(np.min(values))
         hist.max = float(np.max(values))
         hist.num = int(np.prod(values.shape))
