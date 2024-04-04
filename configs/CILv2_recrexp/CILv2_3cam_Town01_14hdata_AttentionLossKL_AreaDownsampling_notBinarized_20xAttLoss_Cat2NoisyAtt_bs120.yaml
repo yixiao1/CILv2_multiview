@@ -22,6 +22,8 @@ IMG_NORMALIZATION:     # ImageNet normalization
 IMAGE_SHAPE: [3, 300, 300]  # Input image shape
 DATA_USED: ['resized_rgb_left', 'resized_rgb_central', 'resized_rgb_right', # Multi-view cameras, it needs to be set in this order
             'virtual_attention_left_noise_2_', 'virtual_attention_central_noise_2_', 'virtual_attention_right_noise_2_']  # Virtual attention maps per camera
+ATTENTION_NOISE_CATEGORY: 2  # If > 0, the attention map is noisy (randomly, for driving with output from U-Net)
+
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
 # Data normalization: might be changed depending on datasets
