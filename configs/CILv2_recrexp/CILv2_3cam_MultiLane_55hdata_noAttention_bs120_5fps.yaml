@@ -17,7 +17,7 @@ TRAIN_DATASET_NAME: [
   '121-1/Datasets/dporres/CARLA/DC_nocrash_training_dense_Town06'  # Town06 ~ 14h
   ] # Folders of the used training datasets. Should be inside DATASET_PATH folder
 VALID_DATASET_NAME: ['121-1/Datasets/dporres/CARLA/valid_Town05'] # Folders of the used offline evaluation datasets. Should be inside DATASET_PATH folder
-SUBSET_SIZE: 1.0  # 0.25 for 14h, 0.5 for 27h, 1.0 for 55h
+SUBSET_SIZE: 0.5  # 0.25 for 14h, 0.5 for 27h, 1.0 for 55h
 
 ENCODER_INPUT_FRAMES_NUM: 1
 ENCODER_STEP_INTERVAL: 1
