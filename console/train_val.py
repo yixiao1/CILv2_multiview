@@ -68,7 +68,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 break
 
             # Update learning rate according to selected schedule
-            if g_conf.LEARNING_RATE_DECAY:
+            if g_conf.LEARNING_RATE_DECAY and rank == 0:
                                 # Step learning rate decay
                 if g_conf.LEARNING_RATE_SCHEDULE == 'step':
                     # Update only at the specific schedule
@@ -202,17 +202,37 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 }
 
                 if g_conf.ADAPTIVE_QUANTILE_REGRESSION:
-                    difference = action_outputs[:, -1, :] - tgt_a[-1]
-                    aqr_tau = 0.5 + 0.4 * difference[:, -1].sign().mean().item()  # TODO: EMA?
-                    loss_params['variable_weights']['tau'] = aqr_tau
-                
-                elif g_conf.ADAPTIVE_QUANTILE_REGRESSION_SCHED:
+                    # Inspired by StyleGAN2-ADA, we will adapt the tau parameter of the quantile loss
+                    # depending on the sign of the difference between the predicted and target steering angles,
+                    # to encourage the model to predict more extreme values when it is not confident.
+                    aqr_interval = 4  # How often to update the tau
+
+                    # Init the tau as 0.5 if not already set
                     if model._current_iteration < total_iterations * 0.1:
-                        aqr_tau = 0.5
+                        tau_quantile = 0.5
+
+                    elif model._current_iteration % aqr_interval == 0:
+                        difference = action_outputs[:, -1, :] - tgt_a[-1]
+                        difference = difference[:, -1]  # [B, 1], only for the acceleration
+                        avg_signs = difference.sign().mean().item()  # float
+
+                        aqr_adjust = math.copysign(1, avg_signs - g_conf.ADAPTIVE_QUANTILE_REGRESSION_TARGET)
+                        aqr_adjust = aqr_adjust * aqr_interval / (total_iterations * 0.02)
+                        tau_quantile = max(0.0, tau_quantile + aqr_adjust)
+                
+                elif g_conf.QUANTILE_REGRESSION_SCHEDULE:
+                    if model._current_iteration < total_iterations * 0.1:
+                        tau_quantile = 0.5
                     else:
                         alpha = 5 * math.pi / (9 * total_iterations)
                         beta = - alpha * total_iterations / 10
-                        aqr_tau = 0.5 + 0.4 * math.sin(alpha * model._current_iteration + beta)
+                        tau_quantile = 0.5 + 0.4 * math.sin(alpha * model._current_iteration + beta)
+                else:
+                    tau_quantile = g_conf.LOSS_WEIGHT['tau'] if 'tau' in g_conf.LOSS_WEIGHT else None
+
+                # Add the tau parameter to the loss_params
+                loss_params['variable_weights']['tau'] = tau_quantile
+
 
                 if g_conf.ATTENTION_LOSS:
                     if g_conf.EARLY_ATTENTION:
@@ -319,8 +339,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                                       action_difference[:, 1].cpu().detach().numpy(), 
                                       model._current_iteration)
                 
-                if g_conf.ADAPTIVE_QUANTILE_REGRESSION or g_conf.ADAPTIVE_QUANTILE_REGRESSION_SCHED:
-                    _logger.add_scalar('AQR - tau', aqr_tau, model._current_iteration)
+                if 'Quantile' in g_conf.LOSS:
+                    _logger.add_scalar('tau - Quantile Loss', tau_quantile, model._current_iteration)
 
             if utils.test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
                 print('\nTraining finished !!')

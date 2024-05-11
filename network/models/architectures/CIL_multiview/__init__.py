@@ -2,3 +2,4 @@ from .CIL_multiview import CIL_multiview
 from .CIL_multiview_vit_oneseq import CIL_multiview_vit_oneseq
 from .CIL_multiview_vit_oneseq_decoder import CIL_multiview_vit_oneseq_decoder
 from .CIL_vit import CIL_vit
+from .CIL_multiview_attention import CILv2_multiview

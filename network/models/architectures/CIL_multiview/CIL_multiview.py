@@ -14,7 +14,7 @@ from network.models.building_blocks.Transformer.TransformerEncoder import Transf
 
 
 class CIL_multiview(nn.Module):
-    def __init__(self, params, rank: int = 0):
+    def __init__(self, params, rank: int = 0, average_attn_weights: bool = True):
         super(CIL_multiview, self).__init__()
         self.params = params
         self.act_tokens_pos = None
@@ -48,7 +48,9 @@ class CIL_multiview(nn.Module):
             self.sequence_length += 2
             self.act_tokens_pos = [i + 2 for i in self.act_tokens_pos] if self.act_tokens_pos is not None else None
 
-        self.num_register_tokens = max(0, g_conf.NUM_REGISTER_TOKENS)
+        # Sanity check
+        assert g_conf.NUM_REGISTER_TOKENS >= 0, f'Error in config: Number of register tokens must be positive! Currently set at: {g_conf.NUM_REGISTER_TOKENS}'
+        self.num_register_tokens = g_conf.NUM_REGISTER_TOKENS
         if self.num_register_tokens > 0:
             self.register_tokens = nn.Parameter(torch.empty(1, self.num_register_tokens, self.params['TxEncoder']['d_model']).normal_(std=0.02))
             self.sequence_length += self.num_register_tokens
@@ -69,11 +71,15 @@ class CIL_multiview(nn.Module):
         self.command = nn.Linear(g_conf.DATA_COMMAND_CLASS_NUM, self.params['TxEncoder']['d_model'])
         self.speed = nn.Linear(1, self.params['TxEncoder']['d_model'])
 
+        if g_conf.ACCEL_ROT_AS_INPUT:
+            self.accrot = nn.Linear(6, self.params['TxEncoder']['d_model'])
+
         tx_encoder_layer = TransformerEncoderLayer(d_model=self.params['TxEncoder']['d_model'],
                                                    nhead=self.params['TxEncoder']['n_head'],
                                                    norm_first=self.params['TxEncoder']['norm_first'], batch_first=True)
         self.tx_encoder = TransformerEncoder(tx_encoder_layer, num_layers=self.params['TxEncoder']['num_layers'],
-                                             norm=nn.LayerNorm(self.params['TxEncoder']['d_model']))
+                                             norm=nn.LayerNorm(self.params['TxEncoder']['d_model']), 
+                                             average_attn_weights=average_attn_weights)
 
         self.action_output = FC(params={'neurons': [join_dim] + self.params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
                                         'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
@@ -107,7 +113,7 @@ class CIL_multiview(nn.Module):
         """ Get the resolutions of the output of the ResNet backbone """
         return self.res_out_dim, self.res_out_h, self.res_out_w
 
-    def encode_observations(self, s, s_d, s_s):
+    def encode_observations(self, s, s_d, s_s, s_a=None):
         """ Encode the observations into the representation space """
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
@@ -146,6 +152,11 @@ class CIL_multiview(nn.Module):
         else:
             encoded_obs = e_p + e_d + e_s  # [B, S*cam*H*W/P^2 + K), D]; K = 2 w/tokens else 0
 
+        if g_conf.ACCEL_ROT_AS_INPUT:
+            acc_rot = s_a[-1]  # [B, 6]
+            e_a = self.accrot(acc_rot).unsqueeze(1)  # [B, 1, D]
+            encoded_obs += e_a  # [B, S*cam*H*W/P^2 + K, D]
+
         return encoded_obs, resnet_inter
 
     def action_prediction(self, sequence: torch.Tensor, cam: int) -> Tuple[torch.Tensor, Any, Any]:
@@ -180,12 +191,12 @@ class CIL_multiview(nn.Module):
 
         return action_output, None, None  # [B, 1, t]
 
-    def forward(self, s, s_d, s_s):
+    def forward(self, s, s_d, s_s, s_a=None):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
         cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
 
-        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
+        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s, s_a)  # [B, S*cam*h*w + K, D]
 
         # Add positional embedding (fixed or learnable)
         if self.params['TxEncoder']['learnable_pe']:
@@ -201,14 +212,13 @@ class CIL_multiview(nn.Module):
 
         return action_output, resnet_inter, attn_weights  # [B, 1, len(TARGETS)], num_layers * [B, S*cam*h*w, S*cam*h*w]
 
-    def forward_eval(self, s, s_d, s_s, attn_rollout: bool = False, 
-                     attn_refinement: bool = False, attn_p2p_refinement: bool = False,
-                     attn_p2p_affinity: bool = False, attn_p2p_affinity_mmul: bool = False):
+    def forward_eval(self, s, s_d, s_s, s_a=None, attn_rollout: bool = False, 
+                     attn_refinement: bool = False, attn_p2p_affinity: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
         cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
 
-        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s)  # [B, S*cam*h*w + K, D]
+        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s, s_a)  # [B, S*cam*h*w + K, D]
 
         if self.params['TxEncoder']['learnable_pe']:
             # positional encoding
@@ -225,6 +235,7 @@ class CIL_multiview(nn.Module):
         # Attention stuff
         if attn_rollout:
             attn_weights = utils.attn_rollout(attn_weights)
+            attn_weights = attn_weights[:, self.num_register_tokens:]  # Remove the register tokens, if any
 
         # Get the attention weights in the right shape
         if not g_conf.NO_ACT_TOKENS:
@@ -261,40 +272,21 @@ class CIL_multiview(nn.Module):
             if None not in [sa_weights, mha_weights]:
                 attn_weights = mha_weights[-1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
                 attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
+                attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:]) if self.num_register_tokens > 0 else attn_weights # Remove the register tokens and renormalize, if necessary
                 attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
                                          h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
             else:
                 # We don't have any extra tokens, so let's just return the average attention weights of the chosen layer
-                if attn_p2p_refinement:
-                    result = torch.ones_like(attn_weights[0].mean(dim=1).squeeze(1))
-                    for attn in attn_weights:
-                        attn_norm = utils.min_max_norm(attn.mean(dim=1).squeeze(1))
-                        result = result * attn_norm
-                    
-                    attn_weights = utils.min_max_norm(result)
-
-                    # attn_weights_l1 = attn_weights[1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
-                    # attn_weights_l1 = utils.min_max_norm(attn_weights_l1)  # [B, S*cam*(H//P)^2] or [B, N]
-
-                    # attn_weights_lL = attn_weights[-1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
-                    # attn_weights_lL = utils.min_max_norm(attn_weights_lL)
-                    
-                    # attn_weights = attn_weights_l1 * attn_weights_lL
-                    # attn_weights = utils.min_max_norm(attn_weights)
-                elif attn_p2p_affinity:  # Use this one
+                if  attn_p2p_affinity:
                     result = torch.ones_like(attn_weights[0])
                     for attn in attn_weights:
                         result = result * attn
                     attn_weights = utils.min_max_norm(result.mean(dim=1).squeeze(1))
-                elif attn_p2p_affinity_mmul:
-                    result = torch.ones_like(attn_weights[0])
-                    for attn in attn_weights:
-                        result = result @ attn
-                    attn_weights = utils.min_max_norm(result.mean(dim=1).squeeze(1))
                 else:
                     attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
                     attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
-                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)', S=S, cam=cam,
+                attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:]) if self.num_register_tokens > 0 else attn_weights # Remove the register tokens and renormalize, if necessary
+                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)' if g_conf.ATTENTION_LOSS else 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
                                          h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
 
         return action_output, resnet_inter, attn_weights

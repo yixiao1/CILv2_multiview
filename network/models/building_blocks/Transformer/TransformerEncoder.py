@@ -13,11 +13,12 @@ class TransformerEncoder(nn.Module):
 
     """
 
-    def __init__(self, encoder_layer, num_layers, norm=None):
+    def __init__(self, encoder_layer, num_layers, norm=None, average_attn_weights: bool = True):
         super(TransformerEncoder, self).__init__()
         self.layers = self._get_clones(encoder_layer, num_layers)
         self.num_layers = num_layers
         self.norm = norm
+        self.average_attn_weights = average_attn_weights
     def forward(self, src, mask= None, src_key_padding_mask= None):
         r"""Pass the input through the encoder layers in turn.
 
@@ -33,7 +34,7 @@ class TransformerEncoder(nn.Module):
 
         attn_layers=[]
         for mod in self.layers:
-            output, attn_output_weights = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+            output, attn_output_weights = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, average_attn_weights=self.average_attn_weights)
             attn_layers.append(attn_output_weights)
 
         if self.norm is not None:
@@ -93,7 +94,7 @@ class TransformerEncoderLayer(nn.Module):
             state['activation'] = F.relu
         super(TransformerEncoderLayer, self).__setstate__(state)
 
-    def forward(self, src, src_mask= None, src_key_padding_mask= None):
+    def forward(self, src, src_mask= None, src_key_padding_mask= None, average_attn_weights: bool = True):
         r"""Pass the input through the encoder layer.
 
         Args:
@@ -109,11 +110,11 @@ class TransformerEncoderLayer(nn.Module):
 
         x = src
         if self.norm_first:
-            sa_block, attn_output_weights = self._sa_block(self.norm1(x), src_mask, src_key_padding_mask)
+            sa_block, attn_output_weights = self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, average_attn_weights)
             x = x + sa_block
             x = x + self._ff_block(self.norm2(x))
         else:
-            sa_block, attn_output_weights = self._sa_block(x, src_mask, src_key_padding_mask)
+            sa_block, attn_output_weights = self._sa_block(x, src_mask, src_key_padding_mask, average_attn_weights)
             x = self.norm1(x + sa_block)
             x = self.norm2(x + self._ff_block(x))
 
@@ -121,11 +122,11 @@ class TransformerEncoderLayer(nn.Module):
 
 
     # self-attention block
-    def _sa_block(self, x, attn_mask, key_padding_mask):
+    def _sa_block(self, x, attn_mask, key_padding_mask, average_attn_weights: bool = True):
         x, attn_output_weights = self.self_attn(x, x, x,
                            attn_mask=attn_mask,
                            key_padding_mask=key_padding_mask,
-                           need_weights=True)
+                           need_weights=True, average_attn_weights=average_attn_weights)
         return self.dropout1(x), attn_output_weights
 
     # feed forward block
