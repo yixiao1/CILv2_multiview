@@ -14,8 +14,8 @@ def val_task(model):
     model.eval()
     results_dict = model._eval(model._current_iteration, model._done_epoch)
     if results_dict is not None:
-        write_model_results(g_conf.EXP_SAVE_PATH, model.name,
-                            results_dict, acc_as_action=g_conf.ACCELERATION_AS_ACTION, att_loss=g_conf.ATTENTION_LOSS)
+        write_model_results(g_conf.EXP_SAVE_PATH, model.name, results_dict, acc_as_action=g_conf.ACCELERATION_AS_ACTION, 
+                            att_loss=(g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS))
         draw_offline_evaluation_results(g_conf.EXP_SAVE_PATH, metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,
                                         x_range=g_conf.EVAL_SAVE_EPOCHES)
 

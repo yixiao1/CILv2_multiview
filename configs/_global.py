@@ -80,6 +80,7 @@ _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or 
 _g_conf.LOSS_POW = 1
 _g_conf.LOSS_WEIGHT = {}
 _g_conf.ATTENTION_LOSS = False  # Use loss on the attention maps (must have a ground truth, virtual or real)
+_g_conf.MHA_ATTENTION_COSSIM_LOSS = False  # Apply a loss to each head of the MHA block in the Transformer Encoder
 _g_conf.LEARNING_RATE = 0.0002       # the max learning rate setting
 _g_conf.LEARNING_RATE_SCHEDULE = 'step'  # the learning rate schedule; 'step' -> StepLR, 'warmup_cooldown' -> linear warmup, cosine cooldown
 _g_conf.LEARNING_RATE_DECAY = True
@@ -127,7 +128,7 @@ _g_conf.EVAL_SAVE_EPOCHES = [1]      # we specify the epoch we want to do offlin
 _g_conf.EVAL_IMAGE_WRITING_NUMBER = 10
 _g_conf.EARLY_STOPPING = False          # By default, we do not apply early stopping
 _g_conf.EARLY_STOPPING_PATIENCE = 3
-_g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS = ['MAE']
+_g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS = None
 
 """#### Logger Related Parameters"""
 _g_conf.TRAIN_LOG_SCALAR_WRITING_FREQUENCY = 2

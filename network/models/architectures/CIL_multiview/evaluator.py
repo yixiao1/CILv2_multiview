@@ -59,7 +59,7 @@ class CIL_multiview_Evaluator(object):
         self.accelerations += list(action_outputs[:, 1].detach().cpu().numpy())
         self.gt_steers += list(targets_action[-1][:, 0].detach().cpu().numpy())
         self.gt_accelerations += list(targets_action[-1][:, 1].detach().cpu().numpy())
-        if None not in (attention_outputs, targets_attention):
+        if g_conf.ATTENTION_LOSS:
             self.gt_attentions.append(targets_attention)
             if not g_conf.EARLY_ATTENTION:
                 attention_outputs = rearrange(attention_outputs, 'B ... -> B (...)')
@@ -68,6 +68,8 @@ class CIL_multiview_Evaluator(object):
             else:
                 self.attentions.append(attention_outputs)
                 self.attentions_loss_pointwise.append(F.mse_loss(attention_outputs, targets_attention, reduction='sum'))
+        elif g_conf.MHA_ATTENTION_COSSIM_LOSS:
+            pass
 
         actions_loss_mat_normalized = torch.clip(action_outputs, -1, 1) - targets_action[-1]  # (B, len(g_conf.TARGETS))
 
@@ -92,6 +94,8 @@ class CIL_multiview_Evaluator(object):
             else:
                 avg_att_loss = sum(att_loss_pointwise) / self._total_num
             self._metrics.update({'MeanError_attention': avg_att_loss})
+        # elif g_conf.MHA_ATTENTION_COSSIM_LOSS:
+        #     self._metrics.update({'MeanError_attention': torch.sum(self.attentions_loss_pointwise) / self._total_num})
         else:
             avg_att_loss = 0.0
         self._metrics.update({'MeanError': torch.sum(action_errors_mat) / self._total_num + avg_att_loss})

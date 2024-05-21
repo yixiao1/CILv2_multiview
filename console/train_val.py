@@ -198,7 +198,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 loss_params = {
                     'action_output': action_outputs,
                     'targets_action': tgt_a,
-                    'variable_weights': g_conf.LOSS_WEIGHT
+                    'variable_weights': g_conf.LOSS_WEIGHT,
+                    'entropy_reg': (model._current_iteration % (63) == 0) and model._current_iteration != 0  # True when model has been trained for one epoch
                 }
 
                 if g_conf.ADAPTIVE_QUANTILE_REGRESSION:
@@ -252,9 +253,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                             {'attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=1),
                              'targets_attention': tgt_att
                              })
+                elif g_conf.MHA_ATTENTION_COSSIM_LOSS:
+                    loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER]})
 
                 if g_conf.ACCELERATION_AS_ACTION:
-                    if g_conf.ATTENTION_LOSS:
+                    if g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS:
                         loss, steer_loss, acceleration_loss, att_loss = model.loss(loss_params)
                     else:
                         loss, steer_loss, acceleration_loss = model.loss(loss_params)
@@ -262,13 +265,13 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     if rank == 0:
                         acc_time = utils.print_train_info(
                             g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                            acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), att_loss_data=att_loss)
+                            acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), att_loss_data=att_loss.item())
                 else:
                     loss, steer_loss, throttle_loss, brake_loss, att_loss = model.loss(loss_params)
                     if rank == 0:
                         acc_time = utils.print_train_info(
                             g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                            acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item, att_loss_data=att_loss)
+                            acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item(), att_loss_data=att_loss.item())
 
             time_start = time.time()
 
@@ -284,17 +287,18 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
             #################################################
             """
             if rank == 0:
-                _logger.add_scalar('Loss', loss.item(), model._current_iteration)
-
                 ## Adding loss to tensorboard
+                _logger.add_scalar('Loss', loss.item(), model._current_iteration)
                 _logger.add_scalar('Loss_steer', steer_loss.item(), model._current_iteration)
+                
                 if g_conf.ACCELERATION_AS_ACTION:
                     _logger.add_scalar('Loss_acceleration', acceleration_loss.item(), model._current_iteration)
                 else:
                     _logger.add_scalar('Loss_throttle', throttle_loss.item(), model._current_iteration)
                     _logger.add_scalar('Loss_brake', brake_loss.item(), model._current_iteration)
                 if att_loss is not None:
-                    _logger.add_scalar('Loss_attention', att_loss.item(), model._current_iteration)
+                    _logger.add_scalar('Loss_attention' if not g_conf.MHA_ATTENTION_COSSIM_LOSS else 'Cosine_Sim_Heads', 
+                                       att_loss.item(), model._current_iteration)
 
                  # Extra logging
                 _logger.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], model._current_iteration)

@@ -16,7 +16,7 @@ class CILv2_multiview_attention(nn.Module):
         cil_model = importlib.import_module('network.models.architectures.CIL_multiview')
         cil_model = getattr(cil_model, g_conf.MODEL_TYPE)
         self.params = params
-        self._model = cil_model(params, rank)
+        self._model = cil_model(params, rank, average_attn_weights=not g_conf.MHA_ATTENTION_COSSIM_LOSS)
         self.resize_att_h, self.resize_att_w = self._model.resize_att_h, self._model.resize_att_w
         self.name = g_conf.MODEL_TYPE
 
@@ -38,6 +38,24 @@ class CILv2_multiview_attention(nn.Module):
                 for val_loader in self._val_loaders:
                     print(f'   - {val_loader.dataset.dataset_name}: {len(val_loader.dataset)}')
                 print('')
+                print('=======================================================================================')
+                print('')
+
+            self._dataloader_iter = iter(self._get_dataloader())
+
+        elif g_conf.PROCESS_NAME == 'train_only':
+            self._current_iteration = 0
+            self._done_epoch = 0
+            self._criterion = Loss(g_conf.LOSS)
+            self._train_loader, _ = \
+                make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
+                                 g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'],
+                                 num_process=params['num_process'], res_attr=(self.resize_att_w, self.resize_att_h))
+
+            if rank == 0:
+                print('\n================================= Dataset Info ========================================')
+                print(f"\nUsing {len(g_conf.TRAIN_DATASET_NAME)} Training Dataset:")
+                print(f'   - {g_conf.TRAIN_DATASET_NAME}: Total amount={len(self._train_loader.dataset)}')
                 print('=======================================================================================')
                 print('')
 

@@ -104,6 +104,8 @@ def evaluation_on_model(model: nn.Module,
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
                     elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
                         tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
+                elif g_conf.MHA_ATTENTION_COSSIM_LOSS:
+                    tgt_att = None
                 else:
                     tgt_att = None
 
@@ -266,7 +268,8 @@ def evaluation_saving(model: nn.Module, optimizers, early_stopping_flags, save_a
                 results_dict = model._eval(model._current_iteration, model._done_epoch)
                 if results_dict is not None:
                     utils.write_model_results(g_conf.EXP_SAVE_PATH, model.name, results_dict, 
-                                              acc_as_action=g_conf.ACCELERATION_AS_ACTION, att_loss=g_conf.ATTENTION_LOSS)
+                                              acc_as_action=g_conf.ACCELERATION_AS_ACTION, 
+                                              att_loss=g_conf.ATTENTION_LOSS)
                     utils.draw_offline_evaluation_results(
                         g_conf.EXP_SAVE_PATH,
                         metrics_list=g_conf.EVAL_DRAW_OFFLINE_RESULTS_GRAPHS,

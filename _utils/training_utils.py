@@ -41,14 +41,31 @@ def seed_everything(seed=0):
     torch.backends.cudnn.deterministic = True
 
 
-def check_saved_checkpoints(checkpoints_path):
+def check_saved_checkpoints(checkpoints_path: str, ckpt_number: int = None):
+    """
+    Returns the checkpoint file from checkpoints_path. If no ckpt_number 
+    is specified, it returns the last found checkpoint file.
+    
+    Parameters:
+        checkpoints_path (str): Path where the checkpoints are saved at.
+        ckpt_number (int, optional): The specific checkpoint number to return.
+
+    Returns:
+        str: The requested checkpoint filename path.
+    """
     if not os.path.exists(checkpoints_path):
         return None
     else:
         checkpoints = glob.glob(os.path.join(checkpoints_path, '*.pth'))
         if checkpoints:
             sort_nicely(checkpoints)
-            return checkpoints[-1]
+            if ckpt_number is None:
+                return checkpoints[-1]
+            else:
+                for checkpoint in checkpoints:
+                    if f'{ckpt_number:02d}' in checkpoint:
+                        return checkpoint
+                return None
         else:
             return None
 

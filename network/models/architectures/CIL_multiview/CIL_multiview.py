@@ -14,10 +14,11 @@ from network.models.building_blocks.Transformer.TransformerEncoder import Transf
 
 
 class CIL_multiview(nn.Module):
-    def __init__(self, params, rank: int = 0, average_attn_weights: bool = True):
+    def __init__(self, params, rank: int = 0, average_attn_weights: bool = None):
         super(CIL_multiview, self).__init__()
         self.params = params
         self.act_tokens_pos = None
+        self.average_attn_weights = True if average_attn_weights is None else average_attn_weights
 
         resnet_module = importlib.import_module('network.models.building_blocks.resnet_FM')
         resnet_module = getattr(resnet_module, params['encoder_embedding']['perception']['res']['name'])
@@ -79,7 +80,7 @@ class CIL_multiview(nn.Module):
                                                    norm_first=self.params['TxEncoder']['norm_first'], batch_first=True)
         self.tx_encoder = TransformerEncoder(tx_encoder_layer, num_layers=self.params['TxEncoder']['num_layers'],
                                              norm=nn.LayerNorm(self.params['TxEncoder']['d_model']), 
-                                             average_attn_weights=average_attn_weights)
+                                             average_attn_weights=self.average_attn_weights)
 
         self.action_output = FC(params={'neurons': [join_dim] + self.params['action_output']['fc']['neurons'] + [len(g_conf.TARGETS)],
                                         'dropouts': self.params['action_output']['fc']['dropouts'] + [0.0],
@@ -272,7 +273,7 @@ class CIL_multiview(nn.Module):
             if None not in [sa_weights, mha_weights]:
                 attn_weights = mha_weights[-1].mean(dim=1).squeeze(1)  # [B, S*cam*(H//P)^2] or [B, N]
                 attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
-                attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:]) if self.num_register_tokens > 0 else attn_weights # Remove the register tokens and renormalize, if necessary
+                attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:])  # Remove the register tokens and renormalize, if necessary
                 attn_weights = rearrange(attn_weights, 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
                                          h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
             else:
@@ -283,11 +284,14 @@ class CIL_multiview(nn.Module):
                         result = result * attn
                     attn_weights = utils.min_max_norm(result.mean(dim=1).squeeze(1))
                 else:
-                    attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
-                    attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
-                attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:]) if self.num_register_tokens > 0 else attn_weights # Remove the register tokens and renormalize, if necessary
-                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)' if g_conf.ATTENTION_LOSS else 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam,
-                                         h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
+                    if g_conf.MHA_ATTENTION_COSSIM_LOSS:
+                        attn_weights = reduce(attn_weights[-1], 'B H N1 N2 -> B N2', 'mean')  # [B, N]
+                    else:
+                        attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
+                    # attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
+                attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:])  # Remove the register tokens and renormalize, if necessary
+                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS)
+                                          else 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam, h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
 
         return action_output, resnet_inter, attn_weights
 

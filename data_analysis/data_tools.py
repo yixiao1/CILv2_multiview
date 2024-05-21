@@ -2,6 +2,9 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import os
+
+# os.environ['FORCE_TF_AVAILABLE'] = '1'
+
 from glob import glob
 from typing import Union, List, Tuple
 from tqdm import tqdm
@@ -16,7 +19,31 @@ import json
 import shutil
 import re
 
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
+import torch
+from torch.utils.data import DataLoader, Dataset
+from transformers.models.mask2former import modeling_mask2former, image_processing_mask2former
+from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
+
 # ====================== Helper functions ======================
+
+
+def is_json_corrupted(filepath):
+    """Check if a JSON file is corrupted by attempting to parse it."""
+    try:
+        with open(filepath, 'r') as file:
+            json.load(file)
+        return False
+    except json.JSONDecodeError:
+        return True  # Returns True if the JSON is corrupted
+
+
+def is_image_corrupted(filepath):
+    """Check if an image file is corrupted by attempting to read it."""
+    img = cv2.imread(filepath)
+    return img is None  # Returns True if the image is corrupted (i.e., cannot be read)
+
 
 def get_paths(data_root: str, sensors: list = ['can_bus', 'depth', 'ss']) -> list:
     # Let's get all the paths for ALL the files in the dataset
@@ -28,6 +55,15 @@ def get_paths(data_root: str, sensors: list = ['can_bus', 'depth', 'ss']) -> lis
         paths = [path for path in paths if 'noise' not in path]
     # Sort the paths
     return sorted(paths)
+
+
+def find_deepest_directories(start_path: str) -> List[str]:
+    """Recursively find the deepest directories within the given start path."""
+    deepest = []
+    for root, dirs, files in os.walk(start_path):
+        if not dirs:  # If there are no subdirectories, this is a deepest directory
+            deepest.append(root)
+    return deepest
 
 
 def prepare_semantic_segmentation(args) -> type(None):
@@ -94,27 +130,32 @@ def process_container(args) -> type(None):
     command_list=[]
     dist=[]
     for json_file in json_path_list:
-        with open(json_file, 'r') as json_:
-            data = json.load(json_)
-            command = data['direction']
-            command_list.append(command)
-            dist.append(max(data['speed'], 0.0)* 0.1)
+        try:
+            with open(json_file, 'r') as json_:
+                data = json.load(json_)
+                command = data['direction']
+                command_list.append(command)
+                dist.append(max(data['speed'], 0.0)* 0.1)
 
-            # If accelerometer and gyro were saved differently, join them
-            # That is, we have 'accelerometer_x': 0.0, 'accelerometer_y': 0.0, 'accelerometer_z': 0.0
-            # and 'gyroscope_x': 0.0, 'gyroscope_y': 0.0, 'gyroscope_z': 0.0.
-            # Replace these with "imu_acc": [0.0, 0.0, 0.0] and "imu_gyroscope": [0.0, 0.0, 0.0]
-            if 'accelerometer_x' in data:
-                data['imu_acc'] = [data.pop('accelerometer_x'), 
-                                   data.pop('accelerometer_y'), 
-                                   data.pop('accelerometer_z')]
-            if 'gyroscope_x' in data:
-                data['imu_gyroscope'] = [data.pop('gyroscope_x'), 
-                                         data.pop('gyroscope_y'), 
-                                         data.pop('gyroscope_z')]
-        # Save the file with the new data
-        with open(json_file, 'w') as fd:
-            json.dump(data, fd, indent=4, sort_keys=True)
+                # If accelerometer and gyro were saved differently, join them
+                # That is, we have 'accelerometer_x': 0.0, 'accelerometer_y': 0.0, 'accelerometer_z': 0.0
+                # and 'gyroscope_x': 0.0, 'gyroscope_y': 0.0, 'gyroscope_z': 0.0.
+                # Replace these with "imu_acc": [0.0, 0.0, 0.0] and "imu_gyroscope": [0.0, 0.0, 0.0]
+                if 'accelerometer_x' in data:
+                    data['imu_acc'] = [data.pop('accelerometer_x'), 
+                                    data.pop('accelerometer_y'), 
+                                    data.pop('accelerometer_z')]
+                if 'gyroscope_x' in data:
+                    data['imu_gyroscope'] = [data.pop('gyroscope_x'), 
+                                            data.pop('gyroscope_y'), 
+                                            data.pop('gyroscope_z')]
+            # Save the file with the new data
+            with open(json_file, 'w') as fd:
+                json.dump(data, fd, indent=4, sort_keys=True)
+
+        except Exception as e:
+            print(f"Error processing {json_file}: {e}")
+            continue
 
     latest_cmd = 4.0
     change_points=[]
@@ -177,10 +218,10 @@ def process_container(args) -> type(None):
                 pseudo_data=data
                 pseudo_data['direction'] = values[files_to_be_fixed.index(json_file)]
 
-            with open(os.path.join(dataset_path, container, f'cmd_fix_{json_file.split(os.sep)[-1]}'), 'w') as fd:
+            with open(os.path.join(container_path, f'cmd_fix_{json_file.split(os.sep)[-1]}'), 'w') as fd:
                 json.dump(pseudo_data, fd, indent=4, sort_keys=True)
         else:
-            shutil.copy(json_file, os.path.join(dataset_path, container, 'cmd_fix_' + json_file.split('/')[-1]))
+            shutil.copy(json_file, os.path.join(container_path, 'cmd_fix_' + json_file.split('/')[-1]))
 
 
 
@@ -220,8 +261,12 @@ def find_files(directory: Union[str, os.PathLike],
     return selected_files
  
 
-def create_video_for_route(dataset_path, weather, route, fps, camera_name, output_path=None):
-    
+def create_video_for_route(dataset_path, weather, route, fps, 
+                           camera_name, output_path=None, json_filename: str = 'cmd_fix_can_bus'):
+    def get_frame_number(filename):
+        """Extract frame number from filename using regex."""
+        match = re.search(r'(\d+)(?=\.\w+$)', filename)
+        return int(match.group(1)) if match else None
     # Command to string
     command_sign_dict = {
                 1.0: 'Turn Left',
@@ -233,50 +278,58 @@ def create_video_for_route(dataset_path, weather, route, fps, camera_name, outpu
             }
     # Get the sensor data paths
     paths = get_paths(data_root=os.path.join(dataset_path, weather, route), 
-                      sensors=[camera_name, 'cmd_fix_can_bus'])
+                      sensors=[camera_name, json_filename])
+    assert len(paths) % 4 == 0, f"Error, missing some data"
 
-    assert len(paths) % 4 == 0, f"Error, missing some data!"
+    # left_images = sorted([path for path in paths if 'left' in path])
+    # central_images = sorted([path for path in paths if 'central' in path])
+    # right_images = sorted([path for path in paths if 'right' in path])
+    # can_bus = sorted([path for path in paths if json_filename in path])
+    # num_data_route = len(can_bus)
 
-    left_images = sorted([path for path in paths if 'left' in path])
-    central_images = sorted([path for path in paths if 'central' in path])
-    right_images = sorted([path for path in paths if 'right' in path])
-    can_bus = sorted([path for path in paths if 'cmd_fix_can_bus' in path])
-    num_data_route = len(can_bus)
+    left_images = {get_frame_number(path): path for path in paths if 'left' in path}
+    central_images = {get_frame_number(path): path for path in paths if 'central' in path}
+    right_images = {get_frame_number(path): path for path in paths if 'right' in path}
+    can_bus = {get_frame_number(path): path for path in paths if json_filename in path}
+    # Find the intersection of frame numbers that exist in all categories
+    common_frames = set(left_images).intersection(central_images).intersection(right_images).intersection(can_bus)
+    sorted_frames = sorted(common_frames)
+    
+    if not sorted_frames:
+        print("No complete data sets available.")
+        return
 
     # We will use the central camera as the reference for the video size
-    central_img = cv2.imread(central_images[0])
+    central_img = cv2.imread(central_images[sorted_frames[-1]])
+
     height, width, _ = central_img.shape
 
     # Setup the video writer
-    if output_path is None:
-        output_path = os.path.join(dataset_path, 'videos')
-    else:
-        if not os.path.exists(output_path):
-            os.makedirs(output_path, exist_ok=True)
+    output_path = os.path.join(dataset_path, 'videos') if output_path is None else output_path
+    if not os.path.exists(output_path):
+        os.makedirs(output_path, exist_ok=True)
     
-    if not os.path.exists(os.path.join(output_path, 'videos')):
-        os.makedirs(os.path.join(output_path, 'videos', weather), exist_ok=True)
-    video_name = os.path.join(output_path, 'videos', weather, f'{route}_{camera_name}.mp4')
+    video_name = os.path.join(output_path, f'{route}_{camera_name}.mp4')
     video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'mp4v'), fps, (3 * width, height))
 
     # Create the videos by horizontally concatenating the 3 cameras
-    for idx in range(num_data_route):
-        left_img = cv2.imread(left_images[idx])
-        central_img = cv2.imread(central_images[idx])
-        right_img = cv2.imread(right_images[idx])
+    for frame_number in sorted_frames:
+        left_img = cv2.imread(left_images[frame_number])
+        central_img = cv2.imread(central_images[frame_number])
+        right_img = cv2.imread(right_images[frame_number])
 
         # Get the speed, steering, acceleration, command from the can bus
-        with open(can_bus[idx]) as json_: 
+        with open(can_bus[frame_number]) as json_: 
             data = json.load(json_)
             speed = data['speed']  # [0, 1] adim
             steering = data['steer']  # [-1, 1] adim
             acceleration = data['acceleration']  # [0, 1] adim
             command = command_sign_dict[data['direction']]  # string
         
-        # Get the frame number from the filename
-        pattern = r'(\d+)(?=\.\w+$)'
-        match = re.search(pattern, left_images[idx])
-        frame_number = int(match.group(1))
+        # # Get the frame number from the filename
+        # pattern = r'(\d+)(?=\.\w+$)'
+        # match = re.search(pattern, left_images[idx])
+        # frame_number = int(match.group(1))
 
         # Write the frame idx in the left camera
         cv2.putText(left_img, f'Frame: {frame_number:06d}', (10, 30), 
@@ -320,6 +373,305 @@ def resize_image(args: tuple) -> None:
     cv2.imwrite(os.path.join(directory, filename), resized_img)
 
 
+label2rgb_cityscapes = {
+    'None': [0, 0, 0],
+    'Building': [70, 70, 70],
+    'Fence': [100, 40, 40],
+    'Other': [55, 90, 80],
+    'Pedestrian': [220, 20, 60],
+    'Pole': [153, 153, 153],
+    'Road Lines': [157, 234, 50],
+    'Road': [128, 64, 128],
+    'Sidewalk': [244, 35, 232],
+    'Vegetation': [107, 142, 35],
+    'Vehicle': [0, 0, 142],
+    'Wall': [102, 102, 156],
+    'Traffic Sign': [220, 220, 0],
+    'Sky': [70, 130, 180],
+    'Ground': [81, 0, 81],
+    'Bridge': [150, 100, 100],
+    'Rail Track': [230, 150, 140],
+    'Guard Rail': [180, 165, 180],
+    'Traffic Light': [250, 170, 30],
+    'Statics': [110, 190, 160],
+    'Dynamics': [170, 120, 50],
+    'Water': [45, 60, 150],
+    'Terrain': [145, 170, 100],
+    'Curb': [255, 255, 100]
+}
+
+id2label_mapillary = {
+    0: 'Bird',
+    1: 'Ground Animal',
+    2: 'Curb',
+    3: 'Fence',
+    4: 'Guard Rail',
+    5: 'Barrier',
+    6: 'Wall',
+    7: 'Bike Lane',
+    8: 'Crosswalk - Plain',
+    9: 'Curb Cut',
+    10: 'Parking',
+    11: 'Pedestrian Area',
+    12: 'Rail Track',
+    13: 'Road',
+    14: 'Service Lane',
+    15: 'Sidewalk',
+    16: 'Bridge',
+    17: 'Building',
+    18: 'Tunnel',
+    19: 'Person',
+    20: 'Bicyclist',
+    21: 'Motorcyclist',
+    22: 'Other Rider',
+    23: 'Lane Marking - Crosswalk',
+    24: 'Lane Marking - General',
+    25: 'Mountain',
+    26: 'Sand',
+    27: 'Sky',
+    28: 'Snow',
+    29: 'Terrain',
+    30: 'Vegetation',
+    31: 'Water',
+    32: 'Banner',
+    33: 'Bench',
+    34: 'Bike Rack',
+    35: 'Billboard',
+    36: 'Catch Basin',
+    37: 'CCTV Camera',
+    38: 'Fire Hydrant',
+    39: 'Junction Box',
+    40: 'Mailbox',
+    41: 'Manhole',
+    42: 'Phone Booth',
+    43: 'Pothole',
+    44: 'Street Light',
+    45: 'Pole',
+    46: 'Traffic Sign Frame',
+    47: 'Utility Pole',
+    48: 'Traffic Light',
+    49: 'Traffic Sign (Back)',
+    50: 'Traffic Sign (Front)',
+    51: 'Trash Can',
+    52: 'Bicycle',
+    53: 'Boat',
+    54: 'Bus',
+    55: 'Car',
+    56: 'Caravan',
+    57: 'Motorcycle',
+    58: 'On Rails',
+    59: 'Other Vehicle',
+    60: 'Trailer',
+    61: 'Truck',
+    62: 'Wheeled Slow',
+    63: 'Car Mount',
+    64: 'Ego Vehicle'}
+
+# Mapillary label to CityScapes label dictionary (assuming best matches)
+mapillary_to_cityscapes = {
+    'Bird': 'Other',
+    'Ground Animal': 'Other',
+    'Curb': 'Curb',  # Keep Curb as its own class
+    'Fence': 'Fence',
+    'Guard Rail': 'Guard Rail',
+    'Barrier': 'Fence',
+    'Wall': 'Wall',
+    'Bike Lane': 'Road Lines',
+    'Crosswalk - Plain': 'Road Lines',
+    'Curb Cut': 'Sidewalk',
+    'Parking': 'Road',
+    'Pedestrian Area': 'Sidewalk',
+    'Rail Track': 'Rail Track',
+    'Road': 'Road',
+    'Service Lane': 'Road',
+    'Sidewalk': 'Sidewalk',
+    'Bridge': 'Bridge',
+    'Building': 'Building',
+    'Tunnel': 'Building',
+    'Person': 'Pedestrian',
+    'Bicyclist': 'Pedestrian',
+    'Motorcyclist': 'Pedestrian',
+    'Other Rider': 'Pedestrian',
+    'Lane Marking - Crosswalk': 'Road Lines',
+    'Lane Marking - General': 'Road Lines',
+    'Mountain': 'Terrain',
+    'Sand': 'Ground',
+    'Sky': 'Sky',
+    'Snow': 'Ground',
+    'Terrain': 'Terrain',
+    'Vegetation': 'Vegetation',
+    'Water': 'Water',
+    'Banner': 'Other',
+    'Bench': 'Other',
+    'Bike Rack': 'Other',
+    'Billboard': 'Other',
+    'Catch Basin': 'Other',
+    'CCTV Camera': 'Other',
+    'Fire Hydrant': 'Other',
+    'Junction Box': 'Other',
+    'Mailbox': 'Other',
+    'Manhole': 'Other',
+    'Phone Booth': 'Other',
+    'Pothole': 'Other',
+    'Street Light': 'Pole',
+    'Pole': 'Pole',
+    'Traffic Sign Frame': 'Traffic Sign',
+    'Utility Pole': 'Pole',
+    'Traffic Light': 'Traffic Light',
+    'Traffic Sign (Back)': 'Traffic Sign',
+    'Traffic Sign (Front)': 'Traffic Sign',
+    'Trash Can': 'Other',
+    'Bicycle': 'Vehicle',
+    'Boat': 'Vehicle',
+    'Bus': 'Vehicle',
+    'Car': 'Vehicle',
+    'Caravan': 'Vehicle',
+    'Motorcycle': 'Vehicle',
+    'On Rails': 'Vehicle',
+    'Other Vehicle': 'Vehicle',
+    'Trailer': 'Vehicle',
+    'Truck': 'Vehicle',
+    'Wheeled Slow': 'Vehicle',
+    'Car Mount': 'Vehicle',
+    'Ego Vehicle': 'Vehicle'
+}
+
+# Function to predict semantic segmentation (mock function for demonstration)
+def predict_segmentation(image_path: str,
+                         processor: image_processing_mask2former.Mask2FormerImageProcessor,
+                         model: modeling_mask2former.Mask2FormerForUniversalSegmentation,
+                         device: str = 'cuda') -> np.ndarray:
+    # Mock prediction function: Replace with actual model prediction
+    image = Image.open(image_path)
+    inputs = processor(images=image, return_tensors="pt").to(device)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    # you can pass them to processor for postprocessing
+    predicted_semantic_map = processor.post_process_semantic_segmentation(outputs, target_sizes=[image.size[::-1]])[0]
+
+    return predicted_semantic_map.detach().cpu().numpy()
+
+
+def mapillary_to_cityscapes_rgb(segmentation: np.ndarray) -> np.ndarray:
+    """
+    Take a predicted segmentation and return an RGB image with CityScapes palette`.
+    """
+    h, w = segmentation.shape
+    rgb_image = np.zeros((h, w, 3), dtype=np.uint8)
+
+    for mapillary_id, label in id2label_mapillary.items():
+        cityscapes_label = mapillary_to_cityscapes.get(label, 'None')
+        rgb = label2rgb_cityscapes[cityscapes_label]
+        rgb_image[segmentation == mapillary_id] = rgb
+
+    return rgb_image
+
+def process_image(image_path: str,
+                  processor: image_processing_mask2former.Mask2FormerImageProcessor,
+                  model: modeling_mask2former.Mask2FormerForUniversalSegmentation,
+                  save_name_start: str = 'ss_hat',  # Predicted semantic segm.
+                  extension: str = None,
+                  device: str = 'cuda') -> None:
+    # Predict segmentation
+    segmentation = predict_segmentation(image_path, processor, model, device)
+    
+    # Convert to RGB image
+    rgb_image = mapillary_to_cityscapes_rgb(segmentation)
+    
+    # Determine the output filename
+    dir_name, base_name = os.path.split(image_path)
+    name, ext = os.path.splitext(base_name)
+    ext = extension if extension is not None else ext  # Extension override
+    output_name = f"{save_name_start}_{name.split('_')[-1]}{ext}"
+    output_path = os.path.join(dir_name, output_name)
+    
+    # Save the RGB image
+    img = Image.fromarray(rgb_image)
+    img.save(output_path)
+
+# Get all files in a directory with a specific prefix, recursively
+# def get_files_with_prefix(directory, prefixes):
+#     file_paths = []
+#     for root, dirs, files in os.walk(directory):
+#         for f in files:
+#             if any(f.startswith(prefix) for prefix in prefixes):
+#                 file_paths.append(os.path.join(root, f))
+#     return file_paths
+
+def get_files_in_directory(root, prefixes):
+    """Get files in a single directory that start with given prefixes."""
+    files = []
+    for f in os.listdir(root):
+        if any(f.startswith(prefix) for prefix in prefixes):
+            files.append(os.path.join(root, f))
+    return files
+
+def get_all_directories(directory):
+    """Get all directories in the given directory, recursively."""
+    all_dirs = []
+    for root, dirs, _ in os.walk(directory):
+        for d in dirs:
+            all_dirs.append(os.path.join(root, d))
+    return all_dirs
+
+def get_files_with_prefix(directory, prefixes, num_workers=8):
+    """Get all files in a directory and its subdirectories that start with given prefixes."""
+    all_dirs = get_all_directories(directory)
+    all_dirs.append(directory)  # Include the root directory itself
+
+    file_paths = []
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        future_to_dir = {executor.submit(get_files_in_directory, dir_path, prefixes): dir_path for dir_path in all_dirs}
+        for future in tqdm(as_completed(future_to_dir), total=len(future_to_dir), desc="Scanning directories"):
+            dir_files = future.result()
+            file_paths.extend(dir_files)
+
+    return file_paths
+
+
+# Define a custom dataset
+class ImageDataset(Dataset):
+    def __init__(self, image_paths, processor):
+        self.image_paths = image_paths
+        self.processor = processor
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        image = Image.open(image_path).convert("RGB")
+        inputs = self.processor(images=image, return_tensors="pt")
+        return inputs, image_path
+
+# Modified predict_segmentation function to handle batches
+# def predict_segmentation(batch, processor, model, device):
+#     inputs = {key: torch.cat([b[0][key] for b in batch]).to(device) for key in batch[0][0]}
+#     with torch.no_grad():
+#         outputs = model(**inputs)
+#     predicted_semantic_maps = processor.post_process_semantic_segmentation(
+#         outputs, target_sizes=[(b[1]['pixel_values'].shape[1], b[1]['pixel_values'].shape[2]) for b in batch]
+#     )
+#     return predicted_semantic_maps
+
+def process_batch(batch, processor, model, save_name_start, extension, device):
+    batch_predictions = predict_segmentation(batch, processor, model, device)
+
+    for prediction, (_, image_path) in zip(batch_predictions, batch):
+        segmentation = prediction.cpu().numpy()
+        rgb_image = mapillary_to_cityscapes_rgb(segmentation)
+        
+        dir_name, base_name = os.path.split(image_path)
+        name, ext = os.path.splitext(base_name)
+        ext = extension if extension is not None else ext  # Extension override
+        output_name = f"{save_name_start}_{name.split('_')[-1]}{ext}"
+        output_path = os.path.join(dir_name, output_name)
+        
+        img = Image.fromarray(rgb_image)
+        img.save(output_path)
+
 # ====================== Main functions ======================
 
 
@@ -330,21 +682,60 @@ def main():
 
 # ============================================================
 
+@main.command(name='predict-ss', help='Predict the semantic segmentation of the RGB images in the given directory.')
+@click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
+@click.option('--rgb-prefixes', default='rgb', help='Prefixes of the RGB images to predict the semantic segmentation (e.g., rgb_central000124.png)', type=str)
+# Optional
+@click.option('--save-name-prefix', 'save_name_start', default='ss_hat', help='Prefix for the saved semantic segmentation images.', type=str)
+@click.option('--extension', default=None, help='Image extension for the saved semantic segmentation images.', type=click.Choice(['.png', '.jpg', '.jpeg']))
+@click.option('--device', default='cuda', help='Device to use for prediction.', type=click.Choice(['cuda', 'cpu']))
+@click.option('--num-workers', default=8, help='Number of workers to use for parallel processing.', type=click.IntRange(min=1))
+def predict_semantic_segmentation(dataset_path, rgb_prefixes, save_name_start, extension, device, num_workers):
+    # Load the model
+    model_name = "facebook/mask2former-swin-large-mapillary-vistas-semantic"
+    processor = AutoImageProcessor.from_pretrained(model_name)
+    model = Mask2FormerForUniversalSegmentation.from_pretrained(model_name).to(device)
+    model.eval()
+
+    image_paths = get_files_with_prefix(dataset_path, [rgb_prefixes])
+    print(f"Found {len(image_paths)} images to process.")
+
+    # dataset = ImageDataset(image_paths, processor)
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda x: x, num_workers=0)
+
+    # with ThreadPoolExecutor(max_workers=8) as executor:
+    #     futures = [executor.submit(process_batch, batch, processor, model, save_name_start, extension, device) for batch in dataloader]
+    #     for future in tqdm(as_completed(futures), total=len(futures), desc="Processing images"):
+    #         future.result()
+
+    # with ThreadPoolExecutor(max_workers=8) as executor:
+    #     futures = [executor.submit(process_batch, batch, processor, model, save_name_start, extension, device) for batch in dataloader]
+    #     for future in tqdm(as_completed(futures), total=len(futures), desc="Processing images"):
+    #         future.result()
+    
+    # print('Done!')
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(process_image, image_path, processor, model, save_name_start, extension, device) for image_path in image_paths]
+        for future in tqdm(futures, total=len(image_paths), desc="Processing images"):
+            future.result()
+    print('Done!')
+
 
 @main.command(name='visualize-routes')
 @click.option('--dataset-path', default='carla', help='Dataset root to visualize.', type=click.Path(exists=True))
 @click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0))
-@click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', 
-              type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3']), show_default=True)
+@click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3']), show_default=True)
+@click.option('--json-filename', default='cmd_fix_can_bus', help='Filename of the JSON file containing the data.', type=click.Choice(['can_bus', 'cmd_fix_can_bus']), show_default=True)
 @click.option('--out', 'output_path', help='Output path for the videos. If not specified/None, will be in the directory of the dataset.', default=None, show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
-def visualize_routes(dataset_path, fps, camera_name, output_path: str = None, processes_per_cpu: int = 1) -> type(None):
+def visualize_routes(dataset_path, fps, camera_name, json_filename, output_path: str = None, processes_per_cpu: int = 1) -> type(None):
     """ Generate one video per route in the dataset. The structure of the dataset is as follows: 
             data_root/WEATHER/ROUTE/SENSOR_DATA 
-        where WEATHER is one of four weather types (ClearNoon, etc.), ROUTE is the route number, and
-        SENSOR_DATA is the sensor data for that route, ordered in time and starting in 00000.
-        We will save the videos at the root of the dataset, in a folder called 'videos'.
+        where WEATHER is one of the weather types (ClearNoon, etc.), ROUTE contains the route number,
+        and SENSOR_DATA is the sensor data for that route, ordered in time and starting in 00000.
+        We will save the videos at the root of the dataset, in a subdirectory called 'videos'.
     """
     # Get all the weathers in the dataset
     weathers = sorted([weather for weather in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, weather))])
@@ -359,8 +750,7 @@ def visualize_routes(dataset_path, fps, camera_name, output_path: str = None, pr
     for weather in weathers:
         routes = sorted([route for route in os.listdir(os.path.join(dataset_path, weather)) if os.path.isdir(os.path.join(dataset_path, weather, route))])
         for route in routes:
-            pool.apply_async(create_video_for_route, args=(dataset_path, weather, route, fps, camera_name, output_path))
-
+            pool.apply_async(create_video_for_route, args=(dataset_path, weather, route, fps, camera_name, output_path, json_filename))
     pool.close()
     pool.join()
 
@@ -454,7 +844,9 @@ def create_virtual_atts(dataset_path, depth_threshold, min_depth, noise_cat, see
 @click.option('--dataset-path', help='Path to the root of your dataset to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
 def command_fix(dataset_path: Union[str, os.PathLike]):
     """ Manually fix a bug in the dataset wherein the command/direction is given too soon to the ego vehicle. """
-    all_containers_path_list = glob(os.path.join(dataset_path, '*'))
+    all_containers_path_list = find_deepest_directories(dataset_path)
+    # all_containers_path_list = glob(os.path.join(dataset_path, '*'))
+    all_containers_path_list = [path for path in all_containers_path_list if 'videos' not in path]
     utils.sort_nicely(all_containers_path_list)
 
     args = [(container_path, dataset_path) for container_path in all_containers_path_list]

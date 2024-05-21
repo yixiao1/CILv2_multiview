@@ -32,14 +32,17 @@ def make_data_loader(model_name: str = 'CIL_multiview',
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=False,
                                   num_workers=g_conf.NUM_WORKER, drop_last=True)
 
-    val_loaders_list=[]
-    for valid_dataset_name in valid_dataset_names:
-        val_set = carlaImages.carlaImages(model_name, base_dir, [valid_dataset_name], split='val', 
-                                          rank=rank, resize_attention=res_attr)
-        val_loader = DataLoader(val_set,
-                                batch_size=batch_size_eval,
-                                shuffle=False,
-                                num_workers=6,
-                                drop_last=True)
-        val_loaders_list.append(val_loader)
-        return train_loader, val_loaders_list
+    if len(valid_dataset_names) == 0:
+        return train_loader, []
+    else:
+        val_loaders_list=[]
+        for valid_dataset_name in valid_dataset_names:
+            val_set = carlaImages.carlaImages(model_name, base_dir, [valid_dataset_name], split='val', 
+                                            rank=rank, resize_attention=res_attr)
+            val_loader = DataLoader(val_set,
+                                    batch_size=batch_size_eval,
+                                    shuffle=False,
+                                    num_workers=6,
+                                    drop_last=True)
+            val_loaders_list.append(val_loader)
+            return train_loader, val_loaders_list

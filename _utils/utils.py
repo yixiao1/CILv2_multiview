@@ -3,7 +3,7 @@ import torch
 import glob
 import os
 import re
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Dict, Any
 
 from skimage import transform
 import numpy as np
@@ -107,7 +107,7 @@ def print_train_info(log_frequency, final_epoch, batch_size, model,
             msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Throttle Loss {acc_loss_data:.4f},"
         else:
             msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f},"
-        msg = f'{msg} Attention Loss {att_loss_data:.4f},' if att_loss_data is not None else msg
+        msg = f'{msg} Attention Loss {att_loss_data:.6f},' if att_loss_data is not None else msg
         msg = f"{msg} {log_frequency / acc_time:.2f} steps/s, ETA: {hours:0>2d}H:{minutes:0>2d}M:{seconds:0>2d}S"
         print(msg)
 
@@ -141,28 +141,29 @@ def read_results(result_file: Union[str, os.PathLike], metric: str = '') -> np.n
 
 
 def draw_offline_evaluation_results(experiment_path: Union[str, os.PathLike],
-                                    metrics_list: List[str],
+                                    metrics_list: List[str] = None,
                                     x_range: List[int] = None):
-    for metric in metrics_list:
-        print('drawing results graph for ', experiment_path, 'of', metric)
-        results_files = glob.glob(os.path.join(experiment_path, '*.csv'))
-        for results_file in results_files:
-            plt.figure()
-            output_path = os.path.join(experiment_path, results_file.split(os.sep)[-1].split('.')[-2]+ '_' + metric+'.jpg')
-            results_list = read_results(results_file, metric=metric)
-            epochs_list = read_results(results_file, metric='epoch')
-            plt.ylabel(metric, fontsize=15)
-            plt.plot(epochs_list, results_list)
-            for i in range(len(results_list)):
-                if results_list[i] == min(results_list):
-                    plt.text(epochs_list[i], results_list[i], str(results_list[i]), color='blue',
-                             fontweight='bold')
-                    plt.plot(epochs_list[i], results_list[i], color='blue', marker='*')
-            plt.xlabel('Epoch', fontsize=15)
-            plt.xlim(left=x_range[0], right=x_range[-1])
-            plt.title(results_file.split(os.sep)[-1].split('.')[-2])
-            plt.savefig(output_path)
-            plt.close()
+    if metrics_list is not None:
+        for metric in metrics_list:
+            print('drawing results graph for ', experiment_path, 'of', metric)
+            results_files = glob.glob(os.path.join(experiment_path, '*.csv'))
+            for results_file in results_files:
+                plt.figure()
+                output_path = os.path.join(experiment_path, results_file.split(os.sep)[-1].split('.')[-2]+ '_' + metric+'.jpg')
+                results_list = read_results(results_file, metric=metric)
+                epochs_list = read_results(results_file, metric='epoch')
+                plt.ylabel(metric, fontsize=15)
+                plt.plot(epochs_list, results_list)
+                for i in range(len(results_list)):
+                    if results_list[i] == min(results_list):
+                        plt.text(epochs_list[i], results_list[i], str(results_list[i]), color='blue',
+                                fontweight='bold')
+                        plt.plot(epochs_list[i], results_list[i], color='blue', marker='*')
+                plt.xlabel('Epoch', fontsize=15)
+                plt.xlim(left=x_range[0], right=x_range[-1])
+                plt.title(results_file.split(os.sep)[-1].split('.')[-2])
+                plt.savefig(output_path)
+                plt.close()
 
 
 def write_model_results(experiment_path: Union[str, os.PathLike], model_name: str, results_dict: dict, acc_as_action: bool = False, att_loss: bool = False):
@@ -331,9 +332,13 @@ def zero_diagonal_att_map(attn_weights: Union[torch.Tensor, List[torch.Tensor]])
     return att_map
 
 
-def min_max_norm(x: Union[np.array, torch.Tensor]) -> Union[np.array, torch.Tensor]:
+def min_max_norm(x: Union[np.array, torch.Tensor],
+                 dim: int = None) -> Union[np.array, torch.Tensor]:
     """ Min-max normalization of array/tensor """
-    return (x - x.min()) / (x.max() - x.min())
+    if dim is None:
+        return (x - x.min()) / (x.max() - x.min())
+    else:
+        return (x - x.min(dim=dim, keepdim=True)[0]) / (x.max(dim=dim, keepdim=True)[0] - x.min(dim=dim, keepdim=True)[0])
 
 
 # Transformations for U2Net (adapted from https://github.com/xuebinqin/U-2-Net)
@@ -388,3 +393,68 @@ class ToTensorLab(object):
 		tmpImg = tmpImg.transpose((2, 0, 1))
 
 		return torch.from_numpy(tmpImg)
+
+
+# ==================== Sensor Config Functions ====================
+
+
+def create_camera_sensors(
+    sensor_config: Dict[str, str],  # Mapping from sensor type to custom name
+    base_ids: List[str],
+    positions: List[Tuple[float, float, float]],  # List of (x, y, z) for each camera
+    rotations: List[Tuple[float, float, float]],  # List of (roll, pitch, yaw) for each camera
+    width: int = 300,
+    height: int = 300,
+    fov: float = 60.0
+) -> List[Dict[str, Any]]:
+    """
+    Create a list of camera sensor dictionaries for CARLA.
+
+    Args:
+        sensor_config (Dict[str, str]): Mapping from sensor type (e.g., 'sensor.camera.rgb') to custom name (e.g., 'resized_rgb').
+        base_ids (List[str]): List of base IDs (e.g., 'central', 'left', 'right') for naming sensors.
+        positions (List[Tuple[float, float, float]]): List of positions (x, y, z) for each camera.
+        rotations (List[Tuple[float, float, float]]): List of rotations (roll, pitch, yaw) for each camera.
+        width (int, optional): Width of the camera image. Defaults to 300.
+        height (int, optional): Height of the camera image. Defaults to 300.
+        fov (float, optional): Field of view of the camera. Defaults to 60.0.
+
+    Returns:
+        List[Dict[str, Any]]: List of dictionaries representing camera sensors.
+    """
+    # Rename sensors
+    sensors = []
+    for sensor_type, custom_name in sensor_config.items():
+        for base_id, position, rotation in zip(base_ids, positions, rotations):
+            sensor_id = f"{custom_name}_{base_id}"
+            x, y, z = position
+            roll, pitch, yaw = rotation  # Unpack roll, pitch, and yaw
+            sensors.append({
+                'type': sensor_type,
+                'x': x,
+                'y': y,
+                'z': z,
+                'roll': roll,
+                'pitch': pitch,
+                'yaw': yaw,
+                'width': width,
+                'height': height,
+                'fov': fov,
+                'id': sensor_id,
+                'lens_circle_setting': False
+            })
+    return sensors
+
+def create_other_sensors(sensor_types: List[str], ids: List[str]) -> List[Dict[str, str]]:
+    """
+    Create a list of non-camera sensor dictionaries for CARLA.
+
+    Args:
+        sensor_types (List[str]): List of sensor types (e.g., 'sensor.other.gnss', 'sensor.other.imu').
+        ids (List[str]): List of IDs for the sensors.
+
+    Returns:
+        List[Dict[str, str]]: List of dictionaries representing non-camera sensors.
+    """
+    return [{'type': sensor_type, 'id': id} for sensor_type, id in zip(sensor_types, ids)]
+
