@@ -265,7 +265,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     if rank == 0:
                         acc_time = utils.print_train_info(
                             g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                            acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), att_loss_data=att_loss.item())
+                            acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), att_loss_data=att_loss)
                 else:
                     loss, steer_loss, throttle_loss, brake_loss, att_loss = model.loss(loss_params)
                     if rank == 0:

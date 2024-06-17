@@ -168,6 +168,7 @@ def decode_directions_6(one_hot_direction):
 def decode_directions_4(one_hot_direction):
     one_hot_direction = list(one_hot_direction)
     index = one_hot_direction.index(max(one_hot_direction))
+
     # TURN_LEFT
     if index == 0:
         return 1.0
@@ -182,6 +183,65 @@ def decode_directions_4(one_hot_direction):
         return 4.0
     else:
         raise ValueError("Unexpcted direction identified %s" % one_hot_direction)
+
+def decode_directions_4_str(one_hot_direction):
+    one_hot_direction = list(one_hot_direction)
+    index = one_hot_direction.index(max(one_hot_direction))
+    # TURN_LEFT
+    if index == 0:
+        return 'TURN LEFT'
+    # TURN_RIGHT
+    elif index == 1:
+        return 'TURN RIGHT'
+    # GO_STRAIGHT
+    elif index == 2:
+        return 'GO STRAIGHT'
+    # FOLLOW_LANE
+    elif index == 3:
+        return 'FOLLOW LANE'
+    else:
+        raise ValueError("Unexpcted direction identified %s" % one_hot_direction)
+
+def decode_onehot_directions_to_str(one_hot_direction):
+    one_hot_direction = list(one_hot_direction)
+    index = one_hot_direction.index(max(one_hot_direction))
+    # TURN_LEFT
+    if index == 0:
+        return 'TURN LEFT'
+    # TURN_RIGHT
+    elif index == 1:
+        return 'TURN RIGHT'
+    # GO_STRAIGHT
+    elif index == 2:
+        return 'GO STRAIGHT'
+    # FOLLOW_LANE
+    elif index == 3:
+        return 'FOLLOW LANE'
+    # CHANGELANE_LEFT
+    elif index == 4:
+        return 'CHANGELANE LEFT'
+    # CHANGELANE_RIGHT
+    elif index == 5:
+        return 'CHANGELANE RIGHT'
+    else:
+        raise ValueError("Unexpcted direction identified %s" % one_hot_direction)
+
+
+def decode_float_directions_to_str(float_direction):
+    if float_direction == 1.0:
+        return 'TURN LEFT'
+    elif float_direction == 2.0:
+        return 'TURN RIGHT'
+    elif float_direction == 3.0:
+        return 'GO STRAIGHT'
+    elif float_direction == 4.0:
+        return 'FOLLOW LANE'
+    elif float_direction == 5.0:
+        return 'CHANGELANE LEFT'
+    elif float_direction == 6.0:
+        return 'CHANGELANE RIGHT'
+    else:
+        raise ValueError("Unexpcted direction identified %s" % float_direction)
 
 
 def inverse_normalize(tensor, mean, std):
@@ -219,6 +279,7 @@ SS_CONVERTER = np.uint8([
     0,    # dynamic
     0,    # water
     0,    # terrain
+    1,    # Curb
     ])
 
 ss_classes = {
@@ -244,26 +305,25 @@ ss_classes = {
         19: [110, 190, 160],  # Statics
         20: [170, 120, 50],  # Dynamics
         21: [45, 60, 150],  # Water
-        22: [145, 170, 100]  # Terrains
+        22: [145, 170, 100],  # Terrains
+        23: [255, 255, 100]  # Curb; usually from pre-trained models (e.g., Mapillary Vistas)
 }
 
 
-def fix_segmentation(segmented_img):
-    pass
-
-
-def read_images(depth_path, segmented_path):
-    depth_img = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
-    segmented_img = cv2.imread(segmented_path, cv2.IMREAD_UNCHANGED)
-
-    if segmented_img.ndim == 3 and segmented_img.shape[2] == 4:  # Check if it's an RGB image
-        segmented_img = segmented_img[:, :, -2:-5:-1]
-        segmented_one_channel = np.zeros((segmented_img.shape[0], segmented_img.shape[1]), dtype=np.uint8)
+def read_images(image_path, image_type: str = 'depth'):
+    image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if image_type == 'depth':
+        return image
+    elif image_type == 'segmentation':
+        if image.shape[2] == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
+        image = image[:, :, -2:-5:-1]
+        image_one_channel = np.zeros((image.shape[0], image.shape[1]), dtype=np.uint8)
         for label, color in ss_classes.items():
-            mask = np.all(segmented_img == np.array(color).reshape(1, 1, 3), axis=2)
-            segmented_one_channel[mask] = label
-        segmented_img = segmented_one_channel
-    return depth_img, segmented_img
+            mask = np.all(image == np.array(color).reshape(1, 1, 3), axis=2)
+            image_one_channel[mask] = label
+        image = image_one_channel
+        return image
 
 
 def process_depth_image(depth_img):
@@ -277,10 +337,13 @@ def process_depth_image(depth_img):
 
 def create_masks(depth_img, segmentation, converter, road_label: int = 7, sidewalk_label: int = 8, line_label: int = 6,
                  central_camera: bool = False, depth_threshold: float = 20.0, min_depth: float = 2.3):
-    min_depth = min_depth if central_camera else 0
-    depth_condition = (depth_img < depth_threshold) & (depth_img > min_depth)
-    mask_depth = np.where(depth_condition, 255, 0).astype(np.uint8)
     mask_segmentation = np.isin(segmentation, np.where(converter == 1)[0]).astype(np.uint8) * 255
+    if depth_img is not None:
+        min_depth = min_depth if central_camera else 0
+        depth_condition = (depth_img < depth_threshold) & (depth_img > min_depth)
+        mask_depth = np.where(depth_condition, 255, 0).astype(np.uint8)
+    else:
+        mask_depth = 255 * np.ones_like(mask_segmentation)
     road_mask = (segmentation == road_label).astype(np.uint8)
     sidewalk_mask = (segmentation == sidewalk_label).astype(np.uint8)
     line_mask = (segmentation == line_label).astype(np.uint8)
@@ -352,7 +415,7 @@ def generate_depth_aware_perlin_noise(depth_not_norm, scale: int = 30, layers: i
     depth_data = np.max(depth_data) - (depth_data - np.min(depth_data)) + 1e-20
     depth_data = depth_data.T
 
-    cv2.imwrite("depth.png", depth_data)
+    # cv2.imwrite("depth.png", depth_data)
     # Prepare Perlin noise parameters
     perm = np.random.permutation(PERMUTATION_SIZE)
     p = np.array([perm[i % PERMUTATION_SIZE] for i in range(512)])
@@ -449,10 +512,14 @@ def create_mask_noise(width, height, percentage):
 
 
 def get_virtual_attention_map(depth_path, segmented_path, noise_cat: int = 0, central_camera: bool = True,
-                              depth_threshold: float = 20.0, min_depth: float = 2.3,
+                              depth_threshold: float = 20.0, min_depth: float = 2.3, 
                               DILATION_KERNEL_SIZE: int = 10, DILATION_ITERATIONS: int = 1):
-    depth_rgb, segmentation = read_images(depth_path, segmented_path)
-    depth_img = process_depth_image(depth_rgb)
+    segmentation = read_images(segmented_path, 'segmentation')
+    if depth_path is not None:
+        depth_rgb = read_images(depth_path, 'depth')
+        depth_img = process_depth_image(depth_rgb)
+    else:
+        depth_img = None
     mask_depth, mask_segmentation, road_mask, sidewalk_mask, line_mask = create_masks(
         depth_img, segmentation, SS_CONVERTER, central_camera=central_camera,
         depth_threshold=depth_threshold, min_depth=min_depth)
@@ -462,42 +529,45 @@ def get_virtual_attention_map(depth_path, segmented_path, noise_cat: int = 0, ce
     merge_boundary = mask_segmentation
 
     merge = cv2.bitwise_and(mask_depth, merge_boundary)
-    merge_simple = merge.copy()
+    # merge_simple = merge.copy()
 
-    width, height = depth_img.shape[1], depth_img.shape[0]
-    first_depth_part = depth_img < 10
-    second_depth_part = (depth_img >= 10) * (depth_img < 20)
-    third_depth_part = depth_img >= 20
+    if depth_img is not None:
+        width, height = depth_img.shape[1], depth_img.shape[0]
+        first_depth_part = depth_img < 10
+        second_depth_part = (depth_img >= 10) * (depth_img < 20)
+        third_depth_part = depth_img >= 20
 
-    mask_noise_first = create_mask_noise(width, height, 70) * first_depth_part
-    mask_noise_second = create_mask_noise(width, height, 50) * second_depth_part
-    mask_noise_third = create_mask_noise(width, height, 10) * third_depth_part
-    mask_noise = mask_noise_first + mask_noise_second + mask_noise_third
+        mask_noise_first = create_mask_noise(width, height, 70) * first_depth_part
+        mask_noise_second = create_mask_noise(width, height, 50) * second_depth_part
+        mask_noise_third = create_mask_noise(width, height, 10) * third_depth_part
+        mask_noise = mask_noise_first + mask_noise_second + mask_noise_third
 
-    noise = generate_depth_aware_perlin_noise(depth_img, scale=3, layers=1)
-    th = 0.6
-    noise[noise < th] = 0
-    noise[noise >= th] = 1
-    noise = noise.T
-    noise = 1 - noise
-    cv2.imwrite("noise.png", noise * 255)
-
-    masked_noise_image = mask_noise * noise
-    masked_noise_image = masked_noise_image.astype(np.uint8)
-
-    # Merge with other masks
-    if noise_cat == 2:
-        boundary_noise = (boundary * noise).astype(np.uint8)
-        # save_mask("bound.png", boundary_noise, "reprojected_images_pres_boundary_noise/")
-        merge = merge * (masked_noise_image == 0) + boundary_noise
-    elif noise_cat == 1:
-        merge = cv2.bitwise_or(merge, boundary)
-        merge = merge * (masked_noise_image == 0)
-    elif noise_cat == 0:
+    if noise_cat == 0:
         merge = cv2.bitwise_or(merge, boundary)
     else:
-        merge = cv2.bitwise_or(merge, boundary)
-        merge = (merge * noise).astype(np.uint8)
+
+        noise = generate_depth_aware_perlin_noise(depth_img, scale=3, layers=1)
+        th = 0.6
+        noise[noise < th] = 0
+        noise[noise >= th] = 1
+        noise = noise.T
+        noise = 1 - noise
+        # cv2.imwrite("noise.png", noise * 255)
+
+        masked_noise_image = mask_noise * noise
+        masked_noise_image = masked_noise_image.astype(np.uint8)
+
+        # Merge with other masks
+        if noise_cat == 2:
+            boundary_noise = (boundary * noise).astype(np.uint8)
+            # save_mask("bound.png", boundary_noise, "reprojected_images_pres_boundary_noise/")
+            merge = merge * (masked_noise_image == 0) + boundary_noise
+        elif noise_cat == 1:
+            merge = cv2.bitwise_or(merge, boundary)
+            merge = merge * (masked_noise_image == 0)
+        else:
+            merge = cv2.bitwise_or(merge, boundary)
+            merge = (merge * noise).astype(np.uint8)
 
     return depth_img, segmentation, mask_depth, mask_segmentation, boundary, merge_boundary, merge
 

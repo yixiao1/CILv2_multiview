@@ -107,7 +107,7 @@ def print_train_info(log_frequency, final_epoch, batch_size, model,
             msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Throttle Loss {acc_loss_data:.4f},"
         else:
             msg = f"{msg} Steer Loss {steer_loss_data:.4f}, Acc Loss {acc_loss_data:.4f},"
-        msg = f'{msg} Attention Loss {att_loss_data:.6f},' if att_loss_data is not None else msg
+        msg = f'{msg} Attention Loss {att_loss_data.item():.6f},' if att_loss_data is not None else msg
         msg = f"{msg} {log_frequency / acc_time:.2f} steps/s, ETA: {hours:0>2d}H:{minutes:0>2d}M:{seconds:0>2d}S"
         print(msg)
 

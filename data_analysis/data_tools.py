@@ -83,8 +83,8 @@ def prepare_semantic_segmentation(args) -> type(None):
         # Save it (overwrite)
         cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA))
 
-def process_map(args) -> type(None):
-    idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, dataset, subdata, route = args
+def process_map(args) -> None:
+    idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, base_path, route = args
     *_, mask_merge_central = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx],
         segmented_path=semantic_segmentation_paths[idx],
@@ -116,9 +116,9 @@ def process_map(args) -> type(None):
         fname_right = f'virtual_attention_right_noise_{noise_cat}_{idx:06d}.jpg'
 
     # Save the masks, they are 2D numpy arrays, so we can use PIL
-    Image.fromarray(mask_merge_central).save(os.path.join(dataset, subdata, route, fname_central))
-    Image.fromarray(mask_merge_left).save(os.path.join(dataset, subdata, route, fname_left))
-    Image.fromarray(mask_merge_right).save(os.path.join(dataset, subdata, route, fname_right))
+    Image.fromarray(mask_merge_central).save(os.path.join(base_path, route, fname_central))
+    Image.fromarray(mask_merge_left).save(os.path.join(base_path, route, fname_left))
+    Image.fromarray(mask_merge_right).save(os.path.join(base_path, route, fname_right))
 
 
 def process_container(args) -> type(None):
@@ -644,23 +644,31 @@ class ImageDataset(Dataset):
         image_path = self.image_paths[idx]
         image = Image.open(image_path).convert("RGB")
         inputs = self.processor(images=image, return_tensors="pt")
-        return inputs, image_path
+        inputs["image_path"] = image_path
+        inputs["image_size"] = [*image.size]
+        return inputs
 
-# Modified predict_segmentation function to handle batches
-# def predict_segmentation(batch, processor, model, device):
-#     inputs = {key: torch.cat([b[0][key] for b in batch]).to(device) for key in batch[0][0]}
-#     with torch.no_grad():
-#         outputs = model(**inputs)
-#     predicted_semantic_maps = processor.post_process_semantic_segmentation(
-#         outputs, target_sizes=[(b[1]['pixel_values'].shape[1], b[1]['pixel_values'].shape[2]) for b in batch]
-#     )
-#     return predicted_semantic_maps
+def collate_fn(batch):
+    keys = batch[0].keys()
+    collated_batch = {key: [item[key] for item in batch] for key in keys}
+    collated_batch["pixel_values"] = torch.cat([x for x in collated_batch["pixel_values"]], dim=0)
+    return collated_batch
 
-def process_batch(batch, processor, model, save_name_start, extension, device):
-    batch_predictions = predict_segmentation(batch, processor, model, device)
+def process_batch(batch, processor, model, device):
+    pixel_values = batch["pixel_values"].to(device)
+    image_paths = batch["image_path"]
+    image_sizes = batch["image_size"]
 
-    for prediction, (_, image_path) in zip(batch_predictions, batch):
-        segmentation = prediction.cpu().numpy()
+    with torch.no_grad():
+        outputs = model(pixel_values=pixel_values)
+    
+    predicted_semantic_maps = processor.post_process_semantic_segmentation(outputs, target_sizes=image_sizes)
+    
+    return predicted_semantic_maps, image_paths
+
+def save_segmentation(predicted_semantic_maps, image_paths, save_name_start, extension):
+    for seg_map, image_path in zip(predicted_semantic_maps, image_paths):
+        segmentation = seg_map.cpu().numpy()
         rgb_image = mapillary_to_cityscapes_rgb(segmentation)
         
         dir_name, base_name = os.path.split(image_path)
@@ -671,6 +679,15 @@ def process_batch(batch, processor, model, save_name_start, extension, device):
         
         img = Image.fromarray(rgb_image)
         img.save(output_path)
+
+def save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_start, extension, num_workers=8):
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [
+            executor.submit(save_segmentation, [seg_map], [image_path], save_name_start, extension)
+            for seg_map, image_path in zip(predicted_semantic_maps, image_paths)
+        ]
+        for future in as_completed(futures):
+            future.result()
 
 # ====================== Main functions ======================
 
@@ -684,58 +701,56 @@ def main():
 
 @main.command(name='predict-ss', help='Predict the semantic segmentation of the RGB images in the given directory.')
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
-@click.option('--rgb-prefixes', default='rgb', help='Prefixes of the RGB images to predict the semantic segmentation (e.g., rgb_central000124.png)', type=str)
+@click.option('--rgb-prefix', default='rgb', help='Prefixes of the RGB images to predict the semantic segmentation (e.g., rgb_central000124.png)', type=str)
+# Data saving options
+@click.option('--save-name-prefix', 'save_name_prefix', default='ss_hat', help='Prefix for the saved semantic segmentation images.', type=str)
+@click.option('--save-extension', 'save_name_extension', default=None, help='Image extension for the saved semantic segmentation images.', type=click.Choice(['.png', '.jpg', '.jpeg']))
 # Optional
-@click.option('--save-name-prefix', 'save_name_start', default='ss_hat', help='Prefix for the saved semantic segmentation images.', type=str)
-@click.option('--extension', default=None, help='Image extension for the saved semantic segmentation images.', type=click.Choice(['.png', '.jpg', '.jpeg']))
 @click.option('--device', default='cuda', help='Device to use for prediction.', type=click.Choice(['cuda', 'cpu']))
 @click.option('--num-workers', default=8, help='Number of workers to use for parallel processing.', type=click.IntRange(min=1))
-def predict_semantic_segmentation(dataset_path, rgb_prefixes, save_name_start, extension, device, num_workers):
-    # Load the model
+@click.option('--gpu-id', default=None, help='GPU ID to use for prediction, if using gpu.', type=click.IntRange(min=0))
+@click.option('--batch-size', default=16, help='Batch size for prediction.', type=click.IntRange(min=1))
+def predict_semantic_segmentation(dataset_path, rgb_prefix, save_name_prefix, save_name_extension, device, num_workers, gpu_id, batch_size):
+    # Set device
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id) if gpu_id is not None else '0'
+    device = 'cuda' if gpu_id is not None and torch.cuda.is_available() else device
+
     model_name = "facebook/mask2former-swin-large-mapillary-vistas-semantic"
     processor = AutoImageProcessor.from_pretrained(model_name)
     model = Mask2FormerForUniversalSegmentation.from_pretrained(model_name).to(device)
     model.eval()
 
-    image_paths = get_files_with_prefix(dataset_path, [rgb_prefixes])
-    print(f"Found {len(image_paths)} images to process.")
+    image_paths = get_files_with_prefix(dataset_path, [rgb_prefix])
+    utils.sort_nicely(image_paths)
+    total_images = len(image_paths)
 
-    # dataset = ImageDataset(image_paths, processor)
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda x: x, num_workers=0)
-
-    # with ThreadPoolExecutor(max_workers=8) as executor:
-    #     futures = [executor.submit(process_batch, batch, processor, model, save_name_start, extension, device) for batch in dataloader]
-    #     for future in tqdm(as_completed(futures), total=len(futures), desc="Processing images"):
-    #         future.result()
-
-    # with ThreadPoolExecutor(max_workers=8) as executor:
-    #     futures = [executor.submit(process_batch, batch, processor, model, save_name_start, extension, device) for batch in dataloader]
-    #     for future in tqdm(as_completed(futures), total=len(futures), desc="Processing images"):
-    #         future.result()
+    dataset = ImageDataset(image_paths, processor)
+    dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=False, num_workers=3)
     
-    # print('Done!')
+    with tqdm(total=total_images, desc="Processing images", unit="images") as pbar:
+        for batch in dataloader:
+            predicted_semantic_maps, image_paths = process_batch(batch, processor, model, device)
+            save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_prefix, save_name_extension, num_workers)
+            pbar.update(len(image_paths))
 
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(process_image, image_path, processor, model, save_name_start, extension, device) for image_path in image_paths]
-        for future in tqdm(futures, total=len(image_paths), desc="Processing images"):
-            future.result()
     print('Done!')
 
 
 @main.command(name='visualize-routes')
 @click.option('--dataset-path', default='carla', help='Dataset root to visualize.', type=click.Path(exists=True))
 @click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0))
-@click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3']), show_default=True)
+@click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3', 'ss', 'ss_hat']), show_default=True)
 @click.option('--json-filename', default='cmd_fix_can_bus', help='Filename of the JSON file containing the data.', type=click.Choice(['can_bus', 'cmd_fix_can_bus']), show_default=True)
 @click.option('--out', 'output_path', help='Output path for the videos. If not specified/None, will be in the directory of the dataset.', default=None, show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 def visualize_routes(dataset_path, fps, camera_name, json_filename, output_path: str = None, processes_per_cpu: int = 1) -> type(None):
-    """ Generate one video per route in the dataset. The structure of the dataset is as follows: 
-            data_root/WEATHER/ROUTE/SENSOR_DATA 
-        where WEATHER is one of the weather types (ClearNoon, etc.), ROUTE contains the route number,
-        and SENSOR_DATA is the sensor data for that route, ordered in time and starting in 00000.
-        We will save the videos at the root of the dataset, in a subdirectory called 'videos'.
+    """ 
+    Generate one video per route in the dataset. The structure of the dataset is as follows: 
+        data_root/WEATHER/ROUTE/SENSOR_DATA  OR  data_root/ROUTE/SENSOR_DATA
+    where WEATHER is one of the weather types (ClearNoon, etc.), ROUTE contains the route number,
+    and SENSOR_DATA is the sensor data for that route, ordered in time, with the first tick number 
+    starting in 00000. We will save the videos at the root of the dataset, in a subdirectory called 'videos'.
     """
     # Get all the weathers in the dataset
     weathers = sorted([weather for weather in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, weather))])
@@ -788,8 +803,44 @@ def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) ->
     print('Done!')
 
 
+class InfiniteNone:
+    def __getitem__(self, index):
+        return None
+    
+    def __len__(self):
+        return float('inf')
+    
+def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat):
+    # Get the sensor data paths
+    paths = get_paths(data_root=os.path.join(base_path, route), sensors=sensor_names)
+
+    # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
+    depth_paths = [path for path in paths if 'depth' in path] if not ignore_depth else InfiniteNone()
+    semantic_segmentation_paths = [path for path in paths if 'ss' in path]
+    can_bus_paths = [path for path in paths if path.split(os.sep)[-1].startswith('can_bus')]
+
+    if not ignore_depth:
+        assert len(depth_paths) == len(semantic_segmentation_paths) == len(can_bus_paths) * 3, \
+            f"Error, sensor mismatch: number of Depth paths: {len(depth_paths)}, SS paths: {len(semantic_segmentation_paths)}, CAN Bus paths: {len(can_bus_paths)}"
+    else:
+        assert len(semantic_segmentation_paths) == len(can_bus_paths) * 3, \
+            f"Error, sensor mismatch: number of SS paths: {len(semantic_segmentation_paths)}, CAN Bus paths: {len(can_bus_paths)}"
+
+    num_data_route = len(can_bus_paths)
+
+    # Prepare the semantic segmentation images before
+    args = [(idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth,
+             num_data_route, base_path, route) for idx in range(num_data_route)]
+    for _ in tqdm(pool.imap(process_map, args), total=num_data_route,
+                  desc=f'Generating the virtual attention maps [{os.path.basename(base_path)}/{route}]'):
+        pass
+
+
+
 @main.command(name='create-virtual-attentions')
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
+@click.option('--ignore-depth', is_flag=True, help='Ignore the depth images and only use the semantic segmentation images.')
+@click.option('--ss-prefix', 'ss_name', default='ss', help='Prefix string of the semantic segmentation images.', type=str)
 @click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
 @click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
 # Noisy virtual attention maps
@@ -798,7 +849,7 @@ def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) ->
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def create_virtual_atts(dataset_path, depth_threshold, min_depth, noise_cat, seed, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def create_virtual_atts(dataset_path, ignore_depth, ss_name, depth_threshold, min_depth, noise_cat, seed, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
     """ Generate the virtual attention maps for the dataset using the depth and semantic segmentation images. """
     # Set the seed for the noise generation, if specified
     if seed is not None:
@@ -808,34 +859,30 @@ def create_virtual_atts(dataset_path, depth_threshold, min_depth, noise_cat, see
     subdatasets = sorted([subdir for subdir in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subdir))])
     print('Subdatasets found: ', subdatasets) if debug else None
 
+    sensor_names = ['can_bus', ss_name] if ignore_depth else ['can_bus', 'depth', ss_name]
+
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
-        for subdata in subdatasets:
-            # Get the routes in the subdataset
-            routes = sorted([route for route in os.listdir(os.path.join(dataset_path, subdata)) if
-                             os.path.isdir(os.path.join(dataset_path, subdata, route))])
-            print('Routes found: ', routes) if debug else None
+        if subdatasets:
+            # Case 1 and Case 3: Process subdirectories, which may contain further directories (routes)
+            for subdir in subdatasets:
+                subdir_path = os.path.join(dataset_path, subdir)
+                routes = sorted([route for route in os.listdir(subdir_path) if os.path.isdir(os.path.join(subdir_path, route))])
+                
+                if routes:
+                    print(f'Routes found in subdirectory {subdir}:', routes) if debug else None
+                    for route in routes:
+                        process_route(pool, subdir_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat)
+                else:
+                    print(f'Treating subdirectory {subdir} as a route') if debug else None
+                    process_route(pool, dataset_path, subdir, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat)
+        else:
+
+            # Case 2: No subdirectories found, routes are directly under dataset_path
+            routes = sorted([route for route in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, route))])
+            print('Routes found at dataset root:', routes) if debug else None
 
             for route in routes:
-                # Get the sensor data paths
-                paths = get_paths(data_root=os.path.join(dataset_path, subdata, route))
-
-                # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
-                depth_paths = [path for path in paths if 'depth' in path]
-                semantic_segmentation_paths = [path for path in paths if 'ss' in path]
-                can_bus_paths = [path for path in paths if path.split(os.sep)[-1].startswith('can_bus')]
-
-                assert len(depth_paths) == len(semantic_segmentation_paths) == len(can_bus_paths) * 3, \
-                    f"Error, sensor mismatch: number of Depth paths: {len(depth_paths)}, SS paths: {len(semantic_segmentation_paths)}, CAN Bus paths: {len(can_bus_paths)}"
-
-                num_data_route = len(can_bus_paths)
-
-                # Prepare the semantic segmentation images before
-
-                args = [(idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth,
-                         num_data_route, dataset_path, subdata, route) for idx in range(num_data_route)]
-                for _ in tqdm(pool.imap(process_map, args), total=num_data_route,
-                              desc=f'Generating the virtual attention maps [{subdata}/{route}]'):
-                    pass
+                process_route(pool, dataset_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat)
 
     print('Done!')
 

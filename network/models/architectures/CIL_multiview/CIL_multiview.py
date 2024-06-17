@@ -280,7 +280,7 @@ class CIL_multiview(nn.Module):
                 # We don't have any extra tokens, so let's just return the average attention weights of the chosen layer
                 if  attn_p2p_affinity:
                     result = torch.ones_like(attn_weights[0])
-                    for attn in attn_weights:
+                    for attn in attn_weights:  # Back to front
                         result = result * attn
                     attn_weights = utils.min_max_norm(result.mean(dim=1).squeeze(1))
                 else:
