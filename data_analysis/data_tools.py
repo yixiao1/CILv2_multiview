@@ -6,7 +6,7 @@ import os
 # os.environ['FORCE_TF_AVAILABLE'] = '1'
 
 from glob import glob
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Type
 from tqdm import tqdm
 import click
 from dataloaders import transforms
@@ -84,36 +84,45 @@ def prepare_semantic_segmentation(args) -> type(None):
         cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA))
 
 def process_map(args) -> None:
-    idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, base_path, route = args
+    idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, base_path, route, converter_label = args
     *_, mask_merge_central = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx],
         segmented_path=semantic_segmentation_paths[idx],
         noise_cat=noise_cat,
         depth_threshold=depth_threshold,
         min_depth=min_depth,
-        central_camera=True
+        central_camera=True,
+        converter_label=converter_label
     )
     *_, mask_merge_left = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx + num_data_route],
         segmented_path=semantic_segmentation_paths[idx + num_data_route],
         noise_cat=noise_cat,
-        depth_threshold=depth_threshold
+        depth_threshold=depth_threshold,
+        converter_label=converter_label
     )
     *_, mask_merge_right = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx + num_data_route * 2],
         segmented_path=semantic_segmentation_paths[idx + num_data_route * 2],
         noise_cat=noise_cat,
-        depth_threshold=depth_threshold
+        depth_threshold=depth_threshold,
+        converter_label=converter_label
     )
 
-    if noise_cat == 0:
-        fname_central = f'virtual_attention_central_{idx:06d}.jpg'
-        fname_left = f'virtual_attention_left_{idx:06d}.jpg'
-        fname_right = f'virtual_attention_right_{idx:06d}.jpg'
-    else:
-        fname_central = f'virtual_attention_central_noise_{noise_cat}_{idx:06d}.jpg'
-        fname_left = f'virtual_attention_left_noise_{noise_cat}_{idx:06d}.jpg'
-        fname_right = f'virtual_attention_right_noise_{noise_cat}_{idx:06d}.jpg'
+    # Set the name of the virtual attention files
+    fname_central = f'virtual_attention_central_'
+    fname_left = f'virtual_attention_left_'
+    fname_right = f'virtual_attention_right_'
+    
+    # Add the noise, if the noise category is different from 0 (no noise)
+    fname_central = f'f{fname_central}noise_{noise_cat}_' if noise_cat != 0 else fname_central
+    fname_left = f'{fname_left}noise_{noise_cat}_' if noise_cat != 0 else fname_left
+    fname_right = f'{fname_right}noise_{noise_cat}_' if noise_cat != 0 else fname_right
+
+    # Add the label converter and the index/frame number
+    fname_central = f'{fname_central}{idx:06d}.jpg' if converter_label is None else f'{fname_central}{converter_label}{idx:06d}.jpg'
+    fname_left = f'{fname_left}{idx:06d}.jpg' if converter_label is None else f'{fname_left}{converter_label}{idx:06d}.jpg'
+    fname_right = f'{fname_right}{idx:06d}.jpg' if converter_label is None else f'{fname_right}{converter_label}{idx:06d}.jpg'
 
     # Save the masks, they are 2D numpy arrays, so we can use PIL
     Image.fromarray(mask_merge_central).save(os.path.join(base_path, route, fname_central))
@@ -624,7 +633,7 @@ def get_files_with_prefix(directory, prefixes, num_workers=8):
     file_paths = []
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         future_to_dir = {executor.submit(get_files_in_directory, dir_path, prefixes): dir_path for dir_path in all_dirs}
-        for future in tqdm(as_completed(future_to_dir), total=len(future_to_dir), desc="Scanning directories"):
+        for future in tqdm(as_completed(future_to_dir), total=len(future_to_dir), desc="Scanning directories", dynamic_ncols=True):
             dir_files = future.result()
             file_paths.extend(dir_files)
 
@@ -727,7 +736,7 @@ def predict_semantic_segmentation(dataset_path, rgb_prefix, save_name_prefix, sa
     dataset = ImageDataset(image_paths, processor)
     dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=False, num_workers=3)
     
-    with tqdm(total=total_images, desc="Processing images", unit="images") as pbar:
+    with tqdm(total=total_images, desc="Processing images", unit="images", dynamic_ncols=True) as pbar:
         for batch in dataloader:
             predicted_semantic_maps, image_paths = process_batch(batch, processor, model, device)
             save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_prefix, save_name_extension, num_workers)
@@ -797,7 +806,8 @@ def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) ->
                 semantic_segmentation_paths = [path for path in paths if 'ss' in path]
 
                 args = [(path, dataset_path, subdata, route) for path in semantic_segmentation_paths]
-                for _ in tqdm(pool.imap(prepare_semantic_segmentation, args), total=len(args), desc=f'Preparing the semantic segmentation images [{subdata}/{route}]'):
+                for _ in tqdm(pool.imap(prepare_semantic_segmentation, args), total=len(args), 
+                              dynamic_ncols=True, desc=f'Preparing the semantic segmentation images [{subdata}/{route}]'):
                     pass
 
     print('Done!')
@@ -810,28 +820,27 @@ class InfiniteNone:
     def __len__(self):
         return float('inf')
     
-def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat):
+def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat, converter_label: str = None):
     # Get the sensor data paths
     paths = get_paths(data_root=os.path.join(base_path, route), sensors=sensor_names)
 
     # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
     depth_paths = [path for path in paths if 'depth' in path] if not ignore_depth else InfiniteNone()
     semantic_segmentation_paths = [path for path in paths if 'ss' in path]
-    can_bus_paths = [path for path in paths if path.split(os.sep)[-1].startswith('can_bus')]
+    # can_bus_paths = [path for path in paths if 'can_bus' in path.split(os.sep)[-1]]
 
     if not ignore_depth:
-        assert len(depth_paths) == len(semantic_segmentation_paths) == len(can_bus_paths) * 3, \
-            f"Error, sensor mismatch: number of Depth paths: {len(depth_paths)}, SS paths: {len(semantic_segmentation_paths)}, CAN Bus paths: {len(can_bus_paths)}"
+        assert len(depth_paths) == len(semantic_segmentation_paths), \
+            f"Error, sensor mismatch: number of Depth paths: {len(depth_paths)}, SS paths: {len(semantic_segmentation_paths)}"
     else:
-        assert len(semantic_segmentation_paths) == len(can_bus_paths) * 3, \
-            f"Error, sensor mismatch: number of SS paths: {len(semantic_segmentation_paths)}, CAN Bus paths: {len(can_bus_paths)}"
+        pass
 
-    num_data_route = len(can_bus_paths)
+    num_data_route = len(semantic_segmentation_paths) // 3
 
     # Prepare the semantic segmentation images before
     args = [(idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth,
-             num_data_route, base_path, route) for idx in range(num_data_route)]
-    for _ in tqdm(pool.imap(process_map, args), total=num_data_route,
+             num_data_route, base_path, route, converter_label) for idx in range(num_data_route)]
+    for _ in tqdm(pool.imap(process_map, args), total=num_data_route, dynamic_ncols=True,
                   desc=f'Generating the virtual attention maps [{os.path.basename(base_path)}/{route}]'):
         pass
 
@@ -843,14 +852,18 @@ def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_thre
 @click.option('--ss-prefix', 'ss_name', default='ss', help='Prefix string of the semantic segmentation images.', type=str)
 @click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
 @click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
-# Noisy virtual attention maps
+# Virtual attention maps options
+@click.option('--converter-label', 'converter_label', default=None, help='Label to convert the semantic segmentation to.', type=click.Choice(['traffic', 'dynamic', 'static']))
 @click.option('--noise-cat', 'noise_cat', default=0, help='Noise category to use for the virtual attention maps; Perlin Noise (PN) and Grid Perlin Noise (GPN). 0: No noise; 1: (global) GPN; 2: GPN on objects and PN on lines; 3: (global) PN', type=click.IntRange(min=0, max=3), show_default=True)
 @click.option('--seed', 'seed', default=None, help='Seed for the noise generation.', type=click.INT)
 # Additional params
-@click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
+@click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU core.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def create_virtual_atts(dataset_path, ignore_depth, ss_name, depth_threshold, min_depth, noise_cat, seed, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def create_virtual_atts(dataset_path: Union[str, os.PathLike], ignore_depth: bool, ss_name: str, 
+                        depth_threshold: float, min_depth: float, converter_label: str, noise_cat: int, 
+                        seed: int, processes_per_cpu: int = 1, debug: bool = False) -> Type[None]:
     """ Generate the virtual attention maps for the dataset using the depth and semantic segmentation images. """
+    print(f'Creating virtual attention maps for label "{converter_label}"') if converter_label is not None else None
     # Set the seed for the noise generation, if specified
     if seed is not None:
         from _utils import training_utils
@@ -871,10 +884,10 @@ def create_virtual_atts(dataset_path, ignore_depth, ss_name, depth_threshold, mi
                 if routes:
                     print(f'Routes found in subdirectory {subdir}:', routes) if debug else None
                     for route in routes:
-                        process_route(pool, subdir_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat)
+                        process_route(pool, subdir_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat, converter_label)
                 else:
                     print(f'Treating subdirectory {subdir} as a route') if debug else None
-                    process_route(pool, dataset_path, subdir, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat)
+                    process_route(pool, dataset_path, subdir, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat, converter_label)
         else:
 
             # Case 2: No subdirectories found, routes are directly under dataset_path
@@ -882,7 +895,7 @@ def create_virtual_atts(dataset_path, ignore_depth, ss_name, depth_threshold, mi
             print('Routes found at dataset root:', routes) if debug else None
 
             for route in routes:
-                process_route(pool, dataset_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat)
+                process_route(pool, dataset_path, route, sensor_names, ignore_depth, depth_threshold, min_depth, noise_cat, converter_label)
 
     print('Done!')
 
@@ -899,7 +912,7 @@ def command_fix(dataset_path: Union[str, os.PathLike]):
     args = [(container_path, dataset_path) for container_path in all_containers_path_list]
 
     with Pool(processes=os.cpu_count()) as pool:
-        for _ in tqdm(pool.imap(process_container, args), total=len(all_containers_path_list)):
+        for _ in tqdm(pool.imap(process_container, args), total=len(all_containers_path_list), dynamic_ncols=True):
             pass
 
 
@@ -946,7 +959,7 @@ def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str
     args = [(img, target_size) for img in rgb_images]
 
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
-        for _ in tqdm(pool.imap(resize_image, args), total=len(rgb_images), desc=f'Resizing the images'):
+        for _ in tqdm(pool.imap(resize_image, args), total=len(rgb_images), desc=f'Resizing the images', dynamic_ncols=True):
             pass
 
 # ====================== Entry point ======================

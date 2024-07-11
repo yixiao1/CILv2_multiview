@@ -178,6 +178,45 @@ def Action_nospeed_L1_Attention_KL(params):
         return loss, steer_loss, throttle_loss, brake_loss, att_loss
 
 
+def Action_nospeed_L1_mhAttention_KL(params):
+    B = params['action_output'].shape[0]  # batch_size
+
+    # SingleFrame model - we only take into account the last frame's action
+    mask_steer = (params['targets_action'][-1][:, 0] != -1000.0).detach()
+    actions_loss_mat = torch.abs(params['action_output'][:, -1, :] - params['targets_action'][-1])  # (B, 2)
+
+    steer_loss = actions_loss_mat[:, 0] * params['variable_weights']['actions']['steer']
+    num_valid_batch = mask_steer.sum().detach()
+    steer_loss = torch.sum(steer_loss) / num_valid_batch
+
+    # Attention loss
+    eps = 1e-12  # For numerical stability
+    num_heads_to_train = len(params['targets_attention'])
+    att_loss_weight_per_head = params['variable_weights']['attention'] / num_heads_to_train
+    att_loss = 0.0
+    for idx in list(params['targets_attention'].keys()):
+        att_loss += F.kl_div((params['mha_attention_output'][:, idx]+eps).log(),  # Transf. Encoder attention map (GAPn)
+                             params['targets_attention'][idx], # Ground truth attention map (virtual or human)
+                             reduction='batchmean') * att_loss_weight_per_head
+
+    if g_conf.ACCELERATION_AS_ACTION:
+        acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
+        acceleration_loss = torch.sum(acceleration_loss) / B
+
+        loss = steer_loss + acceleration_loss + att_loss
+
+        return loss, steer_loss, acceleration_loss, att_loss
+
+    else:
+        throttle_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['throttle']
+        brake_loss = actions_loss_mat[:, 2] * params['variable_weights']['actions']['brake']
+        throttle_loss = torch.sum(throttle_loss) / B
+        brake_loss = torch.sum(brake_loss) / B
+
+        loss = steer_loss + throttle_loss + brake_loss + att_loss
+
+        return loss, steer_loss, throttle_loss, brake_loss, att_loss
+
 
 def Action_nospeed_Quantile_Attention_KL(params):
     B = params['action_output'].shape[0]  # batch_size
@@ -351,6 +390,8 @@ def Loss(loss):
         return Action_nospeed_Quantile
     elif loss == 'Action_nospeed_L1_Attention_KL':
         return Action_nospeed_L1_Attention_KL
+    elif loss == 'Action_nospeed_L1_mhAttention_KL':
+        return Action_nospeed_L1_mhAttention_KL
     elif loss == 'Action_nospeed_Quantile_Attention_KL':
         return Action_nospeed_Quantile_Attention_KL
     elif loss == 'Action_nospeed_L1_Attention_L2':

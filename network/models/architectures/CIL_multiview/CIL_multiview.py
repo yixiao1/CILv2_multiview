@@ -286,11 +286,13 @@ class CIL_multiview(nn.Module):
                 else:
                     if g_conf.MHA_ATTENTION_COSSIM_LOSS:
                         attn_weights = reduce(attn_weights[-1], 'B H N1 N2 -> B N2', 'mean')  # [B, N]
+                    elif g_conf.MHA_ATTENTION_LOSS:
+                        attn_weights = reduce(attn_weights[-1], 'B H N1 N2 -> B N2', 'mean')  # [B, N]
                     else:
                         attn_weights = attn_weights[-1].mean(dim=1)  # [B, S*cam*(H//P)^2] or [B, N]
                     # attn_weights = utils.min_max_norm(attn_weights)  # [B, S*cam*(H//P)^2] or [B, N]
                 attn_weights = utils.min_max_norm(attn_weights[:, self.num_register_tokens:])  # Remove the register tokens and renormalize, if necessary
-                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS)
+                attn_weights = rearrange(attn_weights, 'B (h w S cam) -> B 1 h (w S cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS)
                                           else 'B (S cam h w) -> B 1 h (S cam w)', S=S, cam=cam, h=self.res_out_h)  # [B, 1, H//P, S*cam*W//P]
 
         return action_output, resnet_inter, attn_weights

@@ -8,6 +8,7 @@ from dataloaders.transforms import train_transform, val_transform, canbus_normal
 
 from configs import g_conf
 from typing import Union
+import re
 
 
 class carlaImages(data.Dataset):
@@ -35,10 +36,10 @@ class carlaImages(data.Dataset):
                     avoid = 'noise' if g_conf.ATTENTION_NOISE_CATEGORY == 0 else None
                     img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, 
                                                     suffix='.jpg', avoid=avoid)
-                    all_cam_paths_dict.update({camera_type: img_paths})
+                    img_paths = [path for path in img_paths if re.match(f'{camera_type}\d{{6}}.jpg', os.path.basename(path))]
                 else:
                     img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
-                    all_cam_paths_dict.update({camera_type: img_paths})
+                all_cam_paths_dict.update({camera_type: img_paths})
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 
             # with multiple frames input we also need to ensure the frames are from the same episode
@@ -165,7 +166,8 @@ class carlaImages(data.Dataset):
         return full_dataset
 
     def recursive_glob(self, rootdir: Union[str, os.PathLike] = os.getcwd(), 
-                       prefix: str = None, suffix: str = None, avoid: str = None):
+                       prefix: str = None, suffix: str = None, avoid: str = None,
+                       exact_match: bool = False):
         """Performs recursive glob with given suffix and rootdir
             :param rootdir is the root directory
             :param prefix is the start prefix to be searched

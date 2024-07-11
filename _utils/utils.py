@@ -276,6 +276,12 @@ def prepare_target_attentions(left_img, central_img, right_img, binarize: bool =
         concat_flat[concat_flat > 0] = 1
         # Just to be safe, but shouldn't be possible
         concat_flat[concat_flat < 0] = 0
+    # If the sum is zero, we set it to 1 to avoid division by zero
+    row_sums = concat_flat.sum(dim=1, keepdim=True)
+    zero_mask = (row_sums == 0).float()
+    uniform = torch.ones_like(concat_flat)
+    concat_flat = concat_flat * (1 - zero_mask) + uniform * zero_mask
+
     # Normalize s.t. sum is 1
     concat_flat = concat_flat / concat_flat.sum(dim=-1, keepdim=True)
     return concat_flat

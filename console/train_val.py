@@ -33,6 +33,25 @@ def update_early_stopping(flags, rank, world_size):
     flags = flags[0]
 
 
+def extract_camera_suffixes(camera_names):
+    # Filter out cameras with 'rgb' in their names
+    filtered_names = [name for name in camera_names if 'rgb' not in name.lower()]
+    # Remove the common prefix and direction words
+    suffixes = set()
+    for name in filtered_names:
+        parts = name.replace('virtual_attention_', '').split('_')
+        suffix = '_'.join(part for part in parts if part not in ['central', 'left', 'right'])
+        if suffix:
+            suffixes.add(suffix)
+    # Return a string if there's only one suffix, otherwise return a list
+    if len(suffixes) == 0:
+        return ['']
+    # elif len(suffixes) == 1:
+    #     return suffixes.pop()
+    else:
+        return list(suffixes)
+
+
 def train_upstream_task(model, optimizer, rank=0, world_size=1):
     """
     Upstream task is for training your model
@@ -124,7 +143,32 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
                     else:
                         raise ValueError(f'Error! We cannot use the {g_conf.LOSS} loss with attention!')
-            
+
+                elif g_conf.MHA_ATTENTION_LOSS:
+                    # Get the common suffixes of the virtual cameras
+                    virtual_camera_names = extract_camera_suffixes(g_conf.DATA_USED)  # k
+
+                    # Set to which head we want to finetune the attention
+                    name_to_idx = {
+                        'dynamic': 0,  # Dynamic objects (pedestrians and vehicles)
+                        'traffic': 1,  # Trafffic rules (lanes and traffic lights/signs)
+                        'human':   2,  # From human drivers using eye-tracking; TBD
+                        'static':  3,  # Other sttaic objects (buildings, poles, etc.)
+                        '':        3   # Default for the case where there are no suffixes
+                    }
+
+                    # Get the attention masks for each virtual camera
+                    tgt_atts = {}
+
+                    for name in virtual_camera_names:
+                        src_atts_left = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_left_{name}' in key]
+                        src_atts_central = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_central_{name}' in key]
+                        src_atts_right = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_right_{name}' in key]
+
+                        tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+
+                        tgt_atts[name_to_idx[name]] = tgt_att  # Dict with k tensors of shape [B, N]
+
             else:
                 # Here: add attention masks
                 src_images = [[data['current'][i][camera_type].cuda() 
@@ -162,6 +206,28 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
                     elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
                         tgt_att = torch.cat((src_atts_left[0], src_atts_central[0], src_atts_right[0]), 1)
+                
+                elif g_conf.MHA_ATTENTION_LOSS:
+                    # Let's see all the virtual cameras in g_conf.DATA_USED
+                    # num_cameras = len([c for c in g_conf.DATA_USED if 'rgb' in c])
+                    # num_virtual_cams = len([c for c in g_conf.DATA_USED if 'virtual_attention' in c])
+                    # num_heads_to_finetune = num_virtual_cams // num_cameras
+
+                    # Get the virtual camera's names, e.g., 'virtual_attention_central_', 'virtual_attention_left_', 'virtual_attention_right_' returns [''],
+                    # 'virtual_attention_central_traffic', etc., returns ['traffic'], and 'virtual_attention_central_traffic', ..., 'virtual_attention_central_dynamic', ..., returns ['traffic', 'dynamic']
+                    virtual_camera_names = extract_camera_suffixes(g_conf.DATA_USED)  # k
+
+                    # Get the attention masks for each virtual camera
+                    tgt_atts = {}
+                    for idx, name in enumerate(virtual_camera_names):
+                        src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_left_{name}' in key]
+                        src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_central_{name}' in key]
+                        src_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_right_{name}' in key]
+
+                        tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
+
+                        tgt_atts[idx] = tgt_att  # Dict with k tensors of shape [B, N]
+
 
             if g_conf.USE_AUTOCAST:
                 with torch.cuda.amp.autocast():
@@ -255,9 +321,12 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                              })
                 elif g_conf.MHA_ATTENTION_COSSIM_LOSS:
                     loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER]})
+                elif g_conf.MHA_ATTENTION_LOSS:
+                    loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=2),  # [B, h, N]
+                                        'targets_attention': tgt_atts})  # Dict with k tensors of shape [B, N]
 
                 if g_conf.ACCELERATION_AS_ACTION:
-                    if g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS:
+                    if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS):
                         loss, steer_loss, acceleration_loss, att_loss = model.loss(loss_params)
                     else:
                         loss, steer_loss, acceleration_loss = model.loss(loss_params)
@@ -369,6 +438,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 del src_atts_central
                 del src_atts_right
                 del tgt_att
+            elif g_conf.MHA_ATTENTION_LOSS:
+                del src_atts_left
+                del src_atts_central
+                del src_atts_right
+                del tgt_atts
         else:
             continue
         break

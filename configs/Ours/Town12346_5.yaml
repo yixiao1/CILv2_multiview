@@ -1,0 +1,88 @@
+
+#### Model Related Parameters ####
+#### Training Related Parameters ####
+MAGICAL_SEED: 1314520
+DATA_PARALLEL: True
+BATCH_SIZE: 128
+NUM_WORKER: 10
+NUMBER_EPOCH: 80
+TARGETS: ['steer', 'acceleration']  # From the float data, the ones that the network should estimate
+ACCELERATION_AS_ACTION: True
+OTHER_INPUTS: ['speed', 'direction'] # From the float data, the ones that are input to the neural network
+TRAIN_DATASET_NAME: ['Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T1_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T1_dense_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T2_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T3_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T4_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T4_dense_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T6_3cam', 'Roach_carla0913_fps10/Roach_carla0913_fps10_dense_normalcamera_T6_dense_3cam'] #821029 images
+VALID_DATASET_NAME: ['Roach_carla0913_fps10/Roach_LBCRoutes_3cam_valid']
+ENCODER_INPUT_FRAMES_NUM: 1
+ENCODER_STEP_INTERVAL: 1
+ENCODER_OUTPUT_STEP_DELAY: 0
+DECODER_OUTPUT_FRAMES_NUM: 1
+IMG_NORMALIZATION:
+  mean: [0.485, 0.456, 0.406]    # ImageNet
+  std: [0.229, 0.224, 0.225]     # ImageNet
+IMAGE_SHAPE: [3, 300, 300]
+DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right']  # The part of the data to be used, it needs to be set at the right order
+DATA_COMMAND_ONE_HOT: True
+DATA_COMMAND_CLASS_NUM: 6
+DATA_NORMALIZATION:    # These values might be changed depending on different datasets
+  steer: [-1.0, 1.0]
+  acceleration: [-1.0, 1.0]
+  speed: [-1.0, 11.0]     # m/s
+
+# Loss Parameters #
+LOSS: 'Action_nospeed_L1'    # in case of multi losses this changes
+LOSS_WEIGHT: # in case of multi losses this changes
+  actions:
+    steer: 0.50
+    acceleration: 0.50
+
+# Optimizer Parameters #
+LEARNING_RATE: 0.00008
+LEARNING_RATE_MINIMUM: 0.00001
+LEARNING_RATE_DECAY_EPOCHES: [30, 50, 65]   # we schedule the learning rate on the weight
+LEARNING_RATE_POLICY:
+  name: 'normal'       # ['poly', 'normal']
+  level: 0.5           # if poly -> level is the power (refer to deeplabv3 paper), if normal -> level is the multiply value
+
+#### Validation Related Parameters ####
+EVAL_SAVE_LAST_Conv_ACTIVATIONS: True
+EVAL_BATCH_SIZE: 30
+EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
+EARLY_STOPPING: False
+EVAL_IMAGE_WRITING_NUMBER: 100
+EVAL_DRAW_OFFLINE_RESULTS_GRAPHS: ['MAE_steer', 'MAE_acceleration', 'MAE']
+
+### Network Parameters ####
+# Encoder part#
+IMAGENET_PRE_TRAINED: True
+SENSOR_EMBED: False  # Use sensor embedding
+NO_ACT_TOKENS: True  # Remove all [ACT] tokens
+NEW_COMMAND_SPEED_FC: False  # Use a FC layer instead of nn.Linear for command and speed embedding
+MODEL_TYPE: 'CIL_multiview'
+MODEL_CONFIGURATION:  # Based on the MODEL_TYPE, we specify the structure
+  encoder_embedding:
+    perception:  # The module that process the image input, it ouput the number of classes
+      res:
+        name: 'resnet34'
+        layer_id: 4
+
+  TxEncoder:
+    d_model: 512
+    n_head: 4
+    num_layers: 4
+    norm_first: True
+    learnable_pe: True
+
+  command:  # The module to process the command
+    fc:
+      neurons: [512]
+      dropouts: [0.0]
+
+  speed:
+    fc:
+      neurons: [512]
+      dropouts: [0.0]
+
+  action_output:
+    fc:
+      neurons: [512, 256]
+      dropouts: [0.0, 0.0]
+

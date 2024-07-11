@@ -511,17 +511,39 @@ def create_mask_noise(width, height, percentage):
     return mask
 
 
-def get_virtual_attention_map(depth_path, segmented_path, noise_cat: int = 0, central_camera: bool = True,
+def filter_ss_converter(label: str) -> np.ndarray:
+    # Define the indices to keep for each label
+    label_indices = {
+        'pedestrian': {4, 6, 23},    # pedestrian, road line, curb
+        'car': {10, 6, 23},          # car, road line, curb
+        'trafficlight': {12, 18, 6, 23},  # traffic sign, traffic light, road line, curb
+        'other': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22},  # all other classes
+        'dynamic': {4, 10},  # pedestrian, car
+        'traffic': {6, 12, 18, 23},  # road line, traffic sign, traffic light
+        'static': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22}  # all other classes
+    }
+    
+    # Get the set of indices to keep based on the label
+    indices_to_keep = label_indices.get(label, set())
+    
+    # Create a new array with only the values we want to keep, setting others to 0
+    filtered_converter = np.uint8([1 if i in indices_to_keep else 0 for i in range(len(SS_CONVERTER))])
+    
+    return filtered_converter
+
+def get_virtual_attention_map(depth_path, segmented_path, converter_label: str = None,
+                              noise_cat: int = 0, central_camera: bool = True,
                               depth_threshold: float = 20.0, min_depth: float = 2.3, 
                               DILATION_KERNEL_SIZE: int = 10, DILATION_ITERATIONS: int = 1):
     segmentation = read_images(segmented_path, 'segmentation')
+    semseg_converter = SS_CONVERTER if converter_label is None else filter_ss_converter(converter_label)
     if depth_path is not None:
         depth_rgb = read_images(depth_path, 'depth')
         depth_img = process_depth_image(depth_rgb)
     else:
         depth_img = None
     mask_depth, mask_segmentation, road_mask, sidewalk_mask, line_mask = create_masks(
-        depth_img, segmentation, SS_CONVERTER, central_camera=central_camera,
+        depth_img, segmentation, semseg_converter, central_camera=central_camera,
         depth_threshold=depth_threshold, min_depth=min_depth)
     boundary = find_boundary(road_mask, sidewalk_mask, DILATION_KERNEL_SIZE, DILATION_ITERATIONS)
     boundary = cv2.bitwise_or(boundary, line_mask) * 255
@@ -543,7 +565,8 @@ def get_virtual_attention_map(depth_path, segmented_path, noise_cat: int = 0, ce
         mask_noise = mask_noise_first + mask_noise_second + mask_noise_third
 
     if noise_cat == 0:
-        merge = cv2.bitwise_or(merge, boundary)
+        if converter_label is None or converter_label == 'traffic':
+            merge = cv2.bitwise_or(merge, boundary)
     else:
 
         noise = generate_depth_aware_perlin_noise(depth_img, scale=3, layers=1)

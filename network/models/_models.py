@@ -16,7 +16,7 @@ class CILv2_multiview_attention(nn.Module):
         cil_model = importlib.import_module('network.models.architectures.CIL_multiview')
         cil_model = getattr(cil_model, g_conf.MODEL_TYPE)
         self.params = params
-        self._model = cil_model(params, rank, average_attn_weights=not g_conf.MHA_ATTENTION_COSSIM_LOSS)
+        self._model = cil_model(params, rank, average_attn_weights=False if (g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else True)
         self.resize_att_h, self.resize_att_w = self._model.resize_att_h, self._model.resize_att_w
         self.name = g_conf.MODEL_TYPE
 
