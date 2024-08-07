@@ -54,6 +54,7 @@ def check_saved_checkpoints(checkpoints_path: str, ckpt_number: int = None):
         str: The requested checkpoint filename path.
     """
     if not os.path.exists(checkpoints_path):
+        print('Given checkpoints path does not exist!')
         return None
     else:
         checkpoints = glob.glob(os.path.join(checkpoints_path, '*.pth'))
@@ -65,9 +66,9 @@ def check_saved_checkpoints(checkpoints_path: str, ckpt_number: int = None):
                 for checkpoint in checkpoints:
                     if f'{ckpt_number:02d}' in checkpoint:
                         return checkpoint
+                print('No saved checkpoints found with the given number!')
                 return None
-        else:
-            return None
+        return None
 
 
 def check_saved_checkpoints_in_total(checkpoints_path):

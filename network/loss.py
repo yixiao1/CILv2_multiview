@@ -189,15 +189,40 @@ def Action_nospeed_L1_mhAttention_KL(params):
     num_valid_batch = mask_steer.sum().detach()
     steer_loss = torch.sum(steer_loss) / num_valid_batch
 
-    # Attention loss
+    # Multi-Head Attention loss
+    idx_heads_to_train = list(params['targets_attention'].keys())
+    num_heads_to_train = len(idx_heads_to_train)
+    
+    # Mask out the heads that are not to be trained
+    att_loss_weights = torch.zeros(num_heads_to_train)
+
+    if num_heads_to_train == 1:
+        att_loss_weights[0] = 1.0
+    else:
+        att_loss_weights[idx_heads_to_train] = 1.0
+
+    if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
+        # Weight each head as alpha and 1-alpha (Dynamic and Traffic heads)
+        alpha = torch.clamp(params['dyn_traf_loss_ratio'].detach(), 0.0, 1.0)
+        att_loss_weights[1] = alpha
+        att_loss_weights[0] = 1.0 - alpha
+    else:
+        # Equally weight all heads
+        att_loss_weights = att_loss_weights / att_loss_weights.sum()
+    att_loss_weights = att_loss_weights * params['variable_weights']['attention']
+
+    att_losses = []
     eps = 1e-12  # For numerical stability
-    num_heads_to_train = len(params['targets_attention'])
-    att_loss_weight_per_head = params['variable_weights']['attention'] / num_heads_to_train
-    att_loss = 0.0
-    for idx in list(params['targets_attention'].keys()):
-        att_loss += F.kl_div((params['mha_attention_output'][:, idx]+eps).log(),  # Transf. Encoder attention map (GAPn)
-                             params['targets_attention'][idx], # Ground truth attention map (virtual or human)
-                             reduction='batchmean') * att_loss_weight_per_head
+    for idx in idx_heads_to_train:
+        aloss = F.kl_div((params['mha_attention_output'][:, idx]+eps).log(),  # Transf. Encoder attention map (GAPn)
+                            params['targets_attention'][idx], # Ground truth attention map (virtual or human)
+                            reduction='batchmean')
+        att_losses.append(aloss)
+    att_loss = sum(loss * weight for loss, weight in zip(att_losses, att_loss_weights))
+    if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
+        # For multi-gpu/data-parallel training, we need to ensure that the
+        # parameter is part of the computation graph since we detach it
+        att_loss = att_loss + 0 * params['dyn_traf_loss_ratio'].sum()
 
     if g_conf.ACCELERATION_AS_ACTION:
         acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']

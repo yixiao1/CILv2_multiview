@@ -29,7 +29,14 @@ class CILv2_multiview_attention(nn.Module):
                                  g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'],
                                  num_process=params['num_process'], res_attr=(self.resize_att_w, self.resize_att_h))
 
+
             if rank == 0:
+                if len(self._train_loader.dataset) == 0:
+                    raise ValueError(f"Empty training dataset: {g_conf.TRAIN_DATASET_NAME}. Please check that the dataset path and the DATASET_PATH environment variable are correct!")
+
+                if len(self._val_loaders) == 0:
+                    raise ValueError(f"Empty validation dataset: {g_conf.VALID_DATASET_NAME}. Please check that the dataset path and the DATASET_PATH environment variable are correct!")
+
                 print('\n================================= Dataset Info ========================================')
                 print(f"\nUsing {len(g_conf.TRAIN_DATASET_NAME)} Training Dataset:")
                 print(f'   - {g_conf.TRAIN_DATASET_NAME}: Total amount={len(self._train_loader.dataset)}')
@@ -52,6 +59,9 @@ class CILv2_multiview_attention(nn.Module):
                                  g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE, rank=params['rank'],
                                  num_process=params['num_process'], res_attr=(self.resize_att_w, self.resize_att_h))
 
+            if len(self._train_loader.dataset) == 0:
+                raise ValueError(f"Empty training dataset: {g_conf.TRAIN_DATASET_NAME}. Please check that the dataset path and the DATASET_PATH environment variable are correct!")
+
             if rank == 0:
                 print('\n================================= Dataset Info ========================================')
                 print(f"\nUsing {len(g_conf.TRAIN_DATASET_NAME)} Training Dataset:")
@@ -62,9 +72,12 @@ class CILv2_multiview_attention(nn.Module):
             self._dataloader_iter = iter(self._get_dataloader())
 
         elif g_conf.PROCESS_NAME == 'val_only':
-            self._train_loader, self._val_loaders = \
+            _, self._val_loaders = \
                 make_data_loader(self.name, os.environ["DATASET_PATH"], g_conf.TRAIN_DATASET_NAME, g_conf.BATCH_SIZE,
                                  g_conf.VALID_DATASET_NAME, g_conf.EVAL_BATCH_SIZE)
+
+            if len(self._val_loaders) == 0:
+                raise ValueError(f"Empty validation dataset: {g_conf.VALID_DATASET_NAME}. Please check that the dataset path and the DATASET_PATH environment variable are correct!")
 
             if rank == 0:
                 print("Using {} Validation Dataset:".format(str(len(self._val_loaders))))

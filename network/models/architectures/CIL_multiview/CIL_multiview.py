@@ -64,6 +64,8 @@ class CIL_multiview(nn.Module):
             self.positional_encoding = PositionalEncoding(d_model=self.params['TxEncoder']['d_model'], dropout=0.0,
                                                           max_len=self.sequence_length)
 
+        if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
+            self.dyn_traf_loss_ratio = nn.Parameter(torch.tensor([g_conf.DYN_TRAF_RATIO_START]))  # Just start with the Traffic Head, then balance w/the Dynamic Head
         # Sensor embedding is useful when adding different sensors to the sequence
         if g_conf.SENSOR_EMBED:
             self.sensor_embedding = nn.Parameter(torch.empty(1, self.sequence_length, self.tfx_hidden_dim).normal_(std=0.02))  # from BERT

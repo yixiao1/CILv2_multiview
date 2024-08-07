@@ -150,11 +150,12 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
 
                     # Set to which head we want to finetune the attention
                     name_to_idx = {
-                        'dynamic': 0,  # Dynamic objects (pedestrians and vehicles)
-                        'traffic': 1,  # Trafffic rules (lanes and traffic lights/signs)
-                        'human':   2,  # From human drivers using eye-tracking; TBD
-                        'static':  3,  # Other sttaic objects (buildings, poles, etc.)
-                        '':        3   # Default for the case where there are no suffixes
+                        'dynamic': 0,   # Dynamic objects (pedestrians and vehicles)
+                        'traffic': min(1, 
+                                       g_conf.MODEL_CONFIGURATION['TxEncoder']['n_head'] - 1),   # Trafffic rules (lanes and traffic lights/signs)
+                        'human':   -1,  # From human drivers using eye-tracking; TBD
+                        'static':  -1,  # Other sttaic objects (buildings, poles, etc.)
+                        '':        -1   # Default for the case where there are no suffixes
                     }
 
                     # Get the attention masks for each virtual camera
@@ -324,7 +325,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 elif g_conf.MHA_ATTENTION_LOSS:
                     loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=2),  # [B, h, N]
                                         'targets_attention': tgt_atts})  # Dict with k tensors of shape [B, N]
-
+                    if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
+                        loss_params.update({'dyn_traf_loss_ratio': model._model.dyn_traf_loss_ratio})
                 if g_conf.ACCELERATION_AS_ACTION:
                     if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS):
                         loss, steer_loss, acceleration_loss, att_loss = model.loss(loss_params)
@@ -387,6 +389,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 if g_conf.LEARNABLE_ACTION_RATIO:
                     _logger.add_scalar('Action ratio', model._model.action_ratio.item(), model._current_iteration)
 
+                if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
+                    _logger.add_scalar('MHA Loss - Dynamic/Traffic Loss ratio', model._model.dyn_traf_loss_ratio.item(), model._current_iteration)
                 # Log steering difference w/ target
                 action_difference = action_outputs[:, -1, :] - tgt_a[-1]
                 _logger.add_histogram('sign(steer_out-tgt_steer)', 
@@ -461,14 +465,42 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
         None
 
     """
+    ascii_art = """
+                                            :::          :::::::: ::::::::::: :::                                                                                                    
+                                          :+:          :+:    :+:    :+:     :+:       :+:           :+:                                                                             
+                                        +:+           +:+           +:+     +:+       +:+           +:+                                                                              
+                                      +#+            +#+           +#+     +#+  +#++:++#++:++ +#++:++#++:++                                                                          
+                                    +#+             +#+           +#+     +#+       +#+           +#+                                                                                
+                                  #+#              #+#    #+#    #+#     #+#       #+#           #+#                                                                                 
+                                ###                ######## ########### ##########                                                                                                   
+                             :::            :::   :::   :::    ::: :::    ::::::::::: :::::::::::              :::    ::: ::::::::::     :::     :::::::::                           
+                           :+:            :+:+: :+:+:  :+:    :+: :+:        :+:         :+:                  :+:    :+: :+:          :+: :+:   :+:    :+:                           
+                         +:+            +:+ +:+:+ +:+ +:+    +:+ +:+        +:+         +:+                  +:+    +:+ +:+         +:+   +:+  +:+    +:+                            
+                       +#+             +#+  +:+  +#+ +#+    +:+ +#+        +#+         +#+    +#++:++#++:++ +#++:++#++ +#++:++#   +#++:++#++: +#+    +:+                             
+                     +#+              +#+       +#+ +#+    +#+ +#+        +#+         +#+                  +#+    +#+ +#+        +#+     +#+ +#+    +#+                              
+                   #+#               #+#       #+# #+#    #+# #+#        #+#         #+#                  #+#    #+# #+#        #+#     #+# #+#    #+#                               
+                 ###                ###       ###  ########  ########## ###     ###########              ###    ### ########## ###     ### #########                                 
+                :::              ::: ::::::::::: ::::::::::: :::::::::: ::::    ::: ::::::::::: ::::::::::: ::::::::  ::::    :::          :::        ::::::::   ::::::::   :::::::: 
+              :+:             :+: :+:   :+:         :+:     :+:        :+:+:   :+:     :+:         :+:    :+:    :+: :+:+:   :+:          :+:       :+:    :+: :+:    :+: :+:    :+: 
+            +:+             +:+   +:+  +:+         +:+     +:+        :+:+:+  +:+     +:+         +:+    +:+    +:+ :+:+:+  +:+          +:+       +:+    +:+ +:+        +:+         
+          +#+             +#++:++#++: +#+         +#+     +#++:++#   +#+ +:+ +#+     +#+         +#+    +#+    +:+ +#+ +:+ +#+          +#+       +#+    +:+ +#++:++#++ +#++:++#++   
+        +#+              +#+     +#+ +#+         +#+     +#+        +#+  +#+#+#     +#+         +#+    +#+    +#+ +#+  +#+#+#          +#+       +#+    +#+        +#+        +#+    
+      #+#               #+#     #+# #+#         #+#     #+#        #+#   #+#+#     #+#         #+#    #+#    #+# #+#   #+#+#          #+#       #+#    #+# #+#    #+# #+#    #+#     
+    ###                ###     ### ###         ###     ########## ###    ####     ###     ########### ########  ###    ####          ########## ########   ########   ########       
+
+    """
+    if rank == 0:
+        print(ascii_art)
     # Merge the yaml file with the default configuration
     merge_with_yaml(os.path.join('configs', exp_batch, exp_name + '.yaml'))
 
-    # Copy yaml config file and architecture file to the results folder
+    # Copy yaml config file, architecture file, loss, and training/val files to the results folder
     results_folder = os.path.join(os.environ["TRAINING_RESULTS_ROOT"], '_results', g_conf.EXPERIMENT_BATCH_NAME, g_conf.EXPERIMENT_NAME)
     if rank == 0:
         shutil.copy2(os.path.join('configs', exp_batch, f'{exp_name}.yaml'), results_folder)
         shutil.copy2(os.path.join('network', 'models', 'architectures', 'CIL_multiview', f'{g_conf.MODEL_TYPE}.py'), results_folder)
+        shutil.copy2(os.path.join('network', 'loss.py'), results_folder)
+        shutil.copy2(os.path.join('console', 'train_val.py'), results_folder)
 
         # Flush stdout to a log.txt file
     StdoutLogger(os.path.join(results_folder, 'log.txt'), file_mode='a', should_flush=True)
@@ -514,7 +546,23 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
             num_params += param.numel()
         print(f'Total params in model: {num_params}; trainable: {num_trainable_params} ({100 * num_trainable_params / num_params:.2f}%)')
 
-    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=g_conf.LEARNING_RATE)
+    # Initialize the lsit of parameter groups
+    param_groups = []
+
+    # Add all parameters except the dynamic/traffic attention loss ratio
+    main_params = [p for n, p in model.named_parameters() if 'dyn_traf_loss_ratio' not in n]
+    param_groups.append({'params': main_params, 'lr': g_conf.LEARNING_RATE})
+
+    # Check if we want to learn the dynamic/traffic attention loss ratio
+    if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
+        dyn_traf_param = getattr(model._model, 'dyn_traf_loss_ratio', None)
+        if dyn_traf_param is not None:
+            if rank == 0:
+                print('Learning the dynamic/traffic attention loss ratio! Setting a higher learning rate...')
+            param_groups.append({'params': [dyn_traf_param], 'lr': g_conf.DYN_TRAF_RATIO_LR_MULTIPLIER * g_conf.LEARNING_RATE})
+
+    optimizer = torch.optim.AdamW(param_groups)
+
     if (len(gpus_list) > 1 and g_conf.DATA_PARALLEL):
         if rank == 0:
             print("Using multiple GPUs parallel! ")
