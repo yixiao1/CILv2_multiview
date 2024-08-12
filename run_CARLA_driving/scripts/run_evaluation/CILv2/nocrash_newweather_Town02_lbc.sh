@@ -4,7 +4,7 @@
 
 # Check if at least five arguments are provided
 if [ "$#" -lt 5 ]; then
-    echo "Usage: $0 GPU_ID (int) EXPERIMENT_FOLDER (str) EXPERIMENT_NAME (str) EPOCH (int) SCENARIO {empty, regular, busy} [--random-seed (optional, int)] [--save-driving-vision (optional, bool)]"
+    echo "Usage: $0 GPU_ID (int) EXPERIMENT_FOLDER (str) EXPERIMENT_NAME (str) EPOCH (int) SCENARIO {empty, regular, busy, dense} [--random-seed (optional, int)] [--save-driving-vision (optional, bool)]"
     exit 1
 fi
 
@@ -43,11 +43,11 @@ done
 EPOCH=$(printf "%02d" "$EPOCH")
 # Construct the path to the agent and scenario config files
 AGENT_CONFIG=$TRAINING_RESULTS_ROOT/_results/$EXPERIMENT_FOLDER/$EXPERIMENT_NAME/config"$EPOCH".json
-SCENARIO_FILE=$DRIVING_TEST_ROOT/data/nocrash/nocrash_newweathertown_"$SCENARIO"_Town02_lbc.json
+SCENARIO_FILE=$DRIVING_TEST_ROOT/data/nocrash/nocrash_newtown_"$SCENARIO"_Town02_lbc.json
 
 # Check if the scenario file exists
 if [ ! -f "$SCENARIO_FILE" ]; then
-    echo "Invalid scenario type or file does not exist. Expected 'empty', 'regular', or 'busy'."
+    echo "Invalid scenario type or file does not exist. Expected 'empty', 'regular', 'busy', or 'dense'."
     exit 1
 fi
 
@@ -69,7 +69,7 @@ python_command="python3 $DRIVING_TEST_ROOT/driving/evaluator.py \
 
 # Add the --save-driving-vision flag only for the "busy" scenario
 if [ "$SAVE_DRIVING_VISION" = "true" ]; then
-    echo "Saving driving vision! Results will be found in $DATASET_PATH/driving_record/nocrash_newweathertown_"$SCENARIO"_Town02_lbc..."
+    echo "Saving driving vision! Results will be found in $DATASET_PATH/driving_record/nocrash_newtown_"$SCENARIO"_Town02_lbc..."
     python_command+=" --save-driving-vision"
 fi
 
