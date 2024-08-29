@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
@@ -33,24 +34,26 @@ def update_early_stopping(flags, rank, world_size):
     flags = flags[0]
 
 
-def extract_camera_suffixes(camera_names):
-    # Filter out cameras with 'rgb' in their names
-    filtered_names = [name for name in camera_names if 'rgb' not in name.lower()]
-    # Remove the common prefix and direction words
-    suffixes = set()
-    for name in filtered_names:
-        parts = name.replace('virtual_attention_', '').split('_')
-        suffix = '_'.join(part for part in parts if part not in ['central', 'left', 'right'])
-        if suffix:
-            suffixes.add(suffix)
-    # Return a string if there's only one suffix, otherwise return a list
-    if len(suffixes) == 0:
-        return ['']
-    # elif len(suffixes) == 1:
-    #     return suffixes.pop()
-    else:
-        return list(suffixes)
+last_value_dt_ratio = None
+last_iteration_dt_ratio = None
 
+def log_dyn_traf_loss_ratio_change(model, _logger, iteration):
+    global last_value_dt_ratio, last_iteration_dt_ratio
+    if hasattr(model._model, 'dyn_traf_loss_ratio'):
+        current_value = model._model.dyn_traf_loss_ratio.item()
+        if last_value_dt_ratio is not None and last_iteration_dt_ratio is not None:
+            change = current_value - last_value_dt_ratio
+            steps = iteration - last_iteration_dt_ratio
+            approx_gradient = change / steps if steps > 0 else 0
+            
+            # Log the approximate gradient
+            _logger.add_scalar('MHA Loss - Dynamic/Traffic Loss ratio approx gradient', approx_gradient, iteration)
+
+            # Log the current value
+            _logger.add_scalar('MHA Loss - Dynamic/Traffic Loss ratio', current_value, iteration)
+            
+        last_value_dt_ratio = current_value
+        last_iteration_dt_ratio = iteration
 
 def train_upstream_task(model, optimizer, rank=0, world_size=1):
     """
@@ -146,17 +149,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
 
                 elif g_conf.MHA_ATTENTION_LOSS:
                     # Get the common suffixes of the virtual cameras
-                    virtual_camera_names = extract_camera_suffixes(g_conf.DATA_USED)  # k
-
-                    # Set to which head we want to finetune the attention
-                    name_to_idx = {
-                        'dynamic': 0,   # Dynamic objects (pedestrians and vehicles)
-                        'traffic': min(1, 
-                                       g_conf.MODEL_CONFIGURATION['TxEncoder']['n_head'] - 1),   # Trafffic rules (lanes and traffic lights/signs)
-                        'human':   -1,  # From human drivers using eye-tracking; TBD
-                        'static':  -1,  # Other sttaic objects (buildings, poles, etc.)
-                        '':        -1   # Default for the case where there are no suffixes
-                    }
+                    virtual_camera_names = utils.extract_camera_suffixes(g_conf.DATA_USED)  # k
 
                     # Get the attention masks for each virtual camera
                     tgt_atts = {}
@@ -168,7 +161,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
 
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
 
-                        tgt_atts[name_to_idx[name]] = tgt_att  # Dict with k tensors of shape [B, N]
+                        tgt_atts[utils.get_attention_head(name, g_conf)] = tgt_att  # Dict with k tensors of shape [B, N]
 
             else:
                 # Here: add attention masks
@@ -216,7 +209,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
 
                     # Get the virtual camera's names, e.g., 'virtual_attention_central_', 'virtual_attention_left_', 'virtual_attention_right_' returns [''],
                     # 'virtual_attention_central_traffic', etc., returns ['traffic'], and 'virtual_attention_central_traffic', ..., 'virtual_attention_central_dynamic', ..., returns ['traffic', 'dynamic']
-                    virtual_camera_names = extract_camera_suffixes(g_conf.DATA_USED)  # k
+                    virtual_camera_names = utils.extract_camera_suffixes(g_conf.DATA_USED)  # k
 
                     # Get the attention masks for each virtual camera
                     tgt_atts = {}
@@ -317,13 +310,13 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     else:
                         # Just the average of the attention map of the last layer of the Encoder
                         loss_params.update(
-                            {'attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=1),
+                            {'attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=1)[:, model._model.num_register_tokens:],
                              'targets_attention': tgt_att
                              })
                 elif g_conf.MHA_ATTENTION_COSSIM_LOSS:
                     loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER]})
                 elif g_conf.MHA_ATTENTION_LOSS:
-                    loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=2),  # [B, h, N]
+                    loss_params.update({'mha_attention_output': att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=2)[:, :, model._model.num_register_tokens:],  # [B, h, N]
                                         'targets_attention': tgt_atts})  # Dict with k tensors of shape [B, N]
                     if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
                         loss_params.update({'dyn_traf_loss_ratio': model._model.dyn_traf_loss_ratio})
@@ -390,7 +383,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     _logger.add_scalar('Action ratio', model._model.action_ratio.item(), model._current_iteration)
 
                 if g_conf.LEARNABLE_DYN_TRAF_LOSS_RATIO:
-                    _logger.add_scalar('MHA Loss - Dynamic/Traffic Loss ratio', model._model.dyn_traf_loss_ratio.item(), model._current_iteration)
+                    log_dyn_traf_loss_ratio_change(model, _logger, model._current_iteration)
+
                 # Log steering difference w/ target
                 action_difference = action_outputs[:, -1, :] - tgt_a[-1]
                 _logger.add_histogram('sign(steer_out-tgt_steer)', 

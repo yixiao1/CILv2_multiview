@@ -698,6 +698,75 @@ def save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_s
         for future in as_completed(futures):
             future.result()
 
+# ============================================================
+# Helper functions to average attention maps
+
+CAMERAS = ['left', 'central', 'right']
+ATTENTION_TYPES = ['', 'dynamic', 'traffic', 'static']
+
+def get_frame_number(filename):
+    """Extract frame number from filename using regex."""
+    match = re.search(r'(\d+)(?=\.\w+$)', filename)
+    return int(match.group(1)) if match else None
+
+def average_frames(frames):
+    """Average a list of frame arrays."""
+    return np.mean(frames, axis=0).astype(np.uint8)
+
+def get_files_for_camera(route_path, prefix, camera, attention_type):
+    if attention_type:
+        file_pattern = f'^{prefix}_{camera}_{attention_type}'
+    else:
+        file_pattern = f'^{prefix}_{camera}_(?!dynamic|traffic|static)'
+    
+    files = [f for f in os.listdir(route_path) if re.match(file_pattern, f) and f.endswith('.jpg')]
+    utils.sort_nicely(files)
+    return files
+
+def process_frame(args):
+    route_path, filename, fps, sec, frame_dict, sorted_frames = args
+    current_frame = get_frame_number(filename)
+    i = sorted_frames.index(current_frame)
+    start = max(0, i - fps * sec)
+    end = min(i + fps * sec, len(sorted_frames) - 1)
+    
+    frame_range = sorted_frames[start:end+1]
+    frames_to_average = [np.array(Image.open(frame_dict[frame])) for frame in frame_range]
+    
+    averaged_frame = average_frames(frames_to_average)
+    return current_frame, averaged_frame, filename
+
+def process_camera(args):
+    route_path, prefix, fps, sec, camera, attention_type = args
+    files = get_files_for_camera(route_path, prefix, camera, attention_type)
+    
+    if not files:
+        print(f"No files found for camera {camera} with attention type {attention_type} in {route_path}")
+        return route_path, {}, camera, attention_type
+
+    frame_dict = {get_frame_number(f): os.path.join(route_path, f) for f in files}
+    sorted_frames = sorted(frame_dict.keys())
+    
+    frame_args = [(route_path, f, fps, sec, frame_dict, sorted_frames) for f in files]
+    
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(process_frame, frame_args))
+    
+    averaged_frames = {frame: (avg_frame, filename) for frame, avg_frame, filename in results}
+    return route_path, averaged_frames, camera, attention_type
+
+def save_averaged_frames(route_path, averaged_frames, output_prefix, sec, camera, attention_type):
+    for frame_number, (averaged_frame, original_filename) in averaged_frames.items():
+        if output_prefix is None:
+            base_name = os.path.splitext(original_filename)[0]
+            output_filename = f"avg_{sec}sec_{base_name}.jpg"
+        else:
+            output_filename = f"{output_prefix}_{camera}_{attention_type}_{frame_number:06d}.jpg"
+        output_path = os.path.join(route_path, output_filename)
+        Image.fromarray(averaged_frame).save(output_path)
+
+
+
 # ====================== Main functions ======================
 
 
@@ -961,6 +1030,35 @@ def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
         for _ in tqdm(pool.imap(resize_image, args), total=len(rgb_images), desc=f'Resizing the images', dynamic_ncols=True):
             pass
+
+
+
+@main.command(name='average-virtual-attention')
+@click.option('--dataset-path', type=click.Path(exists=True), help='Path to the dataset root')
+@click.option('--prefix', type=str, default='virtual_attention', help='Prefix of the files to average')
+@click.option('--fps', type=int, default=10, help='Frames per second of the dataset; intrinsic to how it was saved!')
+@click.option('--sec', type=int, default=2, help='Seconds to consider for averaging.')
+@click.option('--output-prefix', type=str, default=None, help='Prefix for output files. If None, will be "avg_{sec}sec_"')
+@click.option('--num-workers', type=int, default=os.cpu_count(), help='Number of worker for multiprocessing. Default is number of CPUs.')
+@click.option('--attention-type', type=click.Choice(ATTENTION_TYPES), default='', help='Type of virtual attention to process.')
+def average_virtual_attention(dataset_path, prefix, fps, sec, output_prefix, num_workers, attention_type):
+    routes = [os.path.join(dataset_path, d) for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))]
+    
+    all_tasks = []
+    for route in routes:
+        for camera in CAMERAS:
+            all_tasks.append((route, prefix, fps, sec, camera, attention_type))
+    
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(process_camera, task) for task in all_tasks]
+        
+        for future in tqdm(as_completed(futures), total=len(all_tasks), desc="Processing routes and cameras"):
+            route_path, averaged_frames, camera, att_type = future.result()
+            if averaged_frames:
+                save_averaged_frames(route_path, averaged_frames, output_prefix, sec, camera, att_type)
+
+    print("Averaging complete!")
+
 
 # ====================== Entry point ======================
 

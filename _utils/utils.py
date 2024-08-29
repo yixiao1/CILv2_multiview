@@ -41,6 +41,49 @@ color_plate = {
     '9': COLOR_BUTTER_0
 }
 
+
+# Set to which head we want to finetune the attention
+def get_attention_head(name: str, config: dict) -> int:
+    """
+    In Multi-Head Attention, the attention heads are named as follows:
+    - 'dynamic': Dynamic objects (pedestrians and vehicles)
+    - 'traffic': Traffic rules (lanes and traffic lights/signs)
+    - 'human': From human drivers using eye-tracking; TBD
+    - 'static': Other static objects (buildings, poles, etc.; not used)
+    """
+    name_to_idx = {
+        'dynamic': 0,   # Dynamic objects (pedestrians and vehicles)
+        'traffic': min(1, 
+                        config.MODEL_CONFIGURATION['TxEncoder']['n_head'] - 1),   # Trafffic rules (lanes and traffic lights/signs)
+        'human':   -1,  # From human drivers using eye-tracking; TBD
+        'static':  -1,  # Other sttaic objects (buildings, poles, etc.)
+        '':        -1   # Default for the case where there are no suffixes
+    }
+
+    return name_to_idx[name]
+
+
+def extract_camera_suffixes(camera_names: List[str]) -> List[str]:
+    """
+    Extract the suffixes from the camera names, which are used to identify the attention map classes.
+    The suffixes are either "dynamic", "traffic", "human", "static", or "" (empty string).
+    """
+    suffixes = set()
+    for name in camera_names:
+        # Filter out cameras with 'rgb' in their names
+        if 'rgb' in name.lower():
+            continue
+        # Remove the new prefix (e.g., 'avg_2sec_') and the common 'virtual_attention_' prefix
+        name = re.sub(r'^avg_\d+sec_', '', name)
+        name = name.replace('virtual_attention_', '')
+        # Split and remove camera direction words
+        parts = name.split('_')
+        suffix = '_'.join(part for part in parts if part not in ['central', 'left', 'right'])
+        if suffix:
+            suffixes.add(suffix)
+    return [''] if not suffixes else list(suffixes)
+
+
 ########################################################
 
 

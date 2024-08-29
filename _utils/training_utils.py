@@ -108,6 +108,8 @@ def update_learning_rate(optimizer: torch.optim.Optimizer,
             new_lr += (g_conf.LEARNING_RATE + min_lr) / 2
         for param_group in optimizer.param_groups:
             param_group['lr'] = new_lr
+    elif g_conf.LEARNING_RATE_SCHEDULE == 'constant':
+        pass
 
     else:
         raise NotImplementedError('Not found learning rate policy!')

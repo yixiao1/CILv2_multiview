@@ -35,7 +35,7 @@ class CIL_multiview(nn.Module):
             _, _, self.resize_att_h, self.resize_att_w = out_shapes[g_conf.RN_ATTENTION_LAYER]
         else:
             self.resize_att_h, self.resize_att_w = self.res_out_h, self.res_out_w
-        # Get the sequence length
+        # Get the sequence length; TODO: this assumes all cameras have the same resolution!
         self.sequence_length = len([c for c in g_conf.DATA_USED if 'rgb' in c]) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
 
         if not g_conf.NO_ACT_TOKENS:
@@ -143,7 +143,7 @@ class CIL_multiview(nn.Module):
             first_tokens = [self.register_tokens.expand(n, -1, -1), *first_tokens]
 
         # Concatenate the first tokens to the image embeddings
-        e_p = torch.cat([*first_tokens, e_p], dim=1)  # [B, S*cam*h*w + K, D], K = 2 if tokens are used
+        e_p = torch.cat([*first_tokens, e_p], dim=1)  # [B, S*cam*h*w + K + R, D], K = 2 if tokens are used, R = num_register_tokens
 
         # Embed the commands and speed
         e_d = self.command(d).unsqueeze(1)  # [B, 1, D]
@@ -199,21 +199,21 @@ class CIL_multiview(nn.Module):
         B = s_d[0].shape[0]
         cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
 
-        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s, s_a)  # [B, S*cam*h*w + K, D]
+        encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s, s_a)  # [B, S*cam*h*w + K + R, D]
 
         # Add positional embedding (fixed or learnable)
         if self.params['TxEncoder']['learnable_pe']:
-            pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w, 512]
+            pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w + K + R, 512]
         else:
             pe = self.positional_encoding(encoded_obs)
 
         # Transformer encoder multi-head self-attention layers
-        in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
+        in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w + K + R, 512]
 
         # Get the action output (if no decoder is used, the sa and mha weights are None)
         action_output, _, _ = self.action_prediction(in_memory, cam)  # [B, 1, t=len(TARGETS)]
 
-        return action_output, resnet_inter, attn_weights  # [B, 1, len(TARGETS)], num_layers * [B, S*cam*h*w, S*cam*h*w]
+        return action_output, resnet_inter, attn_weights  # [B, 1, len(TARGETS)], num_layers * [B, S*cam*h*w + K + R, S*cam*h*w + K + R]
 
     def forward_eval(self, s, s_d, s_s, s_a=None, attn_rollout: bool = False, 
                      attn_refinement: bool = False, attn_p2p_affinity: bool = False):

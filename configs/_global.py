@@ -62,6 +62,7 @@ _g_conf.DATA_NORMALIZATION = {}
 _g_conf.IMG_NORMALIZATION = {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]}   # ImageNet by default
 _g_conf.VIRTUAL_ATTENTION_INTERPOLATION = 'INTER_LINEAR'  # INTER_LINEAR, INTER_AREA, or INTER_NEAREST (others aren't worth it)
 _g_conf.BINARIZE_ATTENTION = False  # Binarize the attention map (attmap[attmap > 0] = 1)
+_g_conf.MASK_HOOD = False  # Mask the hood of the car in the synthetic attention maps
 _g_conf.FC_LAYER_NORM = False  # Use LayerNorm on the FC layers
 _g_conf.EXP_SAVE_PATH = '_results'
 _g_conf.TARGETS = ['steer', 'throttle', 'brake']  # From the float data, the ones that the network should estimate
