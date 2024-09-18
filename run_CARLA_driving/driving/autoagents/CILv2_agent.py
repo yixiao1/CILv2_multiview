@@ -22,7 +22,7 @@ import os
 import io
 import torch
 import json
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 import torchvision.transforms.functional as TF
@@ -55,6 +55,10 @@ from importlib import import_module
 def checkpoint_parse_configuration_file(filename):
     with open(filename, 'r') as f:
         configuration_dict = json.loads(f.read())
+
+    # If model doesn't have lens_circle_set, set it to False
+    if 'lens_circle_set' not in configuration_dict:
+        configuration_dict['lens_circle_set'] = False
 
     return configuration_dict['yaml'], configuration_dict['checkpoint'], \
            configuration_dict['agent_name'], configuration_dict['lens_circle_set']
@@ -115,7 +119,7 @@ class CILv2_agent(object):
         self.cmap_2 = plt.get_cmap('jet')
         self.cmap_1 = plt.get_cmap('Reds')
         self.datapoint_count = 0
-        self.save_frequence = 5
+        self.save_frequence = 1
 
     def setup_model(self, path_to_conf_file):
         """
@@ -504,7 +508,143 @@ class CILv2_agent(object):
                 blended_img = Image.blend(cams[cam_index], cmap_att, blend_strength)
                 return [blended_img]
 
-            # Do something different according to the model name
+            def combine_attention_maps_to_rgb(data_maps, color_list):
+                """Combines normalized 2D data maps into an RGB image based on a list of colors."""
+                def hex_to_rgb(hex_color):
+                    hex_color = hex_color.strip('#').lower()
+                    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+                def ensure_rgb(color):
+                    if isinstance(color, str):  # Assuming the input is a hex color string
+                        # Convert from hex to RGB tuple
+                        return hex_to_rgb(color)
+                    elif isinstance(color, tuple) and len(color) == 3:
+                        # Already in RGB tuple format
+                        return color
+                    else:
+                        raise ValueError("Invalid color format. Must be hexadecimal string or RGB tuple.")
+
+                height, width = data_maps[0].shape
+                # rgb_image = np.zeros((height, width, 3), dtype=np.float32)
+                rgb_image = np.full((height, width, 3), 
+                                    (53/255, 53/255, 49/255), dtype=np.float32)  # Black olive background
+
+                # Ensure all colors are in RGB tuple format
+                rgb_colors = [ensure_rgb(color) for color in color_list]
+
+                # Add each color contribution
+                for data_map, color in zip(data_maps, rgb_colors):
+                    for c in range(3):  # There are three channels in RGB
+                        rgb_image[:, :, c] += data_map * (color[c] / 255.0)  # Normalize RGB to [0,1]
+
+                # Normalize to the range of 0-255
+                rgb_image = np.clip(rgb_image * 255, 0, 255)  # Scale back up to RGB range
+                return rgb_image.astype(np.uint8)
+                
+
+            def is_uniform_attention(head_weights: torch.Tensor, threshold: float = 1e-6) -> bool:
+                """
+                Check if the attention weights are approximately uniform.
+                """
+                seq_length = head_weights.numel()
+                uniform_value = 1.0 / (seq_length - 10.0)
+                return torch.allclose(head_weights, torch.full_like(head_weights, uniform_value), atol=threshold)
+
+            def is_near_uniform_attention(head_weights: torch.Tensor, threshold: float = 0.05) -> bool:
+                """
+                Check if the attention weights are nearly uniform.
+                We consider the distribution near-uniform if the difference between
+                the maximum and minimum values is below the threshold.
+                """
+                min_val = head_weights.min()
+                max_val = head_weights.max()
+                return (max_val - min_val) < threshold
+
+            def multihead_attention_viz(attn_weights: torch.Tensor,
+                                        cams: List[Image.Image],
+                                        blend_strength: float = 0.5) -> Tuple[Image.Image, List[Tuple[str, str]]]:
+                
+                # Define the ordered list of tuples for attention head names and indices
+                ordered_head_names = [
+                    ('Dynamic', 0), ('Traffic', 1), ('Human', -1), ('Static', 3),  # Coarse classes and human attention
+                    ('Vehicle', 0), ('Pedestrian', 1), ('Traffic Light', 2), ('Pole', 3), ('Lane', 4),  # Fine-grained classes
+                    ('Vehicle-L', 0), ('Pedestrian-L', 1), ('Trafficlight-L', 2), ('Pole-L', 3)  # Classes that include the lanes
+                ]
+
+                # Extract camera suffixes and get relevant attention heads
+                camera_suffixes = utils.extract_camera_suffixes(g_conf.DATA_USED)
+                relevant_heads = [utils.get_attention_head(suffix, g_conf) for suffix in camera_suffixes]
+
+                # Get the total number of heads
+                B, H, N1, N2 = attn_weights.shape
+
+                # Replace -1 with H-1 for the last head
+                relevant_heads = [H-1 if head == -1 else head for head in relevant_heads]
+
+                # Color of each head (ordered as specified)
+                idx_to_color = {
+                    0: '#DC143C',  # crimson
+                    1: '#007EA7',  # cerulean
+                    2: '#FFC857',  # sunglow
+                    3: '#6EBEA0',  # mint
+                    4: '#F6BDD1',  # orchid pink
+                    -1: '#4B0082', # indigo
+                }
+
+                # Select relevant attention maps
+                relevant_attn_weights = attn_weights[0, relevant_heads, :, :]  # Use only the first batch
+
+                # Reshape and normalize attention maps
+                S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
+                cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])
+                attn_maps = []
+                head_info = []
+                for i, (head_weights, suffix) in enumerate(zip(relevant_attn_weights, camera_suffixes)):
+                    head_weights = head_weights.mean(dim=0)  # Average over N1 dimension
+                    
+                    # Check if attention is uniform and skip if so
+                    if is_near_uniform_attention(head_weights):
+                        continue
+                    
+                    head_weights = utils.min_max_norm(head_weights)
+                    
+                    # Use einops.rearrange for reshaping
+                    if g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_LOSS:
+                        head_weights = rearrange(head_weights, '(h w S cam) -> h (w S cam)',
+                                                h=self._model._model.res_out_h, w=self._model._model.res_out_w, S=S, cam=cam)
+                    else:
+                        head_weights = rearrange(head_weights, '(S cam h w) -> h (S cam w)',
+                                                S=S, cam=cam, h=self._model._model.res_out_h, w=self._model._model.res_out_w)
+                    
+                    attn_maps.append(head_weights.detach().cpu().numpy())
+                    
+                    # Find the correct head name from the ordered list using the camera suffix
+                    head_name = next((name for name, _ in ordered_head_names if name.lower() == suffix.lower()), suffix.capitalize())
+                    head_color = idx_to_color.get(relevant_heads[i], idx_to_color[-1])  # Use indigo as default if index not found
+                    head_info.append((head_name, head_color))
+
+                # Combine attention maps
+                combined_map = combine_attention_maps_to_rgb(attn_maps, [color for _, color in head_info])
+                combined_map_img = Image.fromarray(combined_map)
+
+                # Resize and blend with the original image
+                combined_map_img = combined_map_img.resize((900, 300))
+                blended_img = Image.blend(cams[0], combined_map_img, blend_strength)
+
+                return blended_img, head_info
+
+            # Helper function to prepare camera images
+            def prepare_camera_images(norm_rgb):
+                cams = []
+                for i in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
+                    rgb_img = utils.inverse_normalize(norm_rgb[-1][i],
+                                                    g_conf.IMG_NORMALIZATION['mean'],
+                                                    g_conf.IMG_NORMALIZATION['std'])
+                    rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
+                    rimg = (rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)
+                    cams.append(Image.fromarray(rimg).resize((300, 300)))
+                return [Image.fromarray(np.hstack([np.array(img) for img in cams]))]
+
             if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
                 cams = []
                 for i in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
@@ -516,34 +656,6 @@ class CILv2_agent(object):
                     cams.append(rimg)
                 cams = rearrange(cams, 'c h w C -> h (c w) C')
                 cams = [Image.fromarray(cams).resize((900, 300))]
-
-                if not g_conf.NO_ACT_TOKENS:
-                    if not g_conf.ONE_ACTION_TOKEN:
-                        # Get the steering [STR] attention map
-                        attmaps = self.attn_weights[1] if isinstance(self.attn_weights, tuple) else self.attn_weights
-                        grayscale_cam_str = get_grayscale_attn_map(attmaps, -2, 900, 300, one_seq=True)
-                        topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
-
-                        # Get the acceleration [ACC] attention map
-                        grayscale_cam_acc = get_grayscale_attn_map(attmaps, -1, 900, 300, one_seq=True)
-                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
-
-                    else:
-                        # Only one attention map, so leave the top as the input rgb image
-                        topl_gradcam = [cams[0]]
-
-                        # Get the action [ACT] attention map
-                        grayscale_cam_act = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
-                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_act, self.cmap_2, cams, 0, 0.5)
-
-                else:
-                    # Let's plot the average attention map from all patches
-                    topl_gradcam = [cams[0]]
-
-                    # Get the attention map
-                    grayscale_cam_patch = get_grayscale_attn_map(self.attn_weights, 0, 900, 300, one_seq=True)
-                    bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_patch, self.cmap_2, cams, 0, 0.5)
-
             else:
                 cams = []
                 for i in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
@@ -553,41 +665,6 @@ class CILv2_agent(object):
                     rgb_img = rgb_img.detach().cpu().numpy().squeeze(0)
                     rimg = Image.fromarray((rgb_img.transpose(1, 2, 0) * 255).astype(np.uint8)).resize((300, 300))
                     cams.append(rimg)
-
-                # Separate the attention maps
-                cam_attn_weights, steer_attn_weights, accel_attn_weights = self.attn_weights
-
-                # Get the acceleration [ACC] attention map
-                grayscale_cam_acc = cam_attn_weights[:, -1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
-                # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
-                grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
-                grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
-                grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
-
-                gradcams_acc = []
-                for cam_id in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
-                    att = grayscale_cam_acc[cam_id, :]
-                    alpha = min(0.6, accel_attn_weights.squeeze()[cam_id].item())
-                    cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                    gcacc = Image.blend(cams[cam_id], cmap_att, alpha=alpha)
-                    gradcams_acc.append(gcacc)
-
-                # Get the steering [STR] attention map
-                grayscale_cam_str = cam_attn_weights[:, -2, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
-                # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
-                grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
-                grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
-                grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
-
-                gradcams_str = []
-                for cam_id in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
-                    att = grayscale_cam_str[cam_id, :]
-                    alpha = min(0.6, steer_attn_weights.squeeze()[cam_id].item())
-                    cmap_att = np.delete(self.cmap_2(att), 3, 2)
-                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
-                    gcstr = Image.blend(cams[cam_id], cmap_att, alpha=alpha)
-                    gradcams_str.append(gcstr)
 
             # Get the 3rd person view
             rgb_backontop = Image.fromarray(current_input_data['rgb_backontop'][1])
@@ -628,23 +705,118 @@ class CILv2_agent(object):
             font_2 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 55)
             font_3 = ImageFont.truetype(os.path.join(os.getcwd(), 'signs', 'arial.ttf'), 25)
 
-            # Texts above each view
-            if not g_conf.NO_ACT_TOKENS:
-                view_titles = [
-                    'RGB Cameras Input' if g_conf.ONE_ACTION_TOKEN else '[STR] Attention Maps',
-                    '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
-                ]
-            else:
-                act_output = self._model.params['action_output'].get('type', None)
-                act_query = True if (act_output is not None and 'decoder' in act_output) else False
-                view_titles = [
-                    'RGB Cameras Input',
-                    'ACT q Attention' if act_query else 'P2P Attention Maps'
-                ]
-
             # third person
             draw_mat.text((260, 40), "Third Person Perspective", fill=(255, 255, 255), font=font_2)
             mat.paste(rgb_backontop, (0, border_height_top))
+
+            # Do something different according to the model name
+            if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
+                # Texts above each view
+                if not g_conf.NO_ACT_TOKENS:
+                    view_titles = [
+                        'RGB Cameras Input' if g_conf.ONE_ACTION_TOKEN else '[STR] Attention Maps',
+                        '[ACT] Attention Maps' if g_conf.ONE_ACTION_TOKEN else '[ACC] Attention Maps'
+                    ]
+                else:
+                    act_output = self._model.params['action_output'].get('type', None)
+                    act_query = True if (act_output is not None and 'decoder' in act_output) else False
+                    view_titles = [
+                        'RGB Cameras Input',
+                        'ACT q Attention' if act_query else 'P2P Attention Maps'
+                    ]
+
+                if not g_conf.NO_ACT_TOKENS:  # If there are action tokens
+                    if not g_conf.ONE_ACTION_TOKEN:  # If there are multiple action tokens
+                        # Get the steering [STR] attention map
+                        attmaps = self.attn_weights[1] if isinstance(self.attn_weights, tuple) else self.attn_weights
+                        grayscale_cam_str = get_grayscale_attn_map(attmaps, -2, 900, 300, one_seq=True)
+                        topl_gradcam = blend_gradcam_cameraimg(grayscale_cam_str, self.cmap_2, cams, 0, 0.5)
+
+                        # Get the acceleration [ACC] attention map
+                        grayscale_cam_acc = get_grayscale_attn_map(attmaps, -1, 900, 300, one_seq=True)
+                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_acc, self.cmap_2, cams, 0, 0.5)
+
+                    else:
+                        # Only one attention map, so leave the top as the input rgb image
+                        topl_gradcam = [cams[0]]
+
+                        # Get the action [ACT] attention map
+                        grayscale_cam_act = get_grayscale_attn_map(self.attn_weights, -1, 900, 300, one_seq=True)
+                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_act, self.cmap_2, cams, 0, 0.5)
+
+                else:
+                    # Let's plot the average attention map from all patches
+                    topl_gradcam = [cams[0]]
+
+                    # Get the attention map
+                    if g_conf.MHA_ATTENTION_LOSS:
+                        # Multi-head attention visualization
+                        bottoml_gradcam, head_info = multihead_attention_viz(self.attn_weights, cams, blend_strength=0.8)
+                        bottoml_gradcam = [bottoml_gradcam]
+
+                        # Calculate the total width of the title
+                        title_width = sum(draw_mat.textsize(f"{head_name} ", font=font)[0] for head_name, _ in head_info)
+                        title_width += draw_mat.textsize("Att. Maps", font=font)[0]
+
+                        # Calculate the starting position to center the title
+                        attention_map_width = 900  # Width of the attention map image
+                        x_pos = rgb_backontop.width + images_separation_horizontally + (attention_map_width - title_width) // 2
+
+                        # Draw the colored title for multi-head attention
+                        for head_name, color in head_info:
+                            draw_mat.text((x_pos, border_height_top + cams[0].height + 35), f"{head_name} ", font=font, fill=color)
+                            x_pos += draw_mat.textsize(f"{head_name} ", font=font)[0]
+                        draw_mat.text((x_pos, border_height_top + cams[0].height + 35), "Att. Maps", font=font, fill=(255, 255, 255))
+
+                        # Replace 'P2P Attention Maps' with our new colored title
+                        # view_titles[1] = colored_title
+
+                    else:
+                        grayscale_cam_patch = get_grayscale_attn_map(self.attn_weights, 0, 900, 300, one_seq=True)
+                        bottoml_gradcam = blend_gradcam_cameraimg(grayscale_cam_patch, self.cmap_2, cams, 0, 0.5)
+
+                        # Center the default title
+                        title = view_titles[1]  # This will be 'P2P Attention Maps' or 'ACT q Attention'
+                        title_width = draw_mat.textsize(title, font=font)[0]
+                        attention_map_width = 900  # Width of the attention map image
+                        x_pos = rgb_backontop.width + images_separation_horizontally + (attention_map_width - title_width) // 2
+                        draw_mat.text((x_pos, border_height_top + cams[0].height + 35), title, fill=(255, 255, 255), font=font)
+
+            else:
+                # Separate the attention maps
+                cam_attn_weights, steer_attn_weights, accel_attn_weights = self.attn_weights
+
+                # Get the acceleration [ACC] attention map
+                grayscale_cam_acc = cam_attn_weights[:, -1, :, :].detach().cpu().numpy()  # [S*cam, H, W]; ACC token
+                # grayscale_cam_acc = grayscale_cam_acc / grayscale_cam_acc.sum(axis=(1, 2))[:, None, None]  # normalize
+                grayscale_cam_acc = grayscale_cam_acc.transpose(1, 2, 0)  # [H, W, S*cam]
+                grayscale_cam_acc = cv2.resize(grayscale_cam_acc, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
+                grayscale_cam_acc = grayscale_cam_acc.transpose(2, 0, 1)  # [S*cam, H, W]
+
+                gradcams_acc = []
+                for cam_id in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
+                    att = grayscale_cam_acc[cam_id, :]
+                    alpha = min(0.6, accel_attn_weights.squeeze()[cam_id].item())
+                    cmap_att = np.delete(self.cmap_2(att), 3, 2)
+                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
+                    gcacc = Image.blend(cams[cam_id], cmap_att, alpha=alpha)
+                    gradcams_acc.append(gcacc)
+
+                # Get the steering [STR] attention map
+                grayscale_cam_str = cam_attn_weights[:, -2, :, :].detach().cpu().numpy()  # [S*cam, H, W]; STR token
+                # grayscale_cam_str = grayscale_cam_str / grayscale_cam_str.sum(axis=(1, 2))[:, None, None]  # normalize
+                grayscale_cam_str = grayscale_cam_str.transpose(1, 2, 0)  # [H, W, S*cam]
+                grayscale_cam_str = cv2.resize(grayscale_cam_str, (g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2]))  # cv2 thinks it has multiple channels
+                grayscale_cam_str = grayscale_cam_str.transpose(2, 0, 1)  # [S*cam, H, W]
+
+                gradcams_str = []
+                for cam_id in range(len([c for c in g_conf.DATA_USED if 'rgb' in c])):
+                    att = grayscale_cam_str[cam_id, :]
+                    alpha = min(0.6, steer_attn_weights.squeeze()[cam_id].item())
+                    cmap_att = np.delete(self.cmap_2(att), 3, 2)
+                    cmap_att = Image.fromarray((cmap_att * 255).astype(np.uint8)).resize((300, 300))
+                    gcstr = Image.blend(cams[cam_id], cmap_att, alpha=alpha)
+                    gradcams_str.append(gcstr)
 
             # Attention Maps
             draw_mat.text((330 + rgb_backontop.width, 80), view_titles[0], fill=(255, 255, 255), font=font)
@@ -657,8 +829,9 @@ class CILv2_agent(object):
                 mat.paste(gradcams_str[2], (rgb_backontop.width + 3*images_separation_horizontally + 2*int(cams[0].width),
                                             border_height_top))
 
-            draw_mat.text((330 + rgb_backontop.width, border_height_top + cams[0].height + 35), view_titles[1],
-                          fill=(255, 255, 255), font=font)
+            # if not g_conf.MHA_ATTENTION_LOSS:
+            #     draw_mat.text((330 + rgb_backontop.width, border_height_top + cams[0].height + 35), view_titles[1],
+            #                 fill=(255, 255, 255), font=font)
             if self._model.name in ['CIL_multiview_vit_oneseq', 'CIL_multiview', 'CIL_multiview_deit_oneseq']:
                 mat.paste(bottoml_gradcam[0], (rgb_backontop.width + images_separation_horizontally,
                                                border_height_top + cams[0].height + images_separation_vertically))

@@ -52,12 +52,24 @@ def get_attention_head(name: str, config: dict) -> int:
     - 'static': Other static objects (buildings, poles, etc.; not used)
     """
     name_to_idx = {
+        # Coarse separation of classes
         'dynamic': 0,   # Dynamic objects (pedestrians and vehicles)
         'traffic': min(1, 
                         config.MODEL_CONFIGURATION['TxEncoder']['n_head'] - 1),   # Trafffic rules (lanes and traffic lights/signs)
         'human':   -1,  # From human drivers using eye-tracking; TBD
         'static':  -1,  # Other sttaic objects (buildings, poles, etc.)
-        '':        -1   # Default for the case where there are no suffixes
+        '':        -1,  # Default for the case where there are no suffixes
+        # Fine-grained separation of classes
+        'vehicle': 0,  # Vehicles
+        'pedestrian': 1,  # Pedestrians
+        'trafficlight': 2, # Traffic lights
+        'pole': 3, # Light and traffic poles
+        'lane': 4, # Lane markings and curb
+        # Combine fine-grained classes with lanes/curb
+        'vehicle-lane': 0,  # Vehicles
+        'pedestrian-lane': 1,  # Pedestrians
+        'trafficlight-lane': 2, # Traffic lights
+        'pole-lane': 3, # Light and traffic poles
     }
 
     return name_to_idx[name]
@@ -220,9 +232,9 @@ def write_model_results(experiment_path: Union[str, os.PathLike], model_name: st
             new_row += "MeanError_attention, MeanError\n" if att_loss else "MeanError\n"
 
         with open(results_file_csv, 'a') as f:
-            new_row += f"{results['iteration']}, {results['epoch']:.2f}, {results[model_name]['MAE_steer']:.4f}, "
-            new_row += f"{results[model_name]['MAE_acceleration']:.4f}, " if acc_as_action else f"{results[model_name]['MAE_throttle']:.4f}, {results[model_name]['MAE_brake']:.4f}, "
-            new_row += f"{results[model_name]['MeanError_attention']:.4f}, {results[model_name]['MeanError']:.4f}\n" if att_loss else f"{results[model_name]['MeanError']:.4f}\n"
+            new_row += f"{results['iteration']}, {results['epoch']:.2f}, {results[model_name]['MAE_steer']:.6f}, "
+            new_row += f"{results[model_name]['MAE_acceleration']:.6f}, " if acc_as_action else f"{results[model_name]['MAE_throttle']:.6f}, {results[model_name]['MAE_brake']:.6f}, "
+            new_row += f"{results[model_name]['MeanError_attention']:.6f}, {results[model_name]['MeanError']:.6f}\n" if att_loss else f"{results[model_name]['MeanError']:.6f}\n"
             f.write(new_row)
         print(f" -> The results have been saved in: {results_file_csv}")
 

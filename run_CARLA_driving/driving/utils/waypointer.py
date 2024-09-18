@@ -86,8 +86,8 @@ class Waypointer:
         _, road_option_0 = self._global_plan_gps[max(0, self.current_idx)]
         gps_point, road_option_1 = self._global_plan_gps[self.current_idx + 1]
 
-        if (road_option_0 in [RoadOption.CHANGELANELEFT, RoadOption.CHANGELANERIGHT]) \
-                and (road_option_1 not in [RoadOption.CHANGELANELEFT, RoadOption.CHANGELANERIGHT]):
+        change_lanes_list = [RoadOption.CHANGELANELEFT, RoadOption.CHANGELANERIGHT]
+        if (road_option_0 in change_lanes_list) and (road_option_1 not in change_lanes_list):
             road_option = road_option_1
         else:
             road_option = road_option_0

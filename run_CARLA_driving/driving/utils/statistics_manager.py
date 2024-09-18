@@ -77,7 +77,7 @@ def compute_route_length(config):
     return route_length
 
 
-class StatisticsManager(object):
+class StatisticsManager:
 
     """
     This is the statistics manager for the CARLA leaderboard.
@@ -193,9 +193,9 @@ class StatisticsManager(object):
                                     score_route = 0
 
         # update route scores
-        route_record.scores['score_route'] = score_route
-        route_record.scores['score_penalty'] = score_penalty
-        route_record.scores['score_composed'] = max(score_route*score_penalty, 0.0)
+        route_record.scores['score_route'] = score_route  # Route Completion
+        route_record.scores['score_penalty'] = score_penalty  # Infraction Score
+        route_record.scores['score_composed'] = max(score_route*score_penalty, 0.0)  # Driving Score
 
         # update status
         if target_reached:
@@ -281,23 +281,23 @@ class StatisticsManager(object):
 
         stats_dict = route_record.__dict__
         data['_checkpoint']['global_record'] = stats_dict
-        data['values'] = ['{:.3f}'.format(stats_dict['scores']['success_rate']),
-                          '{:.3f}'.format(stats_dict['scores']['success_rate_strict']),
-                          '{:.3f}'.format(stats_dict['scores']['score_composed']),
-                          '{:.3f}'.format(stats_dict['scores']['score_route']),
-                          '{:.3f}'.format(stats_dict['scores']['score_penalty']),
+        data['values'] = [f"{stats_dict['scores']['success_rate']:.3f}",
+                          f"{stats_dict['scores']['success_rate_strict']:.3f}",
+                          f"{stats_dict['scores']['score_composed']:.3f}",
+                          f"{stats_dict['scores']['score_route']:.3f}",
+                          f"{stats_dict['scores']['score_penalty']:.3f}",
                           # infractions
-                          '{:.3f}'.format(stats_dict['infractions']['collisions_pedestrian']),
-                          '{:.3f}'.format(stats_dict['infractions']['collisions_vehicle']),
-                          '{:.3f}'.format(stats_dict['infractions']['collisions_layout']),
-                          '{:.3f}'.format(stats_dict['infractions']['red_light']),
-                          '{:.3f}'.format(stats_dict['infractions']['stop_infraction']),
-                          '{:.3f}'.format(stats_dict['infractions']['outside_route_lanes']),
-                          '{:.3f}'.format(stats_dict['infractions']['route_dev']),
-                          '{:.3f}'.format(stats_dict['infractions']['route_timeout']),
-                          '{:.3f}'.format(stats_dict['infractions']['vehicle_blocked'])
-                          ]
-
+                          f"{stats_dict['infractions']['collisions_pedestrian']:.3f}",
+                          f"{stats_dict['infractions']['collisions_vehicle']:.3f}",
+                          f"{stats_dict['infractions']['collisions_layout']:.3f}",
+                          f"{stats_dict['infractions']['red_light']:.3f}",
+                          f"{stats_dict['infractions']['stop_infraction']:.3f}",
+                          f"{stats_dict['infractions']['outside_route_lanes']:.3f}",
+                          f"{stats_dict['infractions']['route_dev']:.3f}",
+                          f"{stats_dict['infractions']['route_timeout']:.3f}",
+                          f"{stats_dict['infractions']['vehicle_blocked']:.3f}"
+                          ]        
+                          
         data['labels'] = ['Success rate',
                           'Success rate (strict)',
                           'Avg. driving score',

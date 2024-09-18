@@ -111,18 +111,18 @@ def process_map(args) -> None:
 
     # Set the name of the virtual attention files
     fname_central = f'virtual_attention_central_'
-    fname_left = f'virtual_attention_left_'
-    fname_right = f'virtual_attention_right_'
+    fname_left    = f'virtual_attention_left_'
+    fname_right   = f'virtual_attention_right_'
     
     # Add the noise, if the noise category is different from 0 (no noise)
-    fname_central = f'f{fname_central}noise_{noise_cat}_' if noise_cat != 0 else fname_central
-    fname_left = f'{fname_left}noise_{noise_cat}_' if noise_cat != 0 else fname_left
-    fname_right = f'{fname_right}noise_{noise_cat}_' if noise_cat != 0 else fname_right
+    fname_central = f'{fname_central}noise_{noise_cat}_' if noise_cat != 0 else fname_central
+    fname_left    = f'{fname_left}noise_{noise_cat}_' if noise_cat != 0 else fname_left
+    fname_right   = f'{fname_right}noise_{noise_cat}_' if noise_cat != 0 else fname_right
 
     # Add the label converter and the index/frame number
     fname_central = f'{fname_central}{idx:06d}.jpg' if converter_label is None else f'{fname_central}{converter_label}{idx:06d}.jpg'
-    fname_left = f'{fname_left}{idx:06d}.jpg' if converter_label is None else f'{fname_left}{converter_label}{idx:06d}.jpg'
-    fname_right = f'{fname_right}{idx:06d}.jpg' if converter_label is None else f'{fname_right}{converter_label}{idx:06d}.jpg'
+    fname_left    = f'{fname_left}{idx:06d}.jpg' if converter_label is None else f'{fname_left}{converter_label}{idx:06d}.jpg'
+    fname_right   = f'{fname_right}{idx:06d}.jpg' if converter_label is None else f'{fname_right}{converter_label}{idx:06d}.jpg'
 
     # Save the masks, they are 2D numpy arrays, so we can use PIL
     Image.fromarray(mask_merge_central).save(os.path.join(base_path, route, fname_central))
@@ -922,7 +922,8 @@ def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_thre
 @click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
 @click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
 # Virtual attention maps options
-@click.option('--converter-label', 'converter_label', default=None, help='Label to convert the semantic segmentation to.', type=click.Choice(['traffic', 'dynamic', 'static']))
+@click.option('--converter-label', 'converter_label', default=None, help='Label to convert the semantic segmentation to. If not provided, will use the default class selection.', 
+                type=click.Choice(['pedestrian', 'vehicle', 'trafficlight', 'trafficsign', 'lane', 'pole', 'pedestrian-lane', 'vehicle-lane', 'trafficlight-lane', 'trafficsign-lane', 'pole-lane', 'dynamic', 'traffic', 'static']))
 @click.option('--noise-cat', 'noise_cat', default=0, help='Noise category to use for the virtual attention maps; Perlin Noise (PN) and Grid Perlin Noise (GPN). 0: No noise; 1: (global) GPN; 2: GPN on objects and PN on lines; 3: (global) PN', type=click.IntRange(min=0, max=3), show_default=True)
 @click.option('--seed', 'seed', default=None, help='Seed for the noise generation.', type=click.INT)
 # Additional params
