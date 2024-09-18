@@ -88,6 +88,8 @@ def extract_camera_suffixes(camera_names: List[str]) -> List[str]:
         # Remove the new prefix (e.g., 'avg_2sec_') and the common 'virtual_attention_' prefix
         name = re.sub(r'^avg_\d+sec_', '', name)
         name = name.replace('virtual_attention_', '')
+        # Remove the 'noise_X_' part
+        name = re.sub(r'noise_\d+_', '', name)
         # Split and remove camera direction words
         parts = name.split('_')
         suffix = '_'.join(part for part in parts if part not in ['central', 'left', 'right'])
