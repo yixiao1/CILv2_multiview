@@ -149,16 +149,27 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
 
                 elif g_conf.MHA_ATTENTION_LOSS:
                     # Get the common suffixes of the virtual cameras
-                    virtual_camera_names = utils.extract_camera_suffixes(g_conf.DATA_USED)  # k
-
+                    virtual_camera_names = utils.extract_camera_suffixes(g_conf.DATA_USED)  # Get the virtual camera's names, e.g., 'traffic', 'dynamic', etc.
                     # Get the attention masks for each virtual camera
                     tgt_atts = {}
 
                     for name in virtual_camera_names:
-                        src_atts_left = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_left_{name}' in key]
-                        src_atts_central = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_central_{name}' in key]
-                        src_atts_right = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if f'virtual_attention_right_{name}' in key]
+                        src_atts_left = []
+                        src_atts_central = []
+                        src_atts_right = []
 
+                        for current_data in data['current']:
+                            for key, value in current_data.items():
+                                noise_present, noise_category = utils.extract_noise_category(key)
+                                noise_str = f'noise_{noise_category}_' if noise_present else ''
+
+                                if f'virtual_attention_left_{noise_str}{name}' in key:
+                                    src_atts_left.append(value.to(f'cuda:{model.device_ids[0]}'))
+                                elif f'virtual_attention_central_{noise_str}{name}' in key:
+                                    src_atts_central.append(value.to(f'cuda:{model.device_ids[0]}'))
+                                elif f'virtual_attention_right_{noise_str}{name}' in key:
+                                    src_atts_right.append(value.to(f'cuda:{model.device_ids[0]}'))
+                                    
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
 
                         tgt_atts[utils.get_attention_head(name, g_conf)] = tgt_att  # Dict with k tensors of shape [B, N]

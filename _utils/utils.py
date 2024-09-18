@@ -75,6 +75,23 @@ def get_attention_head(name: str, config: dict) -> int:
     return name_to_idx[name]
 
 
+def extract_noise_category(camera_name: str) -> Tuple[bool, int]:
+    """
+    Extract whether the camera name has 'noise' and its category.
+    
+    Args:
+    camera_name (str): The name of the camera.
+    
+    Returns:
+    Tuple[bool, int]: A tuple where the first element is True if 'noise' is present,
+                      and the second element is the noise category (or None if no noise).
+    """
+    match = re.search(r'noise_(\d+)', camera_name)
+    if match:
+        return True, int(match.group(1))
+    return False, None
+
+
 def extract_camera_suffixes(camera_names: List[str]) -> List[str]:
     """
     Extract the suffixes from the camera names, which are used to identify the attention map classes.
