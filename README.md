@@ -100,9 +100,36 @@ In the 121 server:
 ```bash
 export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/data/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/data/121-2/Experiments/dporres/CILv2_multiview/scenario_runner:/data/121-2/Experiments/dporres/CILv2_multiview
 export TRAINING_RESULTS_ROOT=/data/121-2/Experiments/dporres/VisionTFM
-export DATASET_PATH=/data/121-2/Experiments/dporres/
+export DATASET_PATH=/data/121-1/Datasets/dporres/CARLA
 export SENSOR_SAVE_PATH=/data/121-2/Experiments/dporres/driving_record/
 export DRIVING_TEST_ROOT=/data/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving
+```
+
+In the 101 server:
+```bash
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/101-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/101-1/Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/101-1/Experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/101-1/Experiments/dporres/VisionTFM
+export DATASET_PATH=/datafast/101-1/Experiments/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/101-1/Experiments/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/101-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving
+```
+
+In the 118 server:
+```bash
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/118-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/118-1/Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/118-1/Experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/118-1/Experiments/dporres/VisionTFM
+export DATASET_PATH=/datafast/118-1/Experiments/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/118-1/Experiments/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/118-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving
+```
+
+In the 120 server:
+```bash
+export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/120-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/120-1/Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/120-1/Experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/120-1/Experiments/dporres/VisionTFM
+export DATASET_PATH=/datafast/120-1/Experiments/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/120-1/Experiments/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/120-1/Experiments/dporres/CILv2_multiview/run_CARLA_driving
 ```
 
 * Define a configuration file for training. Please refer to [the `CILv2_3cam_smalltest.yaml` file](./configs/CILv2/CILv2_3cam_smalltest.yaml) in `configs` folder as example

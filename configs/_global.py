@@ -94,7 +94,8 @@ _g_conf.LEARNING_RATE_MINIMUM = 0.00001
 _g_conf.LEARNING_RATE_DECAY_EPOCHES = []    # we adjust learning rate for each 1000 iterations
 _g_conf.LEARNING_RATE_POLICY = {'name': 'normal', 'level': 0.5, 'momentum': 0, 'weight_decay': 0}   # lr multiply by 0.5 for each LEARNING_RATE_STEP
 _g_conf.AUTOCAST = False
-_g_conf.SAVE_FULL_STATE = True
+_g_conf.SAVE_FULL_STATE = True  
+_g_conf.FLOAT32_PRECISION = "None"  # highest, high, medium; for Ampere or newer GPUs and for PyTorch >= 2.0.0
 
 """#### Network Related Parameters ####"""
 _g_conf.MODEL_TYPE = ''
@@ -110,6 +111,7 @@ _g_conf.CMD_SPD_TOKENS = False  # Instead of adding the speed and action embeddi
 _g_conf.PREDICT_CMD_SPD = False  # Predict the input command and speed
 _g_conf.FREEZE_CLS_TOKEN = False  # freeze the classification token
 _g_conf.REMOVE_CLS_TOKEN = True  # remove the classification token from the sequence
+_g_conf.USE_CLS_TOKEN_ATTENTION = True  # Use the classification token for attention visualization and training w/ViT
 _g_conf.SENSOR_EMBED = False  # whether to use sensor embedding as in InterFuser/ReasonNet
 _g_conf.EXTRA_POS_EMBED = False  # A final positional embedding at the output of the encoder
 _g_conf.OLD_TOKEN_ORDER = True  # Originally had mixed the order of the [STR] and [ACC]; should be set explicitly

@@ -424,7 +424,8 @@ def generate_depth_aware_perlin_noise(depth_not_norm, scale: int = 30, layers: i
     depth_not_norm[depth_not_norm > 40] = 40
     # print(depth_not_norm)
     depth_not_norm = 40 - depth_not_norm
-    depth_data = (depth_not_norm - np.mean(depth_not_norm) / np.std(depth_not_norm))
+
+    depth_data = (depth_not_norm - np.mean(depth_not_norm) / (np.std(depth_not_norm) + 1e-20))
     depth_data = np.max(depth_data) - (depth_data - np.min(depth_data)) + 1e-20
     depth_data = depth_data.T
 
@@ -499,22 +500,26 @@ def generate_depth_aware_perlin_noise(depth_not_norm, scale: int = 30, layers: i
 
 
 def create_mask_noise(width, height, percentage):
-    grid_width = width // 128
-    grid_height = height // 128
+    # Calculate the grid size; each cell is a fifth of the image size
+    cell_width = width // 5
+    cell_height = height // 5
+
+    grid_width = width // cell_width
+    grid_height = height // cell_height
 
     # Initialize a blank mask
     mask = np.zeros((height, width), dtype=np.uint8)
 
     # Calculate the total and selected number of cells
-    total_cells = 128 * 128
+    total_cells = cell_width * cell_height
     cells_to_apply = int(total_cells * percentage // 100)
 
     # Randomly select cells
     selected_cells = np.random.choice(total_cells, cells_to_apply, replace=False)
 
     for cell in selected_cells:
-        top_left_x = (cell % 128) * grid_width
-        top_left_y = (cell // 128) * grid_height
+        top_left_x = (cell % cell_width) * grid_width
+        top_left_y = (cell // cell_height) * grid_height
         bottom_right_x = top_left_x + grid_width
         bottom_right_y = top_left_y + grid_height
 
@@ -527,13 +532,25 @@ def create_mask_noise(width, height, percentage):
 def filter_ss_converter(label: str) -> np.ndarray:
     # Define the indices to keep for each label
     label_indices = {
-        'pedestrian': {4, 6, 23},    # pedestrian, road line, curb
-        'car': {10, 6, 23},          # car, road line, curb
-        'trafficlight': {12, 18, 6, 23},  # traffic sign, traffic light, road line, curb
-        'other': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22},  # all other classes
+        # Fine-grained classes
+        'pedestrian': {4},              # pedestrian
+        'vehicle': {10},                # car
+        'trafficlight': {18},           # traffic light
+        'trafficsign': {12},            # traffic sign
+        'pole': {5},                    # pole
+        'lane': {6, 23},                # road line, curb
+        # Fine-grained classes with traffic lanes
+        'pedestrian-lane': {4, 6, 23},     # pedestrian, road line, curb
+        'vehicle-lane': {10, 6, 23},       # car, road line, curb
+        'trafficlight-lane': {18, 6, 23},  # traffic sign, traffic light, road line, curb
+        'trafficsign-lane': {12, 6, 23},   # traffic sign, road line, curb
+        'pole-lane': {5, 6, 23},            # pole, road line, curb
+        # Coarse classes
         'dynamic': {4, 10},  # pedestrian, car
         'traffic': {6, 12, 18, 23},  # road line, traffic sign, traffic light
-        'static': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22}  # all other classes
+        'static': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22},  # all other classes
+        'other': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22},  # all other classes
+        
     }
     
     # Get the set of indices to keep based on the label
@@ -550,45 +567,60 @@ def get_virtual_attention_map(depth_path, segmented_path, converter_label: str =
                               DILATION_KERNEL_SIZE: int = 10, DILATION_ITERATIONS: int = 1):
     segmentation = read_images(segmented_path, 'segmentation')
     semseg_converter = SS_CONVERTER if converter_label is None else filter_ss_converter(converter_label)
-    if depth_path is not None:
-        depth_rgb = read_images(depth_path, 'depth')
-        depth_img = process_depth_image(depth_rgb)
-    else:
-        depth_img = None
+    
+    # Use a depth image if available, else nothing
+    depth_img = process_depth_image(read_images(depth_path, 'depth')) if depth_path is not None else None
+    
     mask_depth, mask_segmentation, road_mask, sidewalk_mask, line_mask = create_masks(
         depth_img, segmentation, semseg_converter, central_camera=central_camera,
         depth_threshold=depth_threshold, min_depth=min_depth)
+    
     boundary = find_boundary(road_mask, sidewalk_mask, DILATION_KERNEL_SIZE, DILATION_ITERATIONS)
     boundary = cv2.bitwise_or(boundary, line_mask) * 255
     boundary = cv2.bitwise_and(mask_depth, boundary)
     merge_boundary = mask_segmentation
 
     merge = cv2.bitwise_and(mask_depth, merge_boundary)
-    # merge_simple = merge.copy()
-
-    if depth_img is not None:
-        width, height = depth_img.shape[1], depth_img.shape[0]
-        first_depth_part = depth_img < 10
-        second_depth_part = (depth_img >= 10) * (depth_img < 20)
-        third_depth_part = depth_img >= 20
-
-        mask_noise_first = create_mask_noise(width, height, 70) * first_depth_part
-        mask_noise_second = create_mask_noise(width, height, 50) * second_depth_part
-        mask_noise_third = create_mask_noise(width, height, 10) * third_depth_part
-        mask_noise = mask_noise_first + mask_noise_second + mask_noise_third
 
     if noise_cat == 0:
         if converter_label is None or converter_label == 'traffic':
             merge = cv2.bitwise_or(merge, boundary)
     else:
+        # Generate Perlin noise regardless of depth image availability
+        width, height = segmentation.shape[1], segmentation.shape[0]
+        if depth_img is not None:
+            noise = generate_depth_aware_perlin_noise(depth_img, scale=3, layers=1)
+            
+            th = 0.6
+            noise[noise < th] = 0
+            noise[noise >= th] = 1
+            noise = noise.T
+            noise = 1 - noise
+            
+            first_depth_part = depth_img < 10
+            second_depth_part = (depth_img >= 10) * (depth_img < 20)
+            third_depth_part = depth_img >= 20
 
-        noise = generate_depth_aware_perlin_noise(depth_img, scale=3, layers=1)
-        th = 0.6
-        noise[noise < th] = 0
-        noise[noise >= th] = 1
-        noise = noise.T
-        noise = 1 - noise
+            mask_noise_first = create_mask_noise(width, height, 70) * first_depth_part
+            mask_noise_second = create_mask_noise(width, height, 50) * second_depth_part
+            mask_noise_third = create_mask_noise(width, height, 10) * third_depth_part
+            mask_noise = mask_noise_first + mask_noise_second + mask_noise_third
+        else:
+            # noise = np.random.rand(height, width)
+            # th = 0.6
+            # noise[noise < th] = 0
+            # noise[noise >= th] = 1
+            # noise = noise.T
+            # noise = 1 - noise
+            # mask_noise = noise < 0.7
+            noise = np.ones((height, width))
+            mask_noise = create_mask_noise(width, height, 30)
+
         # cv2.imwrite("noise.png", noise * 255)
+
+        # if depth_img is not None:
+        # else:
+        #     mask_noise = create_mask_noise(width, height, 30)  # Fixed when depth image is not available
 
         masked_noise_image = mask_noise * noise
         masked_noise_image = masked_noise_image.astype(np.uint8)

@@ -23,7 +23,10 @@ def load_model_from_checkpoint(model: CIL_multiview,
 
     new_state_dict = {}
     for k, v in checkpoint['model'].items():
-        new_state_dict[k[7:]] = v
+        if k.startswith('_model'):
+            new_state_dict[k[7:]] = v
+        else:
+            new_state_dict[k] = v
 
     new_state_dict = OrderedDict(new_state_dict)
 
@@ -103,7 +106,8 @@ def get_single_data_point(data_root_dir: Union[str, os.PathLike],
 
 
 def model_forward(model: CIL_multiview, 
-                  data: dict) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
+                  data: dict,
+                  last_encoder_state: bool = False) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
     """
     Get the intermediate features of the CIL_multiview model.
         return_attentions (bool): return the attention weights of the Transformer Encoder
@@ -112,7 +116,7 @@ def model_forward(model: CIL_multiview,
     src_directions = [torch.tensor([data['can_bus']['direction']]).float()]
     src_s = [torch.tensor([data['can_bus']['speed']]).float()]
 
-    x = torch.stack(src_images).to('cuda')
+    x = torch.stack(src_images).to('cuda').squeeze(1)
     d = src_directions[-1].to('cuda')
     s = src_s[-1].to('cuda')
 
@@ -132,7 +136,8 @@ def model_forward(model: CIL_multiview,
     in_memory, attn_weights = model.tx_encoder(e_p)
 
     action_output, _, _ = model.action_prediction(in_memory, cam=len(src_images))
-
+    if last_encoder_state:
+        return action_output, resnet_inter, attn_weights, in_memory
     return action_output, resnet_inter, attn_weights
 
 # ============== Plotting utils =====================
@@ -149,7 +154,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 mpl.rcParams['text.usetex'] = True
-mpl.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}'] #for \text command
+mpl.rcParams['text.latex.preamble'] = r"\usepackage{amsmath}" #for \text command
 
 def plot_attention_weights_cossim(attn_weights: list) -> None:
     """
