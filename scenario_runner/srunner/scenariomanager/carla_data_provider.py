@@ -500,6 +500,9 @@ class CarlaDataProvider(object):  # pylint: disable=too-many-public-methods
                 if disable_giant:
                     blueprints = [x for x in blueprints if not x.id.endswith('firetruck')]
                     blueprints = [x for x in blueprints if not x.id.endswith('ambulance')]
+                    blueprints = [x for x in blueprints if not x.id.endswith('sprinter')]
+                    blueprints = [x for x in blueprints if not x.id.endswith('fusorosa')]
+                    blueprints = [x for x in blueprints if not x.id.endswith('european_hgv')]
 
             # Remove microlino?
             blueprints = [x for x in blueprints if 'microlino' not in x.id]

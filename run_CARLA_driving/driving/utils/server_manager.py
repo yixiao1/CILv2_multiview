@@ -77,8 +77,8 @@ class ServerManagerDocker(ServerManager):
                                            self._docker_name, '/bin/bash', './CarlaUE4.sh', '-opengl',
                                            f'-quality-level={self._quality_level}', f'-carla-port={port}'],
                                           shell=False, stdout=subprocess.PIPE, env=my_env)
-        # for running docker for CARLA 0.9.13
-        elif self._docker_name in ['carlasim/carla:0.9.13', 'carlasim/carla_allmaps:0.9.13']:
+        # for running docker for CARLA 0.9.13/14
+        elif self._docker_name in ['carlasim/carla:0.9.13', 'carlasim/carla_allmaps:0.9.13', 'carlasim/carla:0.9.14']:
             self._proc = subprocess.Popen(['docker', 'run', '--name', self._docker_id, '--rm', '-d', '-p',
                                            f'{port}-{port+2}:{port}-{port+2}', '--gpus', f'device={self._gpu}', '--cpus', '5.0',
                                            '-it', self._docker_name, '/bin/bash', './CarlaUE4.sh', '-RenderOffscreen',

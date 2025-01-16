@@ -269,57 +269,69 @@ def inverse_normalize(tensor, mean, std):
 # ============= Synthetic Attention Maps =============
 
 SS_CONVERTER = np.uint8([
-    0,    # unlabeled
-    0,    # building
-    0,    # fence
-    0,    # other
-    1,    # ped
-    0,    # pole
-    1,    # road line
-    0,    # road
-    0,    # sidewalk
-    0,    # vegetation
-    1,    # car
-    0,    # wall
-    0,    # traffic sign
-    0,    # sky
-    0,    # ground
-    0,    # bridge
-    0,    # railtrack
-    0,    # guardrail
-    1,    # trafficlight
-    0,    # static
-    0,    # dynamic
-    0,    # water
-    0,    # terrain
-    1,    # Curb
-    ])
+    0,    # 0: unlabeled
+    0,    # 1: roads
+    0,    # 2: sidewalks
+    0,    # 3: building
+    0,    # 4: wall
+    0,    # 5: fence
+    0,    # 6: pole
+    1,    # 7: trafficlight
+    0,    # 8: trafficsign
+    0,    # 9: vegetation
+    0,    # 10: terrain
+    0,    # 11: sky
+    1,    # 12: pedestrian
+    1,    # 13: rider
+    1,    # 14: car
+    1,    # 15: truck
+    1,    # 16: bus
+    1,    # 17: train
+    1,    # 18: motorcycle
+    1,    # 19: bicycle
+    0,    # 20: static
+    0,    # 21: dynamic
+    0,    # 22: other
+    0,    # 23: water
+    1,    # 24: roadline
+    0,    # 25: ground
+    0,    # 26: bridge
+    0,    # 27: railtrack
+    0,    # 28: guardrail
+    1,    # 29: curb (custom class)
+])
 
 ss_classes = {
-        0: [0, 0, 0],  # None
-        1: [70, 70, 70],  # Buildings
-        2: [100, 40, 40],  # Fences
-        3: [55, 90, 80],  # Other
-        4: [220, 20, 60],  # Pedestrians
-        5: [153, 153, 153],  # Poles
-        6: [157, 234, 50],  # RoadLines
-        7: [128, 64, 128],  # Roads
-        8: [244, 35, 232],  # Sidewalks
-        9: [107, 142, 35],  # Vegetation
-        10: [0, 0, 142],  # Vehicles
-        11: [102, 102, 156],  # Walls
-        12: [220, 220, 0],  # TrafficSigns
-        13: [70, 130, 180],  # Sky
-        14: [81, 0, 81],  # Ground
-        15: [150, 100, 100],  # Bridges
-        16: [230, 150, 140],  # RailTracks
-        17: [180, 165, 180],  # GuardRails
-        18: [250, 170, 30],  # TrafficLights
-        19: [110, 190, 160],  # Statics
-        20: [170, 120, 50],  # Dynamics
-        21: [45, 60, 150],  # Water
-        22: [145, 170, 100],  # Terrains
-        23: [255, 255, 100]  # Curb; usually from pre-trained models (e.g., Mapillary Vistas)
+    0: [0, 0, 0],          # Unlabeled
+    1: [128, 64, 128],     # Roads
+    2: [244, 35, 232],     # Sidewalks
+    3: [70, 70, 70],       # Building
+    4: [102, 102, 156],    # Wall
+    5: [190, 153, 153],    # Fence
+    6: [153, 153, 153],    # Pole
+    7: [250, 170, 30],     # TrafficLight
+    8: [220, 220, 0],      # TrafficSign
+    9: [107, 142, 35],     # Vegetation
+    10: [152, 251, 152],   # Terrain
+    11: [70, 130, 180],    # Sky
+    12: [220, 20, 60],     # Pedestrian
+    13: [255, 0, 0],       # Rider
+    14: [0, 0, 142],       # Car
+    15: [0, 0, 70],        # Truck
+    16: [0, 60, 100],      # Bus
+    17: [0, 80, 100],      # Train
+    18: [0, 0, 230],       # Motorcycle
+    19: [119, 11, 32],     # Bicycle
+    20: [110, 190, 160],   # Static
+    21: [170, 120, 50],    # Dynamic
+    22: [55, 90, 80],      # Other
+    23: [45, 60, 150],     # Water
+    24: [157, 234, 50],    # RoadLine
+    25: [81, 0, 81],       # Ground
+    26: [150, 100, 100],   # Bridge
+    27: [230, 150, 140],   # RailTrack
+    28: [180, 165, 180],   # GuardRail
+    29: [255, 255, 100]    # Curb (custom class)
 }
 
 
@@ -533,24 +545,33 @@ def filter_ss_converter(label: str) -> np.ndarray:
     # Define the indices to keep for each label
     label_indices = {
         # Fine-grained classes
-        'pedestrian': {4},              # pedestrian
-        'vehicle': {10},                # car
-        'trafficlight': {18},           # traffic light
-        'trafficsign': {12},            # traffic sign
-        'pole': {5},                    # pole
-        'lane': {6, 23},                # road line, curb
-        # Fine-grained classes with traffic lanes
-        'pedestrian-lane': {4, 6, 23},     # pedestrian, road line, curb
-        'vehicle-lane': {10, 6, 23},       # car, road line, curb
-        'trafficlight-lane': {18, 6, 23},  # traffic sign, traffic light, road line, curb
-        'trafficsign-lane': {12, 6, 23},   # traffic sign, road line, curb
-        'pole-lane': {5, 6, 23},            # pole, road line, curb
-        # Coarse classes
-        'dynamic': {4, 10},  # pedestrian, car
-        'traffic': {6, 12, 18, 23},  # road line, traffic sign, traffic light
-        'static': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22},  # all other classes
-        'other': {0, 1, 2, 3, 5, 7, 8, 9, 11, 14, 15, 16, 17, 19, 20, 21, 22},  # all other classes
+        'pedestrian': {12},                 # pedestrian
+        'vehicle': {13, 14, 15, 16, 17, 18, 19},  # rider, car, truck, bus, train, motorcycle, bicycle
+        'trafficlight': {7},                # traffic light
+        'trafficsign': {8},                 # traffic sign
+        'pole': {6},                        # pole
+        'lane': {24, 29},                   # road line, curb
         
+        # Fine-grained classes with traffic lanes
+        'pedestrian-lane': {12, 24, 29},     # pedestrian, road line, curb
+        'vehicle-lane': {13, 14, 15, 16, 17, 18, 19, 24, 29},  # rider, all vehicles, road line, curb
+        'trafficlight-lane': {7, 24, 29},    # traffic light, road line, curb
+        'trafficsign-lane': {8, 24, 29},     # traffic sign, road line, curb
+        'pole-lane': {6, 24, 29},            # pole, road line, curb
+        
+        # Coarse classes
+        'dynamic': {12, 13, 14, 15, 16, 17, 18, 19},  # pedestrian, rider, all vehicles
+        'traffic': {7, 8, 24, 29},  # traffic light, traffic sign, road line, curb
+        'static': {0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 20, 21, 22, 23, 25, 26, 27, 28},  # all other classes
+        'other': {0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 20, 21, 22, 23, 25, 26, 27, 28},   # all other classes
+        
+        # New categories
+        'infrastructure': {1, 2, 3, 4, 5, 6, 26, 27, 28},  # roads, sidewalks, building, wall, fence, pole, bridge, railtrack, guardrail
+        'background': {0, 9, 10, 11, 23, 25},  # unlabeled, vegetation, terrain, sky, water, ground
+        'props': {20},  # static props (benches, hydrants)
+        'movable': {21},  # dynamic props (trash bins, bags)
+        'agents': {12, 13, 14, 15, 16, 17, 18, 19},  # all people and vehicles (same as dynamic but clearer name)
+        'rail': {17, 27},  # train and rail tracks
     }
     
     # Get the set of indices to keep based on the label

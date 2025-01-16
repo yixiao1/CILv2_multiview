@@ -54,8 +54,12 @@ def _get_traffic_light_waypoints(traffic_light, carla_map):
         vec_forward = wpx.transform.get_forward_vector()
         vec_right = carla.Vector3D(x=-vec_forward.y, y=vec_forward.x, z=0)
 
-        loc_left = wpx.transform.location - 0.4 * wpx.lane_width * vec_right
-        loc_right = wpx.transform.location + 0.4 * wpx.lane_width * vec_right
+        # loc_left = wpx.transform.location - 0.4 * wpx.lane_width * vec_right
+        # loc_right = wpx.transform.location + 0.4 * wpx.lane_width * vec_right
+        offset_distance = - 4.0  # meters to move stopline back
+        wpx_loc = wpx.transform.location + offset_distance * carla.Vector3D(x=vec_forward.x, y=vec_forward.y, z=vec_forward.z)
+        loc_left = wpx_loc - 0.4 * wpx.lane_width * vec_right
+        loc_right = wpx_loc + 0.4 * wpx.lane_width * vec_right
         stopline_vertices.append([loc_left, loc_right])
 
     # all paths at junction for this traffic light

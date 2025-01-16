@@ -151,40 +151,40 @@ class RoachRL_expert(object):
         :return: a list containing the required sensors in the following format:
 
         """
+        bound_x = 2.9508416652679443  # For Lincoln MKZ 2017
+        bound_y = 1.5641621351242065
+        bound_z = 1.255373239517212
 
         sensors = [
             # RGB cameras
-            {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'rgb_central', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.rgb', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'rgb_central', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'rgb_left', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.rgb', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': -46,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'rgb_left', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.rgb', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'rgb_right', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.rgb', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': 46.0,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'rgb_right', 'lens_circle_setting': False},
 
             # Depth cameras
-            {'type': 'sensor.camera.depth', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'depth_central', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.depth', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'depth_central', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.depth', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'depth_left', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.depth', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': -46,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'depth_left', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.depth', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'depth_right', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.depth', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': 46.0,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'depth_right', 'lens_circle_setting': False},
 
             # Semantic Segmentation cameras
-            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'ss_central', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'ss_central', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': -60,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'ss_left', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': -46,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'ss_left', 'lens_circle_setting': False},
 
-            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
-             'width': 640, 'height': 640, 'fov': 60, 'id': 'ss_right', 'lens_circle_setting': False},
-
-            # {'type': 'sensor.camera.optical_flow', 'x': 0.0, 'y': 0.0, 'z': 2.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-            #  'width': 640, 'height': 640, 'fov': 60, 'id': 'opticalflow_central', 'lens_circle_setting': False},
+            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.0*bound_x+0.75, 'y': -0.2*bound_y, 'z': 1.0*bound_z-0.05, 'roll': 0.0, 'pitch': 0.0, 'yaw': 46.0,
+             'width': 960, 'height': 540, 'fov': 45, 'id': 'ss_right', 'lens_circle_setting': False},
 
             {'type': 'sensor.other.gnss', 'id': 'GPS'},
 
@@ -269,7 +269,7 @@ class RoachRL_expert(object):
                 if 'flow' in sensor_type:
                     np.save(os.path.join(self.vision_save_path, f'{file_name_string}.npy'), self.input_data[sensor_type][1])
                 elif 'rgb' in sensor_type:
-                    Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.png'))
+                    Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.jpg'))
                 else:
                     if 'ss' in sensor_type:
                         self.input_data[sensor_type][1].save_to_disk(os.path.join(self.vision_save_path, f'{file_name_string}.png'))

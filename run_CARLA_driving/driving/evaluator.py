@@ -73,8 +73,8 @@ class Evaluator(object):
     ego_vehicles = []
 
     # Tunable parameters
-    client_timeout = 10.0  # in seconds
-    wait_for_world = 20.0  # in seconds
+    client_timeout = 20.0  # in seconds
+    wait_for_world = 40.0  # in seconds
 
     def __init__(self, args, statistics_manager, ServerDocker=None):
         """
