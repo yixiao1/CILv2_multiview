@@ -98,11 +98,11 @@ export DRIVING_TEST_ROOT=/datafast/105-1/Experiments/dporres/CILv2_multiview/run
 
 In the 121 server:
 ```bash
-export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/data/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/data/121-2/Experiments/dporres/CILv2_multiview/scenario_runner:/data/121-2/Experiments/dporres/CILv2_multiview
-export TRAINING_RESULTS_ROOT=/data/121-2/Experiments/dporres/VisionTFM
-export DATASET_PATH=/data/121-1/Datasets/dporres/CARLA
-export SENSOR_SAVE_PATH=/data/121-2/Experiments/dporres/driving_record/
-export DRIVING_TEST_ROOT=/data/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving
+export PYTHONPATH=/home/dporres/CARLA_0.9.14/PythonAPI/carla/:/home/dporres/CARLA_0.9.14/PythonAPI/carla/dist/carla-0.9.14-py3.7-linux-x86_64.egg:/data/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/data/121-2/Experiments/dporres/CILv2_multiview/scenario_runner:/data/121-2/Experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/data/121-2/Experiments/dporres/VisionTFM/
+export DATASET_PATH=/data-net/ted/extra_data_diego/
+export SENSOR_SAVE_PATH=/data/121-2/Experiments/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/data/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving/
 ```
 
 In the 101 server:
