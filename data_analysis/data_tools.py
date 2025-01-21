@@ -2,11 +2,13 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import os
+from os.path import commonpath
+from collections import defaultdict
 
 # os.environ['FORCE_TF_AVAILABLE'] = '1'
 
 from glob import glob
-from typing import Union, List, Tuple, Type
+from typing import Union, List, Tuple, Type, Dict
 from tqdm import tqdm
 import click
 from dataloaders import transforms
@@ -45,11 +47,12 @@ def is_image_corrupted(filepath):
     return img is None  # Returns True if the image is corrupted (i.e., cannot be read)
 
 
-def get_paths(data_root: str, sensors: list = ['can_bus', 'depth', 'ss']) -> list:
+def get_paths(data_root: str, sensors: list = None) -> list:
     # Let's get all the paths for ALL the files in the dataset
     paths = glob(os.path.join(data_root, '**', '*'), recursive=True)
     # Filter out with the sensors + only files
-    paths = [path for path in paths if (any(sensor in path for sensor in sensors) and os.path.isfile(path))]
+    if sensors is not None:
+        paths = [path for path in paths if any(os.path.basename(path).startswith(sensor) for sensor in sensors) and os.path.isfile(path)]
     # We might have to filter out the noise images if we are not using them
     if 'virtual_attention' in sensors:
         paths = [path for path in paths if 'noise' not in path]
@@ -71,6 +74,11 @@ def prepare_semantic_segmentation(args) -> type(None):
     path, dataset, subdata, route = args
     # Open the image
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+    if img is None:
+        print(f'Failed to load image: {path}')
+        import sys; sys.exit(1)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
     # Check if all info is in one channel (only classes)
     if max(img[:, :, :3].flatten()) <= max(transforms.ss_classes):
@@ -82,6 +90,80 @@ def prepare_semantic_segmentation(args) -> type(None):
 
         # Save it (overwrite)
         cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA))
+
+
+def check_single_ss_image(filepath: str) -> tuple:
+    """Check if a single semantic segmentation image has class indices only in the red channel."""
+    img = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        print(f'Failed to load image: {filepath}')
+        return None
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
+    
+    # Check if green and blue channels contain any non-zero values
+    if np.any(img[:, :, 1]) or np.any(img[:, :, 2]):  # If any non-zero values in G or B
+        max_values = [
+            np.max(img[:, :, 0]),  # max value in R channel
+            np.max(img[:, :, 1]),  # max value in G channel
+            np.max(img[:, :, 2])   # max value in B channel
+        ]
+        return (filepath, max_values)
+    return None
+
+
+def check_semantic_segmentation(directory: str) -> list:
+    """Check semantic segmentation images using multiprocessing."""
+    # Get all files starting with 'ss'
+    filepaths = [str(p) for p in Path(directory).rglob('ss*.png')]
+    # Use all available CPU cores except one
+    num_processes = max(1, cpu_count() - 1)
+    # Create a pool of workers
+    with Pool(processes=num_processes) as pool:
+        # Map the check_single_image function to all filepaths
+        results = pool.map(check_single_image, filepaths)
+    # Filter out None results and return suspicious images
+    return [r for r in results if r is not None]
+
+
+def analyze_suspicious_paths(suspicious_images: list) -> None:
+    """
+    Analyze and group suspicious semantic segmentation image paths to find common patterns.
+    Hence, use check_semantic_segmentation(PATH) above, then pass that list to this function.
+    """
+    if not suspicious_images:
+        print("No suspicious images found.")
+        return
+        
+    # Get all paths
+    paths = [path for path, _ in suspicious_images]
+    
+    # Find the common root path for all suspicious images
+    common_root = commonpath(paths)
+    print(f"\nCommon root path: {common_root}")
+    
+    # Group paths by their directory structure
+    path_groups = defaultdict(list)
+    for path in paths:
+        # Get relative path from common root
+        rel_path = os.path.relpath(os.path.dirname(path), common_root)
+        path_groups[rel_path].append(path)
+    
+    # Print grouped results
+    print(f"\nFound {len(suspicious_images)} suspicious images in {len(path_groups)} directories:")
+    for dir_path, files in path_groups.items():
+        print(f"\nDirectory: {dir_path}")
+        print(f"Count: {len(files)}")
+        # Print a few example files
+        if len(files) > 3:
+            print("Example files:")
+            for f in files[:3]:
+                print(f"  - {os.path.basename(f)}")
+            print(f"  ... and {len(files)-3} more")
+        else:
+            print("Files:")
+            for f in files:
+                print(f"  - {os.path.basename(f)}")
+
 
 def process_map(args) -> None:
     idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, base_path, route, converter_label = args
@@ -131,6 +213,11 @@ def process_map(args) -> None:
 
 
 def process_container(args) -> type(None):
+    """
+    Fix the can_bus files, producing the "cmd_fix_can_bus" files. In essence, we group the
+    gyroscope and accelerometer data, as well as give the command/direction that the ego
+    vehicle should take at the next intersection earlier than usual.
+    """
     container_path, dataset_path = args
     container = container_path.split(os.sep)[-1]
 
@@ -233,7 +320,6 @@ def process_container(args) -> type(None):
             shutil.copy(json_file, os.path.join(container_path, 'cmd_fix_' + json_file.split('/')[-1]))
 
 
-
 def parse_tick_ranges(range_str: str) -> Union[int, List[Tuple[int, int]]]:
     """ Parse a string of tick ranges into a list of tuples. """
     if '-' not in range_str:
@@ -270,6 +356,33 @@ def find_files(directory: Union[str, os.PathLike],
     return selected_files
  
 
+def get_frame_info(directory: str) -> Tuple[Dict[int, List[str]], int]:
+    """Get information about frames and their files in a directory.
+    Returns a dictionary of frame numbers to file paths and the expected file count per frame.
+    """
+    # Find all files with 6 digits in their name
+    files = glob(os.path.join(directory, '**', '*[0-9][0-9][0-9][0-9][0-9][0-9].*'), recursive=True)
+    
+    # Group files by frame number
+    frame_files = defaultdict(list)
+    pattern = re.compile(r'.*?(\d{6})\.')
+    
+    for file in files:
+        match = pattern.match(file)
+        if match:
+            frame_num = int(match.group(1))
+            frame_files[frame_num].append(file)
+    
+    # Get the most common file count (this is our expected count per frame)
+    if frame_files:
+        counts = [len(files) for files in frame_files.values()]
+        expected_count = max(set(counts), key=counts.count)
+    else:
+        expected_count = 0
+    
+    return frame_files, expected_count
+
+
 def create_video_for_route(dataset_path, weather, route, fps, 
                            camera_name, output_path=None, json_filename: str = 'cmd_fix_can_bus'):
     def get_frame_number(filename):
@@ -303,7 +416,7 @@ def create_video_for_route(dataset_path, weather, route, fps,
     # Find the intersection of frame numbers that exist in all categories
     common_frames = set(left_images).intersection(central_images).intersection(right_images).intersection(can_bus)
     sorted_frames = sorted(common_frames)
-    
+
     if not sorted_frames:
         print("No complete data sets available.")
         return
@@ -321,47 +434,56 @@ def create_video_for_route(dataset_path, weather, route, fps,
     video_name = os.path.join(output_path, f'{route}_{camera_name}.mp4')
     video = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'mp4v'), fps, (3 * width, height))
 
+    # Calculate font scale based on image width
+    font_scale = width / 300.0  # Scale relative to original 300px width
+    thickness = max(1, int(2 * font_scale))  # Scale thickness proportionally
+    
+    # Text position scaling
+    x_margin = int(10 * font_scale)
+    y_top = int(30 * font_scale)
+    y_bottom = height - int(30 * font_scale)
+
     # Create the videos by horizontally concatenating the 3 cameras
     for frame_number in sorted_frames:
         left_img = cv2.imread(left_images[frame_number])
         central_img = cv2.imread(central_images[frame_number])
         right_img = cv2.imread(right_images[frame_number])
 
-        # Get the speed, steering, acceleration, command from the can bus
+        # Get data from can bus
         with open(can_bus[frame_number]) as json_: 
             data = json.load(json_)
-            speed = data['speed']  # [0, 1] adim
-            steering = data['steer']  # [-1, 1] adim
-            acceleration = data['acceleration']  # [0, 1] adim
-            command = command_sign_dict[data['direction']]  # string
-        
-        # # Get the frame number from the filename
-        # pattern = r'(\d+)(?=\.\w+$)'
-        # match = re.search(pattern, left_images[idx])
-        # frame_number = int(match.group(1))
+            speed = data['speed']
+            steering = data['steer']
+            acceleration = data['acceleration']
+            command = command_sign_dict[data['direction']]
+            position = data['ego_location']
 
-        # Write the frame idx in the left camera
-        cv2.putText(left_img, f'Frame: {frame_number:06d}', (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
-                    (0, 0, 255), 2)
-        # Input: Add the command at the top of the central camera
-        cv2.putText(central_img, f'{command}', (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
-                    (255, 0, 0), 2)
-        # Input: Add the speed at the top of the right camera
-        cv2.putText(right_img, f'Speed: {speed:.2f} m/s', (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
-                    (255, 0, 0), 2)
-        # Output: Add the steering and acceleration at the bottom of the left and right cameras
-        cv2.putText(left_img, f'Steering: {steering:.2f}', (10, 270), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
-                    (0, 255, 255), thickness=2)
-        cv2.putText(right_img, f'Acceleration: {acceleration:.2f}', (10, 270), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, 
-                    (0, 255, 255), 2)
-        
+        # Draw scaled text
+        cv2.putText(left_img, f'Frame: {frame_number:06d}', 
+                    (x_margin, y_top), cv2.FONT_HERSHEY_SIMPLEX, 
+                    font_scale, (0, 0, 255), thickness)
+                    
+        cv2.putText(central_img, f'{command}', 
+                    (x_margin, y_top), cv2.FONT_HERSHEY_SIMPLEX, 
+                    font_scale, (255, 0, 0), thickness)
+                    
+        cv2.putText(right_img, f'Speed: {speed:.2f} m/s', 
+                    (x_margin, y_top), cv2.FONT_HERSHEY_SIMPLEX, 
+                    font_scale, (255, 0, 0), thickness)
+                    
+        cv2.putText(left_img, f'Steering: {steering:.2f}', 
+                    (x_margin, y_bottom), cv2.FONT_HERSHEY_SIMPLEX, 
+                    font_scale, (0, 255, 255), thickness)
+
+        cv2.putText(central_img, f'Position: ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f})',
+                    (x_margin, y_bottom), cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale/2, (0, 255, 255), thickness)
+                    
+        cv2.putText(right_img, f'Acceleration: {acceleration:.2f}', 
+                    (x_margin, y_bottom), cv2.FONT_HERSHEY_SIMPLEX, 
+                    font_scale, (0, 255, 255), thickness)
+
         concat_img = cv2.hconcat([left_img, central_img, right_img])
-
         video.write(concat_img)
         
     video.release()
@@ -370,13 +492,13 @@ def create_video_for_route(dataset_path, weather, route, fps,
 
 def resize_image(args: tuple) -> None:
     """ Resize an image to the given target size at the original directory. """
-    image_path, target_size = args
+    image_path, target_size, resized_img_prefix = args
     img = cv2.imread(image_path)
     resized_img = cv2.resize(img, target_size)
     
     # Extracting the directory and filename
     directory = os.path.dirname(image_path)
-    filename = 'resized_' + os.path.basename(image_path)
+    filename = f'{resized_img_prefix}_{os.path.basename(image_path)}'
     
     # Saving the image in the same directory with the new filename
     cv2.imwrite(os.path.join(directory, filename), resized_img)
@@ -815,9 +937,9 @@ def predict_semantic_segmentation(dataset_path, rgb_prefix, save_name_prefix, sa
 
 
 @main.command(name='visualize-routes')
-@click.option('--dataset-path', default='carla', help='Dataset root to visualize.', type=click.Path(exists=True))
-@click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0))
-@click.option('--camera-name', default='rgb', help='String in the camera/sensor name to use for the video', type=click.Choice(['rgb', 'resized_rgb', 'virtual_attention', 'noise_1', 'noise_2', 'noise_3', 'ss', 'ss_hat']), show_default=True)
+@click.option('--dataset-path', default='carla', help='Dataset root to visualize.', type=click.Path(exists=True), required=True)
+@click.option('--fps', default=10.0, help='FPS of the video.', type=click.FloatRange(min=1.0), show_default=True)
+@click.option('--camera-name', default='rgb', help='String prefix in the camera/sensor name to use for the video', required=True)
 @click.option('--json-filename', default='cmd_fix_can_bus', help='Filename of the JSON file containing the data.', type=click.Choice(['can_bus', 'cmd_fix_can_bus']), show_default=True)
 @click.option('--out', 'output_path', help='Output path for the videos. If not specified/None, will be in the directory of the dataset.', default=None, show_default=True)
 # Additional params
@@ -852,10 +974,11 @@ def visualize_routes(dataset_path, fps, camera_name, json_filename, output_path:
 
 @main.command(name='prepare-ss')
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
+@click.option('--ss-prefix', default='ss', help='Prefix of the semantic segmentation images', show_default=True)
 # Additional params
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
 @click.option('--debug', is_flag=True, help='Debug mode.')
-def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) -> type(None):
+def prepare_ss(dataset_path, ss_prefix: str = 'ss', processes_per_cpu: int = 1, debug: bool = False) -> type(None):
     """ Convert the dataset's semantic segmentation images to RGB if they are not (if only one channel has all the info) """
     # First, start with getting all the subdirectories in the dataset; usual structure: data_root/subroute/route_00001/rgb_central06d.jpg, for example
     subdatasets = sorted([subdir for subdir in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subdir))])
@@ -869,10 +992,10 @@ def prepare_ss(dataset_path, processes_per_cpu: int = 1, debug: bool = False) ->
 
             for route in routes:
                 # Get the sensor data paths
-                paths = get_paths(data_root=os.path.join(dataset_path, subdata, route))
+                paths = get_paths(data_root=os.path.join(dataset_path, subdata, route), sensors=[ss_prefix])
                 
-                # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
-                semantic_segmentation_paths = [path for path in paths if 'ss' in path]
+                # Let's get the paths for the 3 cameras of semantic segmentation
+                semantic_segmentation_paths = [path for path in paths if os.path.basename(path).startswith(ss_prefix)]
 
                 args = [(path, dataset_path, subdata, route) for path in semantic_segmentation_paths]
                 for _ in tqdm(pool.imap(prepare_semantic_segmentation, args), total=len(args), 
@@ -987,46 +1110,140 @@ def command_fix(dataset_path: Union[str, os.PathLike]):
 
 
 @main.command(name='clean-route')
-@click.option('--route-path', help='Path to the root of your route to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
-@click.option('--remove-ticks', help='Ranges of ticks to remove or int; ranges will be removed (inclusive), int will be the max tick left in data (not included)', required=True)
-def clean_route(route_path: Union[str, os.PathLike], remove_ticks: str):
-    """ Remove all files containing ticks greater than the given maximum tick in their file name.
-        This is useful for removing the data from a specific route where the ego vehicle crashes, for
-        example. WARNING: this is permanent, double check before running this command!!! """
-    # First, find all the files in the route
-    tick_ranges = parse_tick_ranges(remove_ticks)
-    all_files = find_files(route_path, tick_ranges)
+@click.option('--route-path', help='Path to the root of your route to modify', 
+              type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
+@click.option('--remove-ticks', 
+              help='Either ranges of ticks to remove (e.g., 800-900 will remove ticks 800 through 900 inclusive) '
+                   'or a single number (e.g., 99 will remove tick 99 and all ticks after it)', 
+              required=True)
+@click.option('--clean-type', type=click.Choice(['delete', 'move']), 
+              help='Whether to delete or move the files', required=True)
+@click.option('--invalid-path', 
+              help='Path to move invalid files to. Required when --clean-type=move',
+              type=click.Path(file_okay=False, dir_okay=True))
+@click.option('--num-parent-dirs', 
+              help='Number of parent directories to preserve in the invalid path structure',
+              type=click.INT, default=2)
+def clean_route(route_path: Union[str, os.PathLike], remove_ticks: str, clean_type: str,
+                invalid_path: Union[str, os.PathLike, None], num_parent_dirs: int = 2):
+    """Remove or move all files containing ticks within the specified ranges in their file name.
+    Also handles frames that don't have the expected number of files."""
+    
+    # Validate parameters
+    if clean_type == 'move' and not invalid_path:
+        raise click.UsageError("--invalid-path is required when --clean-type=move")
+    elif clean_type == 'delete' and invalid_path:
+        raise click.UsageError("--invalid-path should not be provided when --clean-type=delete")
 
-    # Ask the user one last time if they are sure; give the number of files to be deleted
-    # as well as the route path
-    print(f'Are you sure you want to delete {len(all_files)} files from {route_path}?')
+    # Get frame information
+    frame_files, expected_count = get_frame_info(route_path)
+    
+    if not frame_files:
+        print(f'No files found in {route_path}')
+        return
+    
+    # Parse tick ranges
+    tick_ranges = parse_tick_ranges(remove_ticks)
+    
+    # Find files to clean
+    files_to_clean = set()
+    mismatched_frames = []  # Keep track of frames with wrong file count
+    range_frames = []       # Keep track of frames in specified ranges
+    
+    for frame_num, files in frame_files.items():
+        # Check for mismatched file count
+        if len(files) != expected_count:
+            files_to_clean.update(files)
+            mismatched_frames.append(frame_num)
+            
+        # Check if frame is in specified ranges
+        if is_tick_in_ranges(frame_num, tick_ranges):
+            files_to_clean.update(files)
+            range_frames.append(frame_num)
+
+    if not files_to_clean:
+        print(f'No files found matching the criteria in {route_path}')
+        return
+
+    # Print diagnostic information
+    print("\nDiagnostic Information:")
+    print(f"Expected files per frame: {expected_count}")
+    
+    if mismatched_frames:
+        print(f"\nFound {len(mismatched_frames)} frames with incorrect file count:")
+        for frame_num in sorted(mismatched_frames):
+            files = [os.path.basename(f) for f in frame_files[frame_num]]
+            print(f"\nFrame {frame_num} ({len(files)} files instead of {expected_count}):")
+            for f in sorted(files):
+                print(f"  - {f}")
+    
+    if range_frames:
+        print(f"\nFound {len(range_frames)} frames in specified ranges:")
+        print(f"Range frames: {sorted(range_frames)[:5]}{'...' if len(range_frames) > 5 else ''}")
+
+    # Prepare message based on operation type
+    message = f'\nAre you sure you want to {clean_type} {len(files_to_clean)} files from {route_path}?'
+    if clean_type == 'move':
+        message += f'\nFiles will be moved to {invalid_path} maintaining the directory structure.'
+    else:
+        message += '\nWARNING: This operation is irreversible!'
+    
+    print(message)
     print('Type "yes" to confirm, anything else to cancel.')
     user_input = input()
     if user_input != 'yes':
         print('Aborting...')
         return
-    
-    # Delete the files
-    for file in all_files:
-        os.remove(file)
 
-    print('Done!')
+    if clean_type == 'move':
+        # Create the invalid path directory if it doesn't exist
+        os.makedirs(invalid_path, exist_ok=True)
+
+        # Get the part of the path we want to preserve
+        path_components = os.path.normpath(route_path).split(os.sep)
+        preserved_path = os.sep.join(path_components[-num_parent_dirs:])
+        dest_base_dir = os.path.join(invalid_path, preserved_path)
+        os.makedirs(dest_base_dir, exist_ok=True)
+
+        # Move each file
+        for src_file in tqdm(files_to_clean, desc=f'Moving files to {dest_base_dir}', dynamic_ncols=True):
+            filename = os.path.basename(src_file)
+            dest_file = os.path.join(dest_base_dir, filename)
+            try:
+                shutil.move(src_file, dest_file)
+            except Exception as e:
+                print(f'Error moving file {src_file} to {dest_file}: {e}')
+                continue
+    else:  # delete
+        # Delete the files
+        for file in tqdm(files_to_clean, desc='Deleting files', dynamic_ncols=True):
+            try:
+                os.remove(file)
+            except Exception as e:
+                print(f'Error deleting file {file}: {e}')
+                continue
+
+    print(f'{clean_type.capitalize()} operation completed successfully!')
 
 
 @main.command(name='resize-dataset')
 @click.option('--dataset-path', help='Path to the root of your dataset to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
 @click.option('--res', 'target_resolution', help='Resolution (widthxheight) to resize the images to.', type=click.STRING, required=True)
-@click.option('--img-ext', 'ext', default='png', help='Image extension to look for.', type=click.STRING, show_default=True)
+@click.option('--resized-prefix', 'resized_img_prefix', help='Prefix to add the resized image names', type=click.STRING, default='resized', show_default=True)
+@click.option('--img-ext', 'ext', default='jpg', help='Image extension to look for.', type=click.STRING, show_default=True)
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
-def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str, ext: str = 'png', processes_per_cpu: int = 1):
-    """ Resize the dataset to a given resolution. """
+def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str, resized_img_prefix: str = 'resized', ext: str = 'jpg', processes_per_cpu: int = 1):
+    """
+    Resize the RGB images in a dataset to a specified resolution. The resized images will 
+    be saved in the same directory, with the specified prefix.
+    """
     # Find all RGB images
     rgb_images = [img for img in glob(os.path.join(dataset_path, '**', '*', f'rgb*.{ext}'), recursive=True)]
 
     # Get the target size
     target_size = tuple(map(int, target_resolution.split('x')))
 
-    args = [(img, target_size) for img in rgb_images]
+    args = [(img, target_size, resized_img_prefix) for img in rgb_images]
 
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
         for _ in tqdm(pool.imap(resize_image, args), total=len(rgb_images), desc=f'Resizing the images', dynamic_ncols=True):
