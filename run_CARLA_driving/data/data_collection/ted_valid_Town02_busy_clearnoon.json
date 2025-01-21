@@ -1,0 +1,22 @@
+{
+    "envs": {
+
+        "ClearNoon_route00024": {
+            "repetitions": 1,
+            "route": {
+                "file": "Town02_navigation_lbc.xml",
+                "id": 24
+            },
+            "scenarios": {
+                "background_activity": {
+                    "vehicle.*": 70,
+                    "walker.*": 70
+                }
+            },
+            "town_name": "Town02",
+            "vehicle_model": "vehicle.lincoln.mkz_2017",
+            "weather_profile": "ClearNoon"
+        }
+    },
+    "package_name": "TED_ClearNoon_1RouteValid_Town02"
+}
