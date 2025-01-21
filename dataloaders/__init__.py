@@ -20,14 +20,17 @@ def make_data_loader(model_name: str = 'CIL_multiview',
     """ Create the dataloader for the training and validation set """
     train_set = carlaImages.carlaImages(
         model_name, base_dir, train_dataset_names, split='train', rank=rank, resize_attention=res_attr)
+    
     # Work with a subset of the dataset, if specified by the user in g_conf
     subset_size = int(len(train_set) * max(min(1.0, g_conf.SUBSET_SIZE), 0.0))
-    train_set_indices = torch.randperm(len(train_set))[:subset_size]
-    train_set = Subset(train_set, train_set_indices)
+    
+    if g_conf.SUBSET_SIZE < 1.0:
+        train_set_indices = torch.randperm(len(train_set))[:subset_size]
+        train_set = Subset(train_set, train_set_indices)
     if num_process > 1:
-        sampler = DistributedSampler(train_set, num_replicas=num_process, rank=rank, shuffle=False, drop_last=True)
+        sampler = DistributedSampler(train_set, num_replicas=num_process, rank=rank, shuffle=True, drop_last=True)
         train_loader = DataLoader(train_set, batch_size=batch_size // num_process, num_workers=g_conf.NUM_WORKER,
-                                  drop_last=True, shuffle=False if g_conf.SUBSET_SIZE < 1.0 else True, sampler=sampler)
+                                  drop_last=True, sampler=sampler)
     else:
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
                                   num_workers=g_conf.NUM_WORKER, drop_last=True)
@@ -45,4 +48,4 @@ def make_data_loader(model_name: str = 'CIL_multiview',
                                     num_workers=6,
                                     drop_last=True)
             val_loaders_list.append(val_loader)
-            return train_loader, val_loaders_list
+        return train_loader, val_loaders_list
