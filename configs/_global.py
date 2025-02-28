@@ -141,7 +141,8 @@ def set_type_of_process(process_type, root):
                                   'checkpoints'))
 
         _g_conf.EXP_SAVE_PATH = os.path.join(root,'_results', _g_conf.EXPERIMENT_BATCH_NAME, _g_conf.EXPERIMENT_NAME)
-
+    elif process_type == 'none':
+        _g_conf.PROCESS_NAME = process_type
     else:
         raise ValueError("Not found type of process")
 
