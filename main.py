@@ -1,6 +1,7 @@
 # The main file to show how to use the vision algorithms here.
 import os
 import argparse
+import torch
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
