@@ -165,8 +165,20 @@ def analyze_suspicious_paths(suspicious_images: list) -> None:
                 print(f"  - {os.path.basename(f)}")
 
 
+def get_frame_number(filepath):
+    """Extract frame number from filepath."""
+    match = re.search(r'(\d{6})', filepath)
+    return int(match.group(1)) if match else None
+
 def process_map(args) -> None:
     idx, noise_cat, depth_paths, semantic_segmentation_paths, depth_threshold, min_depth, num_data_route, base_path, route, converter_label = args
+    
+    # Get the frame number from the input files
+    frame_number = get_frame_number(semantic_segmentation_paths[idx])
+    if frame_number is None:
+        print(f"Warning: Could not extract frame number from {semantic_segmentation_paths[idx]}")
+        return
+        
     *_, mask_merge_central = transforms.get_virtual_attention_map(
         depth_path=depth_paths[idx],
         segmented_path=semantic_segmentation_paths[idx],
@@ -181,6 +193,7 @@ def process_map(args) -> None:
         segmented_path=semantic_segmentation_paths[idx + num_data_route],
         noise_cat=noise_cat,
         depth_threshold=depth_threshold,
+        min_depth=min_depth,
         converter_label=converter_label
     )
     *_, mask_merge_right = transforms.get_virtual_attention_map(
@@ -188,10 +201,11 @@ def process_map(args) -> None:
         segmented_path=semantic_segmentation_paths[idx + num_data_route * 2],
         noise_cat=noise_cat,
         depth_threshold=depth_threshold,
+        min_depth=min_depth,
         converter_label=converter_label
     )
 
-    # Set the name of the virtual attention files
+    # Set the name of the virtual attention files using the extracted frame number
     fname_central = f'virtual_attention_central_'
     fname_left    = f'virtual_attention_left_'
     fname_right   = f'virtual_attention_right_'
@@ -201,10 +215,10 @@ def process_map(args) -> None:
     fname_left    = f'{fname_left}noise_{noise_cat}_' if noise_cat != 0 else fname_left
     fname_right   = f'{fname_right}noise_{noise_cat}_' if noise_cat != 0 else fname_right
 
-    # Add the label converter and the index/frame number
-    fname_central = f'{fname_central}{idx:06d}.jpg' if converter_label is None else f'{fname_central}{converter_label}{idx:06d}.jpg'
-    fname_left    = f'{fname_left}{idx:06d}.jpg' if converter_label is None else f'{fname_left}{converter_label}{idx:06d}.jpg'
-    fname_right   = f'{fname_right}{idx:06d}.jpg' if converter_label is None else f'{fname_right}{converter_label}{idx:06d}.jpg'
+    # Add the label converter and use the extracted frame number
+    fname_central = f'{fname_central}{frame_number:06d}.jpg' if converter_label is None else f'{fname_central}{converter_label}{frame_number:06d}.jpg'
+    fname_left    = f'{fname_left}{frame_number:06d}.jpg' if converter_label is None else f'{fname_left}{converter_label}{frame_number:06d}.jpg'
+    fname_right   = f'{fname_right}{frame_number:06d}.jpg' if converter_label is None else f'{fname_right}{converter_label}{frame_number:06d}.jpg'
 
     # Save the masks, they are 2D numpy arrays, so we can use PIL
     Image.fromarray(mask_merge_central).save(os.path.join(base_path, route, fname_central))
@@ -403,16 +417,11 @@ def create_video_for_route(dataset_path, weather, route, fps,
                       sensors=[camera_name, json_filename])
     assert len(paths) % 4 == 0, f"Error, missing some data"
 
-    # left_images = sorted([path for path in paths if 'left' in path])
-    # central_images = sorted([path for path in paths if 'central' in path])
-    # right_images = sorted([path for path in paths if 'right' in path])
-    # can_bus = sorted([path for path in paths if json_filename in path])
-    # num_data_route = len(can_bus)
-
     left_images = {get_frame_number(path): path for path in paths if 'left' in path}
     central_images = {get_frame_number(path): path for path in paths if 'central' in path}
     right_images = {get_frame_number(path): path for path in paths if 'right' in path}
     can_bus = {get_frame_number(path): path for path in paths if json_filename in path}
+    
     # Find the intersection of frame numbers that exist in all categories
     common_frames = set(left_images).intersection(central_images).intersection(right_images).intersection(can_bus)
     sorted_frames = sorted(common_frames)
@@ -491,10 +500,26 @@ def create_video_for_route(dataset_path, weather, route, fps,
 
 
 def resize_image(args: tuple) -> None:
-    """ Resize an image to the given target size at the original directory. """
+    """ 
+    Resize an image to the given target size at the original directory.
+    Uses different interpolation methods based on image type.
+    """
     image_path, target_size, resized_img_prefix = args
-    img = cv2.imread(image_path)
-    resized_img = cv2.resize(img, target_size)
+    
+    # Determine if this is a virtual attention map (grayscale)
+    is_attention_map = 'virtual_attention' in image_path
+    
+    # Read the image
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        print(f"Failed to read image: {image_path}")
+        return
+    
+    # Choose interpolation method based on image type
+    interpolation = cv2.INTER_AREA if is_attention_map else cv2.INTER_LINEAR
+    
+    # Resize the image
+    resized_img = cv2.resize(img, target_size, interpolation=interpolation)
     
     # Extracting the directory and filename
     directory = os.path.dirname(image_path)
@@ -1017,8 +1042,8 @@ def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_thre
     paths = get_paths(data_root=os.path.join(base_path, route), sensors=sensor_names)
 
     # Let's get the paths for the 3 cameras of depth and ss, as well as the can bus
-    depth_paths = [path for path in paths if 'depth' in path] if not ignore_depth else InfiniteNone()
-    semantic_segmentation_paths = [path for path in paths if 'ss' in path]
+    depth_paths = [path for path in paths if os.path.basename(path).startswith('depth_')] if not ignore_depth else InfiniteNone()
+    semantic_segmentation_paths = [path for path in paths if os.path.basename(path).startswith('ss_')]
     # can_bus_paths = [path for path in paths if 'can_bus' in path.split(os.sep)[-1]]
 
     if not ignore_depth:
@@ -1042,8 +1067,8 @@ def process_route(pool, base_path, route, sensor_names, ignore_depth, depth_thre
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
 @click.option('--ignore-depth', is_flag=True, help='Ignore the depth images and only use the semantic segmentation images.')
 @click.option('--ss-prefix', 'ss_name', default='ss', help='Prefix string of the semantic segmentation images.', type=str)
-@click.option('--max-depth', 'depth_threshold', default=20.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
-@click.option('--min-depth', 'min_depth', default=2.3, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
+@click.option('--max-depth', 'depth_threshold', default=100.0, help='Filter out objects beyond this depth.', type=click.FloatRange(min=0.0), show_default=True)
+@click.option('--min-depth', 'min_depth', default=1.7, help='Filter out objects starting from this depth for the central camera. Default takes into account the hood of the car, if shown in the central camera.', type=click.FloatRange(min=0.0), show_default=True)
 # Virtual attention maps options
 @click.option('--converter-label', 'converter_label', default=None, help='Label to convert the semantic segmentation to. If not provided, will use the default class selection.', 
                 type=click.Choice(['pedestrian', 'vehicle', 'trafficlight', 'trafficsign', 'lane', 'pole', 'pedestrian-lane', 'vehicle-lane', 'trafficlight-lane', 'trafficsign-lane', 'pole-lane', 'dynamic', 'traffic', 'static']))
@@ -1065,7 +1090,7 @@ def create_virtual_atts(dataset_path: Union[str, os.PathLike], ignore_depth: boo
     subdatasets = sorted([subdir for subdir in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subdir))])
     print('Subdatasets found: ', subdatasets) if debug else None
 
-    sensor_names = ['can_bus', ss_name] if ignore_depth else ['can_bus', 'depth', ss_name]
+    sensor_names = ['cmd_fix_can_bus', ss_name] if ignore_depth else ['cmd_fix_can_bus', 'depth', ss_name]
 
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
         if subdatasets:
@@ -1228,25 +1253,41 @@ def clean_route(route_path: Union[str, os.PathLike], remove_ticks: str, clean_ty
 
 @main.command(name='resize-dataset')
 @click.option('--dataset-path', help='Path to the root of your dataset to modify', type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True)
-@click.option('--res', 'target_resolution', help='Resolution (widthxheight) to resize the images to.', type=click.STRING, required=True)
-@click.option('--resized-prefix', 'resized_img_prefix', help='Prefix to add the resized image names', type=click.STRING, default='resized', show_default=True)
+@click.option('--res', 'target_resolution', help='Resolution to resize the images to; give it in format WxH, e.g. 100x50.', type=click.STRING, required=True)
+@click.option('--resized-prefix', 'resized_img_prefix', help='Prefix to add to the resized image names', type=click.STRING, default='resized', show_default=True)
 @click.option('--img-ext', 'ext', default='jpg', help='Image extension to look for.', type=click.STRING, show_default=True)
 @click.option('--processes-per-cpu', 'processes_per_cpu', default=1, help='Number of processes per CPU.', type=click.IntRange(min=1))
-def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str, resized_img_prefix: str = 'resized', ext: str = 'jpg', processes_per_cpu: int = 1):
+@click.option('--img-prefixes', help='Comma-separated list of image prefixes to resize (e.g., "rgb,depth,ss")', type=click.STRING, default='rgb', show_default=True)
+def resize_dataset(dataset_path: Union[str, os.PathLike], target_resolution: str, resized_img_prefix: str = 'resized', ext: str = 'jpg', processes_per_cpu: int = 1, img_prefixes: str = 'rgb'):
     """
-    Resize the RGB images in a dataset to a specified resolution. The resized images will 
+    Resize images in a dataset to a specified resolution. The resized images will 
     be saved in the same directory, with the specified prefix.
+    
+    Handles both regular RGB images and grayscale images (like virtual attention maps)
+    with appropriate interpolation methods.
     """
-    # Find all RGB images
-    rgb_images = [img for img in glob(os.path.join(dataset_path, '**', '*', f'rgb*.{ext}'), recursive=True)]
-
+    # Parse the image prefixes
+    prefixes = [p.strip() for p in img_prefixes.split(',')]
+    
+    # Find all matching images for each prefix
+    all_images = []
+    for prefix in prefixes:
+        images = glob(os.path.join(dataset_path, '**', '*', f'{prefix}*.{ext}'), recursive=True)
+        all_images.extend(images)
+    
+    if not all_images:
+        print(f"No images found with prefixes {prefixes} and extension .{ext}")
+        return
+    
     # Get the target size
     target_size = tuple(map(int, target_resolution.split('x')))
-
-    args = [(img, target_size, resized_img_prefix) for img in rgb_images]
-
+    print(f"Found {len(all_images)} images to resize")
+    
+    args = [(img, target_size, resized_img_prefix) for img in all_images]
+    
     with Pool(os.cpu_count() * processes_per_cpu) as pool:
-        for _ in tqdm(pool.imap(resize_image, args), total=len(rgb_images), desc=f'Resizing the images', dynamic_ncols=True):
+        for _ in tqdm(pool.imap(resize_image, args), total=len(all_images), 
+                     desc='Resizing images', dynamic_ncols=True):
             pass
 
 
