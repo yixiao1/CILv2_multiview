@@ -8,7 +8,7 @@ import PIL
 from configs import g_conf
 
 
-def canbus_normalization(can_bus_dict, data_ranges):
+def canbus_normalization(can_bus_dict, data_ranges, ted_normalization: bool = False):
     for dtype in data_ranges.keys():
         # we normalize the steering in range of [-1.0, 1.0]
         if dtype in ['steer', 'acceleration']:
@@ -19,6 +19,10 @@ def canbus_normalization(can_bus_dict, data_ranges):
                 # we normalize steering data if they are not from [-1.0, 1.0]
                 can_bus_dict[dtype] = 2 * ((can_bus_dict[dtype] - data_ranges[dtype][0]) / (data_ranges[dtype][1] - data_ranges[dtype][0])) - 1   # [-1.0, 1.0]
         elif dtype in ['throttle', 'brake', 'speed']:
+            if ted_normalization:
+                # Convert speed from km/h to m/s
+                if dtype == 'speed':
+                    can_bus_dict[dtype] /= 3.6
             # we normalize the other can bus data in range of [0.0, 1.0]
             if not data_ranges[dtype] == [0.0, 1.0]:
                 can_bus_dict[dtype] = abs(can_bus_dict[dtype]-data_ranges[dtype][0])/(data_ranges[dtype][1]-data_ranges[dtype][0])     # [0.0, 1.0]
@@ -86,7 +90,7 @@ def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tu
 
     return data
 
-def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)):
+def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (13, 8)):
     for camera_type in g_conf.DATA_USED:
         if 'rgb' in camera_type:
             image = data[camera_type]
@@ -113,6 +117,35 @@ def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (10, 10)):
             if g_conf.ATTENTION_AS_NEW_CHANNEL:
                 image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
+    return data
+
+
+def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tuple[int]' = (13, 8)):
+    """
+        Apply transformations and augmentations. The
+        output is from 0-1 float.
+    """
+    for camera_type in g_conf.DATA_USED:
+        if 'rgb' in camera_type:
+            image = data[camera_type]
+            image = image.resize((image_shape[2], image_shape[1]))  # Note: Bicubic interpolation by default
+            # Augmentations, if used
+            image = transforms.RandAugment(2, 10)(image) if g_conf.RAND_AUGMENT else image
+            image = transforms.AugMix(severity=3, mixture_width=3, chain_depth=-1, alpha=1.0)(image) if g_conf.AUG_MIX else image
+            image = transforms.ColorJitter(brightness=0.3)(image) if g_conf.COLOR_JITTER else image
+            
+            image = TF.to_tensor(image)
+            image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
+            data[camera_type] = image
+        elif 'depth' in camera_type:
+            pass
+        elif 'ss' in camera_type:
+            pass
+        elif 'virtual_attention' in camera_type:
+            pass
+        else:
+            raise KeyError(f"The camera type is not yet defined: {camera_type}; define it in {__file__}")
+
     return data
 
 
@@ -149,7 +182,7 @@ def encode_directions_4(directions):
     elif float(directions) == 3.0:
         return [0, 0, 1, 0]
     # FOLLOW_LANE
-    elif float(directions) == 4.0:
+    elif float(directions) == 4.0 or float(directions) == 5.0 or float(directions) == 6.0:
         return [0, 0, 0, 1]
     else:
         raise ValueError("Unexpcted direction identified %s" % str(directions))
@@ -360,11 +393,11 @@ def process_depth_image(depth_img):
     return processed_depth
 
 
-def create_masks(depth_img, segmentation, converter, road_label: int = 7, sidewalk_label: int = 8, line_label: int = 6,
-                 central_camera: bool = False, depth_threshold: float = 20.0, min_depth: float = 2.3):
+def create_masks(depth_img, segmentation, converter, road_label: int = 1, sidewalk_label: int = 2, line_label: int = 24,
+                 central_camera: bool = False, depth_threshold: float = 20.0, min_depth: float = 1.5):
     mask_segmentation = np.isin(segmentation, np.where(converter == 1)[0]).astype(np.uint8) * 255
     if depth_img is not None:
-        min_depth = min_depth if central_camera else 0
+        # min_depth = min_depth if central_camera else 0
         depth_condition = (depth_img < depth_threshold) & (depth_img > min_depth)
         mask_depth = np.where(depth_condition, 255, 0).astype(np.uint8)
     else:
@@ -584,7 +617,7 @@ def filter_ss_converter(label: str) -> np.ndarray:
 
 def get_virtual_attention_map(depth_path, segmented_path, converter_label: str = None,
                               noise_cat: int = 0, central_camera: bool = True,
-                              depth_threshold: float = 20.0, min_depth: float = 2.3, 
+                              depth_threshold: float = 20.0, min_depth: float = 1.3, 
                               DILATION_KERNEL_SIZE: int = 10, DILATION_ITERATIONS: int = 1):
     segmentation = read_images(segmented_path, 'segmentation')
     semseg_converter = SS_CONVERTER if converter_label is None else filter_ss_converter(converter_label)
