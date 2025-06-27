@@ -18,21 +18,57 @@ from dataloaders.transforms import canbus_normalization, train_transform
 def load_model_from_checkpoint(model: CIL_multiview, 
                                checkpoint_path: str, 
                                checkpoint_number: int) -> CIL_multiview:
+    """
+    Load model from checkpoint, handling various prefix patterns from multi-GPU training.
+    
+    Handles these patterns:
+    - Direct keys: "encoder_embedding_perception.conv1.weight"
+    - _model prefix: "_model.encoder_embedding_perception.conv1.weight" 
+    - module._model prefix: "module._model.encoder_embedding_perception.conv1.weight"
+    - module prefix: "module.encoder_embedding_perception.conv1.weight"
+    """
     checkpoint = check_saved_checkpoints(checkpoint_path, checkpoint_number)  # works even if checkpoint_number is None
     checkpoint = torch.load(checkpoint)
 
-    new_state_dict = {}
-    for k, v in checkpoint['model'].items():
-        if k.startswith('_model'):
-            new_state_dict[k[7:]] = v
-        else:
-            new_state_dict[k] = v
+    # Get the state dict from checkpoint
+    if 'model' in checkpoint:
+        state_dict = checkpoint['model']
+    elif 'state_dict' in checkpoint:
+        state_dict = checkpoint['state_dict']
+    else:
+        # Assume the entire checkpoint is the state dict
+        state_dict = checkpoint
 
+    new_state_dict = {}
+    
+    for k, v in state_dict.items():
+        new_key = k
+        
+        # Handle different prefix patterns
+        if k.startswith('module._model.'):
+            # Remove 'module._model.' prefix
+            new_key = k[len('module._model.'):]
+        elif k.startswith('model._model.'):
+            new_key = k[len('model._model.'):]
+        elif k.startswith('module.'):
+            # Remove 'module.' prefix
+            new_key = k[len('module.'):]
+        elif k.startswith('_model.'):
+            # Remove '_model.' prefix
+            new_key = k[len('_model.'):]
+        # If no prefix matches, keep the original key
+        
+        new_state_dict[new_key] = v
+        
     new_state_dict = OrderedDict(new_state_dict)
+    
+    # Remove PE
+    for k, v in new_state_dict.items():
+        if k.startswith('positional_encoding'):
+            new_state_dict[k] = torch.zeros(1, 0, 512)
 
     model.load_state_dict(new_state_dict)
     return model
-
 
 def load_config(exp_batch: str, exp_name: str) -> None:
     merge_with_yaml(os.path.join('configs', exp_batch, f'{exp_name}.yaml'))

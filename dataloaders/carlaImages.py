@@ -38,7 +38,7 @@ class carlaImages(data.Dataset):
                                                     suffix='.jpg', avoid=avoid)
                     img_paths = [path for path in img_paths if re.match(f'{camera_type}\d{{6}}.jpg', os.path.basename(path))]
                 else:
-                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.jpg')
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
                 all_cam_paths_dict.update({camera_type: img_paths})
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 

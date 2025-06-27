@@ -224,7 +224,7 @@ class RoachRL_expert(object):
 
         policy_input = self._wrapper_class.process_obs(self.input_data, self._wrapper_kwargs['input_states'], train=False)
 
-        actions, _, _, _, _, _ = self._policy.forward(policy_input, deterministic=True, clip_action=True)
+        actions, *_ = self._policy.forward(policy_input, deterministic=True, clip_action=True)
         control = self._wrapper_class.process_act(actions, self._wrapper_kwargs['acc_as_action'], train=False)
 
         steer = control.steer
@@ -269,13 +269,22 @@ class RoachRL_expert(object):
                 if 'flow' in sensor_type:
                     np.save(os.path.join(self.vision_save_path, f'{file_name_string}.npy'), self.input_data[sensor_type][1])
                 elif 'rgb' in sensor_type:
-                    Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.jpg'))
+                    self.input_data[sensor_type][1].save_to_disk(
+                        os.path.join(self.vision_save_path, f'{file_name_string}.jpg'), 
+                        carla.ColorConverter.Raw)
+                    # Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.jpg'))
                 else:
                     if 'ss' in sensor_type:
-                        self.input_data[sensor_type][1].save_to_disk(os.path.join(self.vision_save_path, f'{file_name_string}.png'))
-                    elif 'depth' in sensor_type or 'flow' in sensor_type:
+                        self.input_data[sensor_type][1].save_to_disk(
+                            os.path.join(self.vision_save_path, f'{file_name_string}.png'), 
+                            carla.ColorConverter.CityScapesPalette)
+                    elif 'depth' in sensor_type:
                         # sdata = np.dot(self.input_data[sensor_type][1][:, :, :3], [65536.0, 256.0, 1.0])
                         # sdata /= 16777216.0  # (256.0 * 256.0 * 256.0)
+                        self.input_data[sensor_type][1].save_to_disk(
+                            os.path.join(self.vision_save_path, f'{file_name_string}.png'), 
+                            carla.ColorConverter.Depth)
+                    elif 'flow' in sensor_type:
                         Image.fromarray(self.input_data[sensor_type][1], mode='RGB').save(os.path.join(self.vision_save_path, f'{file_name_string}.png'))
             except:
                 raise RuntimeError('Sensor type not found!')
