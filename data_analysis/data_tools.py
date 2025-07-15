@@ -747,14 +747,6 @@ def process_image(image_path: str,
     img = Image.fromarray(rgb_image)
     img.save(output_path)
 
-# Get all files in a directory with a specific prefix, recursively
-# def get_files_with_prefix(directory, prefixes):
-#     file_paths = []
-#     for root, dirs, files in os.walk(directory):
-#         for f in files:
-#             if any(f.startswith(prefix) for prefix in prefixes):
-#                 file_paths.append(os.path.join(root, f))
-#     return file_paths
 
 def get_files_in_directory(root, prefixes):
     """Get files in a single directory that start with given prefixes."""
@@ -764,6 +756,7 @@ def get_files_in_directory(root, prefixes):
             files.append(os.path.join(root, f))
     return files
 
+
 def get_all_directories(directory):
     """Get all directories in the given directory, recursively."""
     all_dirs = []
@@ -771,6 +764,7 @@ def get_all_directories(directory):
         for d in dirs:
             all_dirs.append(os.path.join(root, d))
     return all_dirs
+
 
 def get_files_with_prefix(directory, prefixes, num_workers=8):
     """Get all files in a directory and its subdirectories that start with given prefixes."""
@@ -785,6 +779,33 @@ def get_files_with_prefix(directory, prefixes, num_workers=8):
             file_paths.extend(dir_files)
 
     return file_paths
+
+
+def get_files_with_prefix_and_suffix(directory: str, prefixes: list[str], suffixes: list[str], num_workers: int = 8):
+    """Get all files in a directory and its subdirectories that start with given prefixes and end with given suffixes."""
+    all_dirs = get_all_directories(directory)
+    all_dirs.append(directory)  # Include the root directory itself
+
+    file_paths = []
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        future_to_dir = {executor.submit(get_files_in_directory, dir_path, prefixes): dir_path for dir_path in all_dirs}
+        for future in tqdm(as_completed(future_to_dir), total=len(future_to_dir), desc="Scanning directories", dynamic_ncols=True):
+            dir_files = future.result()
+            file_paths.extend([f for f in dir_files if any(f.endswith(suffix) for suffix in suffixes)])
+
+    return file_paths
+
+
+def apply_mask_to_image(segmentation, mask):
+    """Apply a mask to a segmentation image."""
+    # Convert both images to numpy arrays
+    seg_array = np.array(segmentation)
+    mask_array = np.array(mask)[:,:, np.newaxis]  # Ensure mask has the same number of channels
+    
+    # Apply the mask (inverted)
+    masked_image = seg_array * (mask_array == 0)
+    
+    return Image.fromarray(masked_image)
 
 
 # Define a custom dataset
@@ -822,11 +843,13 @@ def process_batch(batch, processor, model, device):
     
     return predicted_semantic_maps, image_paths
 
-def save_segmentation(predicted_semantic_maps, image_paths, save_name_start, extension):
+def save_segmentation(predicted_semantic_maps, image_paths, save_name_start, extension, auto_replace_prefix: bool = True):
     for seg_map, image_path in zip(predicted_semantic_maps, image_paths):
+        # Transform segmentation image to cityscapes palette
         segmentation = seg_map.cpu().numpy()
         rgb_image = mapillary_to_cityscapes_rgb(segmentation)
         
+        # Get the path, name, and extension of the RGB image
         dir_name, base_name = os.path.split(image_path)
         name, ext = os.path.splitext(base_name)
         ext = extension if extension is not None else ext  # Extension override
@@ -836,10 +859,10 @@ def save_segmentation(predicted_semantic_maps, image_paths, save_name_start, ext
         img = Image.fromarray(rgb_image)
         img.save(output_path)
 
-def save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_start, extension, num_workers=8):
+def save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_start, extension, auto_replace_prefix, num_workers=8):
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = [
-            executor.submit(save_segmentation, [seg_map], [image_path], save_name_start, extension)
+            executor.submit(save_segmentation, [seg_map], [image_path], save_name_start, extension, auto_replace_prefix)
             for seg_map, image_path in zip(predicted_semantic_maps, image_paths)
         ]
         for future in as_completed(futures):
@@ -926,16 +949,18 @@ def main():
 
 @main.command(name='predict-ss', help='Predict the semantic segmentation of the RGB images in the given directory.')
 @click.option('--dataset-path', default='carla', help='Dataset root to convert.', type=click.Path(exists=True))
-@click.option('--rgb-prefix', default='rgb', help='Prefixes of the RGB images to predict the semantic segmentation (e.g., rgb_central000124.png)', type=str)
+@click.option('--rgb-prefix', default=['rgb'], help='Prefixes of the RGB images to predict the semantic segmentation (e.g., rgb_central000124.png)', multiple=True)
+@click.option('--rgb-extension', default='.png', help='Extension of the RGB data in case there are multiple versions (e.g., backups)', type=str)
 # Data saving options
 @click.option('--save-name-prefix', 'save_name_prefix', default='ss_hat', help='Prefix for the saved semantic segmentation images.', type=str)
-@click.option('--save-extension', 'save_name_extension', default=None, help='Image extension for the saved semantic segmentation images.', type=click.Choice(['.png', '.jpg', '.jpeg']))
+@click.option('--save-extension', 'save_name_extension', required=True, help='Image extension for the saved semantic segmentation images.', type=click.Choice(['.png', '.jpg', '.jpeg']))
+@click.option('--auto-replace-prefix', 'auto_replace_prefix', default=True, help='Find and remove the part of the name before the first underscore', type=bool)
 # Optional
 @click.option('--device', default='cuda', help='Device to use for prediction.', type=click.Choice(['cuda', 'cpu']))
 @click.option('--num-workers', default=8, help='Number of workers to use for parallel processing.', type=click.IntRange(min=1))
 @click.option('--gpu-id', default=None, help='GPU ID to use for prediction, if using gpu.', type=click.IntRange(min=0))
 @click.option('--batch-size', default=16, help='Batch size for prediction.', type=click.IntRange(min=1))
-def predict_semantic_segmentation(dataset_path, rgb_prefix, save_name_prefix, save_name_extension, device, num_workers, gpu_id, batch_size):
+def predict_semantic_segmentation(dataset_path, rgb_prefix, rgb_extension, save_name_prefix, save_name_extension, auto_replace_prefix, device, num_workers, gpu_id, batch_size):
     # Set device
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id) if gpu_id is not None else '0'
     device = 'cuda' if gpu_id is not None and torch.cuda.is_available() else device
@@ -945,7 +970,7 @@ def predict_semantic_segmentation(dataset_path, rgb_prefix, save_name_prefix, sa
     model = Mask2FormerForUniversalSegmentation.from_pretrained(model_name).to(device)
     model.eval()
 
-    image_paths = get_files_with_prefix(dataset_path, [rgb_prefix])
+    image_paths = get_files_with_prefix_and_suffix(dataset_path, list(rgb_prefix), suffixes=[rgb_extension])
     utils.sort_nicely(image_paths)
     total_images = len(image_paths)
 
@@ -955,7 +980,7 @@ def predict_semantic_segmentation(dataset_path, rgb_prefix, save_name_prefix, sa
     with tqdm(total=total_images, desc="Processing images", unit="images", dynamic_ncols=True) as pbar:
         for batch in dataloader:
             predicted_semantic_maps, image_paths = process_batch(batch, processor, model, device)
-            save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_prefix, save_name_extension, num_workers)
+            save_segmentation_threaded(predicted_semantic_maps, image_paths, save_name_prefix, save_name_extension, auto_replace_prefix, num_workers)
             pbar.update(len(image_paths))
 
     print('Done!')

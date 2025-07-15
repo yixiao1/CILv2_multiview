@@ -81,6 +81,7 @@ _g_conf.LOSS = ''    # It can be the name of loss, such as L1, CrossEntropy, or 
 _g_conf.LOSS_POW = 1
 _g_conf.LOSS_WEIGHT = {}
 _g_conf.ATTENTION_LOSS = False  # Use loss on the attention maps (must have a ground truth, virtual or real)
+_g_conf.ATTENTION_TYPE = ''  # Default: vanilla segmentation masks; available: center_gaussian, center_gaussian_semantic, human_gaze, human_gaze_semantic
 _g_conf.MHA_ATTENTION_COSSIM_LOSS = False  # Apply a loss to each head of the MHA block in the Transformer Encoder
 _g_conf.MHA_ATTENTION_LOSS = False  # Extract the attention maps for each head in the selected layer
 _g_conf.MHA_ATTENTION_NUM_HEADS = 1  # Number of heads to apply the loss (will go in order)

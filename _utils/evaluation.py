@@ -80,26 +80,97 @@ def evaluation_on_model(model: nn.Module,
         start_time = time.time()
 
         with inference_context(model), torch.no_grad():
-            for idx, x in enumerate(data_loader):
+            for idx, data in enumerate(data_loader):
                 # Extract the inputs
-                src_images = [[x['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] for i in range(len(x['current']))]
-                src_directions = [utils.extract_commands(x['current'][i]['can_bus']['direction']).cuda() for i in range(len(x['current']))]
-                src_speeds = [utils.extract_other_inputs(x['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
-                                                   ignore=['direction']).cuda() for i in range(len(x['current']))]
+                src_images = [[data['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED if 'rgb' in camera_type] for i in range(len(data['current']))]
+                src_directions = [utils.extract_commands(data['current'][i]['can_bus']['direction']).cuda() for i in range(len(data['current']))]
+                src_speeds = [utils.extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
+                                                   ignore=['direction']).cuda() for i in range(len(data['current']))]
 
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
-                    tgt_a = [utils.extract_targets(x['future'][i]['can_bus_future'],
-                                             g_conf.TARGETS).cuda() for i in range(len(x['future']))]
+                    tgt_a = [utils.extract_targets(data['future'][i]['can_bus_future'],
+                                             g_conf.TARGETS).cuda() for i in range(len(data['future']))]
                 else:
-                    tgt_a = [utils.extract_targets(x['current'][i]['can_bus'],
-                                             g_conf.TARGETS).cuda() for i in range(len(x['current']))]
+                    tgt_a = [utils.extract_targets(data['current'][i]['can_bus'],
+                                             g_conf.TARGETS).cuda() for i in range(len(data['current']))]
 
                 if g_conf.ATTENTION_LOSS:
-                    src_atts_left = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
-                    src_atts_central = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
-                    src_atts_right = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
+                    
+                    if g_conf.ATTENTION_TYPE == 'center_gaussian':
+                        sigma = 0.35  # Standard deviation of the Gaussian
+                        threshold = 0.0001  # Threshold for binarization
+                        
+                        h, w = model.resize_att_h, model.resize_att_w
+                        y = torch.arange(h) - (h-1) / 2
+                        x = torch.arange(w) - (w-1) / 2
+                        xx, yy = torch.meshgrid(x, y, indexing='xy')
+                        
+                        # Normalized 2-D Gaussian
+                        gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                        
+                        # Binarize
+                        mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()]
+                        src_atts_central = [mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()]
+                        src_atts_right = [torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()]
+                        
+                    elif g_conf.ATTENTION_TYPE == 'center_gaussian_per_camera':
+                        sigma = 0.35  # Standard deviation of the Gaussian
+                        threshold = 0.0001  # Threshold for binarization
+                        
+                        h, w = model.resize_att_h, model.resize_att_w
+                        y = torch.arange(h) - (h-1) / 2
+                        x = torch.arange(w) - (w-1) / 2
+                        xx, yy = torch.meshgrid(x, y, indexing='xy')
+                        
+                        # Normalized 2-D Gaussian
+                        gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                        
+                        # Binarize
+                        mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                        mask_float = mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [mask_float]
+                        src_atts_central = [mask_float]
+                        src_atts_right = [mask_float]
+                        
+                    elif g_conf.ATTENTION_TYPE == 'center_gaussian_semantic':
+                        sigma = 0.35  # Standard deviation of the Gaussian
+                        threshold = 0.0001  # Threshold for binarization
+                        
+                        h, w = model.resize_att_h, model.resize_att_w
+                        y = torch.arange(h) - (h-1) / 2
+                        x = torch.arange(w) - (w-1) / 2
+                        xx, yy = torch.meshgrid(x, y, indexing='xy')
+                        
+                        # Normalized 2-D Gaussian
+                        gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                        
+                        # Binarize
+                        mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                        mask_float = mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()
+                        
+                        # Get the semantic masks
+                        src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
+                        src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
+                        src_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
 
-
+                        # Now mix the central mask
+                        src_atts_central = [torch.max(src_atts_central[0], mask_float)] 
+                    elif g_conf.ATTENTION_TYPE == 'human_gaze':
+                        # TODO: hacerlo
+                        pass
+                    elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic':
+                        # TODO:
+                        pass
+                    else:
+                        src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
+                        src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
+                        src_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
+                    
                     if 'Attention_KL' in g_conf.LOSS:
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
                     elif g_conf.LOSS == 'Action_nospeed_L1_Attention_L2':
@@ -111,9 +182,9 @@ def evaluation_on_model(model: nn.Module,
 
                 if g_conf.ATTENTION_AS_INPUT:
                     if not g_conf.ATTENTION_FROM_UNET:
-                        src_attn_masks = [[x['current'][i][camera_type].cuda()
+                        src_attn_masks = [[data['current'][i][camera_type].cuda()
                                            for camera_type in g_conf.DATA_USED if 'virtual_attention' in camera_type]
-                                          for i in range(len(x['current']))]
+                                          for i in range(len(data['current']))]
                     else:
                         src_attn_masks = None  # TODO: comes from UNet prediction!
 
@@ -145,21 +216,93 @@ def evaluation_on_model(model: nn.Module,
 
                 if idx in list(range(0, min(g_conf.EVAL_IMAGE_WRITING_NUMBER, len(data_loader)))):
                     # saving only one per batch to save time
-                    eval_images = [[x['current'][i][camera_type][:1].cuda() for camera_type in g_conf.DATA_USED
-                                    if 'rgb' in camera_type] for i in range(len(x['current']))]
-                    eval_directions = [utils.extract_commands(x['current'][i]['can_bus']['direction'])[:1].cuda() for i in
-                                       range(len(x['current']))]
+                    eval_images = [[data['current'][i][camera_type][:1].cuda() for camera_type in g_conf.DATA_USED
+                                    if 'rgb' in camera_type] for i in range(len(data['current']))]
+                    eval_directions = [utils.extract_commands(data['current'][i]['can_bus']['direction'])[:1].cuda() for i in
+                                       range(len(data['current']))]
                     eval_speeds = [
-                        utils.extract_other_inputs(x['current'][i]['can_bus'],
+                        utils.extract_other_inputs(data['current'][i]['can_bus'],
                                                    g_conf.OTHER_INPUTS,
-                                                   ignore=['direction'])[:1].cuda() for i in range(len(x['current']))
+                                                   ignore=['direction'])[:1].cuda() for i in range(len(data['current']))
                     ]
 
                     eval_att = None
                     if g_conf.ATTENTION_LOSS:
-                        eval_atts_left = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
-                        eval_atts_central = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
-                        eval_atts_right = [value.cuda() for current_data in x['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
+                        
+                        if g_conf.ATTENTION_TYPE == 'center_gaussian':
+                            sigma = 0.35  # Standard deviation of the Gaussian
+                            threshold = 0.0001  # Threshold for binarization
+                            
+                            h, w = model.resize_att_h, model.resize_att_w
+                            y = torch.arange(h) - (h-1) / 2
+                            x = torch.arange(w) - (w-1) / 2
+                            xx, yy = torch.meshgrid(x, y, indexing='xy')
+                            
+                            # Normalized 2-D Gaussian
+                            gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                            
+                            # Binarize
+                            mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                            
+                            # Get the left, central, and right "virtual" attentions
+                            eval_atts_left = [torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()]
+                            eval_atts_central = [mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()]
+                            eval_atts_right = [torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()]
+                            
+                        elif g_conf.ATTENTION_TYPE == 'center_gaussian_per_camera':
+                            sigma = 0.35  # Standard deviation of the Gaussian
+                            threshold = 0.0001  # Threshold for binarization
+                            
+                            h, w = model.resize_att_h, model.resize_att_w
+                            y = torch.arange(h) - (h-1) / 2
+                            x = torch.arange(w) - (w-1) / 2
+                            xx, yy = torch.meshgrid(x, y, indexing='xy')
+                            
+                            # Normalized 2-D Gaussian
+                            gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                            
+                            # Binarize
+                            mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                            mask_float = mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()
+                            
+                            # Get the left, central, and right "virtual" attentions
+                            eval_atts_left = [mask_float]
+                            eval_atts_central = [mask_float]
+                            eval_atts_right = [mask_float]
+                            
+                        elif g_conf.ATTENTION_TYPE == 'center_gaussian_semantic':
+                            sigma = 0.35  # Standard deviation of the Gaussian
+                            threshold = 0.0001  # Threshold for binarization
+                            
+                            h, w = model.resize_att_h, model.resize_att_w
+                            y = torch.arange(h) - (h-1) / 2
+                            x = torch.arange(w) - (w-1) / 2
+                            xx, yy = torch.meshgrid(x, y, indexing='xy')
+                            
+                            # Normalized 2-D Gaussian
+                            gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                            
+                            # Binarize
+                            mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                            mask_float = mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()
+                            
+                            # Get the semantic masks
+                            eval_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
+                            eval_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
+                            eval_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
+
+                            # Now mix the central mask
+                            eval_atts_central = [torch.max(eval_atts_central[0], mask_float)] 
+                        elif g_conf.ATTENTION_TYPE == 'human_gaze':
+                            # TODO: hacerlo
+                            pass
+                        elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic':
+                            # TODO:
+                            pass
+                        else:
+                            eval_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
+                            eval_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
+                            eval_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right' in key]
 
                         eval_att = utils.prepare_target_attentions(eval_atts_left[0], 
                                                                    eval_atts_central[0],

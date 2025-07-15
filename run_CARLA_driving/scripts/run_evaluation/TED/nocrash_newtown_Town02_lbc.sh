@@ -22,7 +22,7 @@ RANDOM_SEED=0  # Default; change when running multiple times to test for varianc
 SAVE_DRIVING_VISION=false
 FPS=20  # Default frames per second for the evaluation in synchronous mode
 AGENT="TED_agent"
-DOCKER=carlasim/carla:0.9.13
+DOCKER=carlasim/carla:0.9.14
 
 # Process optional arguments
 while (( "$#" )); do
