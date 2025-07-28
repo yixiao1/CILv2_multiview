@@ -160,6 +160,27 @@ def evaluation_on_model(model: nn.Module,
 
                         # Now mix the central mask
                         src_atts_central = [torch.max(src_atts_central[0], mask_float)] 
+                        
+                    elif g_conf.ATTENTION_TYPE == 'center_uniform':
+                        h, w = model.resize_att_h, model.resize_att_w
+                        uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                        zero_mask = torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [zero_mask]
+                        src_atts_central = [uniform_mask]
+                        src_atts_right = [zero_mask]
+                        
+                    elif g_conf.ATTENTION_TYPE == 'uniform_per_camera':
+                        h, w = model.resize_att_h, model.resize_att_w
+                        uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [uniform_mask]
+                        src_atts_central = [uniform_mask]
+                        src_atts_right = [uniform_mask]
+                        
+                        
                     elif g_conf.ATTENTION_TYPE == 'human_gaze':
                         # TODO: hacerlo
                         pass
@@ -293,6 +314,26 @@ def evaluation_on_model(model: nn.Module,
 
                             # Now mix the central mask
                             eval_atts_central = [torch.max(eval_atts_central[0], mask_float)] 
+                            
+                        elif g_conf.ATTENTION_TYPE == 'center_uniform':
+                            h, w = model.resize_att_h, model.resize_att_w
+                            uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                            zero_mask = torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                            
+                            # Get the left, central, and right "virtual" attentions
+                            eval_atts_left = [zero_mask]
+                            eval_atts_central = [uniform_mask]
+                            eval_atts_right = [zero_mask]
+                        
+                        elif g_conf.ATTENTION_TYPE == 'uniform_per_camera':
+                            h, w = model.resize_att_h, model.resize_att_w
+                            uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                            
+                            # Get the left, central, and right "virtual" attentions
+                            eval_atts_left = [uniform_mask]
+                            eval_atts_central = [uniform_mask]
+                            eval_atts_right = [uniform_mask]
+                        
                         elif g_conf.ATTENTION_TYPE == 'human_gaze':
                             # TODO: hacerlo
                             pass

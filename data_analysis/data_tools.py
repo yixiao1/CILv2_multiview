@@ -781,7 +781,7 @@ def get_files_with_prefix(directory, prefixes, num_workers=8):
     return file_paths
 
 
-def get_files_with_prefix_and_suffix(directory: str, prefixes: list[str], suffixes: list[str], num_workers: int = 8):
+def get_files_with_prefix_and_suffix(directory: str, prefixes: List[str], suffixes: List[str], num_workers: int = 8):
     """Get all files in a directory and its subdirectories that start with given prefixes and end with given suffixes."""
     all_dirs = get_all_directories(directory)
     all_dirs.append(directory)  # Include the root directory itself

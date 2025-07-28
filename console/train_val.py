@@ -202,6 +202,25 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         # Now mix the central mask
                         src_atts_central = [torch.max(src_atts_central[0], mask_float)]                        
 
+                    elif g_conf.ATTENTION_TYPE == 'center_uniform':
+                        h, w = model.resize_att_h, model.resize_att_w
+                        uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).to(f'cuda:{model.device_ids[0]}')
+                        zero_mask = torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).to(f'cuda:{model.device_ids[0]}')
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [zero_mask]
+                        src_atts_central = [uniform_mask]
+                        src_atts_right = [zero_mask]
+
+                    elif g_conf.ATTENTION_TYPE == 'uniform_per_camera':
+                        h, w = model.resize_att_h, model.resize_att_w
+                        uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).to(f'cuda:{model.device_ids[0]}')
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [uniform_mask]
+                        src_atts_central = [uniform_mask]
+                        src_atts_right = [uniform_mask]
+
                     elif g_conf.ATTENTION_TYPE == 'human_gaze':
                         # TODO: hacerlo
                         pass
@@ -321,7 +340,49 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_right = [mask_float]
                         
                     elif g_conf.ATTENTION_TYPE == 'center_gaussian_semantic':
-                        pass
+                        # Produce the gaussian mask
+                        sigma = 0.35  # Standard deviation of the Gaussian
+                        threshold = 0.0001  # Threshold for binarization
+                        
+                        h, w = model.resize_att_h, model.resize_att_w
+                        y = torch.arange(h) - (h-1) / 2
+                        x = torch.arange(w) - (w-1) / 2
+                        xx, yy = torch.meshgrid(x, y, indexing='xy')
+                        
+                        # Normalized 2-D Gaussian
+                        gaussian = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                        
+                        # Binarize
+                        mask_float = (gaussian >= threshold).unsqueeze(0).to(torch.float32)
+                        mask_float = mask_float.repeat(len(data['current'][0]['can_bus']['speed']), 1, 1, 1).cuda()
+                        
+                        # Get the semantic masks
+                        src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                        src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                        src_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
+
+                        # Now mix the central mask
+                        src_atts_central = [torch.max(src_atts_central[0], mask_float)]         
+                    
+                    elif g_conf.ATTENTION_TYPE == 'center_uniform':
+                        h, w = model.resize_att_h, model.resize_att_w
+                        uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                        zero_mask = torch.zeros(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [zero_mask]
+                        src_atts_central = [uniform_mask]
+                        src_atts_right = [zero_mask]
+                        
+                    elif g_conf.ATTENTION_TYPE == 'uniform_per_camera':
+                        h, w = model.resize_att_h, model.resize_att_w
+                        uniform_mask = torch.ones(len(data['current'][0]['can_bus']['speed']), 1, h, w, dtype=torch.float32).cuda()
+                        
+                        # Get the left, central, and right "virtual" attentions
+                        src_atts_left = [uniform_mask]
+                        src_atts_central = [uniform_mask]
+                        src_atts_right = [uniform_mask]
+
                     elif g_conf.ATTENTION_TYPE == 'human_gaze':
                         # TODO: hacerlo
                         pass
@@ -597,27 +658,13 @@ def execute(gpus_list: List[int], exp_batch: str, exp_name: str, rank: int = 0):
 
     """
     ascii_art = """
-                                            :::          :::::::: ::::::::::: :::                                                                                                    
-                                          :+:          :+:    :+:    :+:     :+:       :+:           :+:                                                                             
-                                        +:+           +:+           +:+     +:+       +:+           +:+                                                                              
-                                      +#+            +#+           +#+     +#+  +#++:++#++:++ +#++:++#++:++                                                                          
-                                    +#+             +#+           +#+     +#+       +#+           +#+                                                                                
-                                  #+#              #+#    #+#    #+#     #+#       #+#           #+#                                                                                 
-                                ###                ######## ########### ##########                                                                                                   
-                             :::            :::   :::   :::    ::: :::    ::::::::::: :::::::::::              :::    ::: ::::::::::     :::     :::::::::                           
-                           :+:            :+:+: :+:+:  :+:    :+: :+:        :+:         :+:                  :+:    :+: :+:          :+: :+:   :+:    :+:                           
-                         +:+            +:+ +:+:+ +:+ +:+    +:+ +:+        +:+         +:+                  +:+    +:+ +:+         +:+   +:+  +:+    +:+                            
-                       +#+             +#+  +:+  +#+ +#+    +:+ +#+        +#+         +#+    +#++:++#++:++ +#++:++#++ +#++:++#   +#++:++#++: +#+    +:+                             
-                     +#+              +#+       +#+ +#+    +#+ +#+        +#+         +#+                  +#+    +#+ +#+        +#+     +#+ +#+    +#+                              
-                   #+#               #+#       #+# #+#    #+# #+#        #+#         #+#                  #+#    #+# #+#        #+#     #+# #+#    #+#                               
-                 ###                ###       ###  ########  ########## ###     ###########              ###    ### ########## ###     ### #########                                 
-                :::              ::: ::::::::::: ::::::::::: :::::::::: ::::    ::: ::::::::::: ::::::::::: ::::::::  ::::    :::          :::        ::::::::   ::::::::   :::::::: 
-              :+:             :+: :+:   :+:         :+:     :+:        :+:+:   :+:     :+:         :+:    :+:    :+: :+:+:   :+:          :+:       :+:    :+: :+:    :+: :+:    :+: 
-            +:+             +:+   +:+  +:+         +:+     +:+        :+:+:+  +:+     +:+         +:+    +:+    +:+ :+:+:+  +:+          +:+       +:+    +:+ +:+        +:+         
-          +#+             +#++:++#++: +#+         +#+     +#++:++#   +#+ +:+ +#+     +#+         +#+    +#+    +:+ +#+ +:+ +#+          +#+       +#+    +:+ +#++:++#++ +#++:++#++   
-        +#+              +#+     +#+ +#+         +#+     +#+        +#+  +#+#+#     +#+         +#+    +#+    +#+ +#+  +#+#+#          +#+       +#+    +#+        +#+        +#+    
-      #+#               #+#     #+# #+#         #+#     #+#        #+#   #+#+#     #+#         #+#    #+#    #+# #+#   #+#+#          #+#       #+#    #+# #+#    #+# #+#    #+#     
-    ###                ###     ### ###         ###     ########## ###    ####     ###     ########### ########  ###    ####          ########## ########   ########   ########       
+    ╔═══╗╔══╗╔╗   
+    ║╔══╝╚╣╠╝║║  CONDITIONAL 
+    ║║    ║║ ║║  IMITATION 
+    ║║    ║║ ║║  LEARNING
+    ║╚══╗╔╣╠╗║╚════╗
+    ╚═══╝╚══╝╚═════╝
+      🤖 → 🎯 Learning to mimic...   
 
     """
     if rank == 0:
