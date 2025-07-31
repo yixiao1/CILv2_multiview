@@ -7,7 +7,7 @@ from torch.utils import data
 from dataloaders.transforms import train_transform, val_transform, canbus_normalization
 
 from configs import g_conf
-from typing import Union
+from typing import Union, List, Dict
 import re
 
 
@@ -33,11 +33,15 @@ class carlaImages(data.Dataset):
             all_cam_paths_dict = {}
             for camera_type in g_conf.DATA_USED:
                 if 'virtual_attention' in camera_type:
+                    # Ignore noisy virtual attention cameras if we're using the GT ones
                     avoid = 'noise' if g_conf.ATTENTION_NOISE_CATEGORY == 0 else None
                     img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, 
                                                     suffix='.jpg', avoid=avoid)
                     img_paths = [path for path in img_paths if re.match(f'{camera_type}\d{{6}}.jpg', os.path.basename(path))]
+                elif 'gaze_pred' in camera_type:
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
                 else:
+                    # Generally, RGB cameras are saved as .jpg
                     img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.jpg')
                 all_cam_paths_dict.update({camera_type: img_paths})
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
@@ -94,6 +98,8 @@ class carlaImages(data.Dataset):
             sample = {'can_bus': datapoint['can_bus']}
             for camera_type in g_conf.DATA_USED:
                 if 'virtual_attention' in camera_type:
+                    img = Image.open(datapoint[camera_type]).convert('L')
+                elif 'gaze_pred' in camera_type:
                     img = Image.open(datapoint[camera_type]).convert('L')
                 # TODO: sensor type, not always rgb
                 else:

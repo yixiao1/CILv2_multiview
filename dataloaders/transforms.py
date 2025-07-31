@@ -85,6 +85,11 @@ def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tu
             if g_conf.ATTENTION_AS_NEW_CHANNEL:
                 image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
+        elif 'gaze_pred' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = cv2.resize(np.array(image), (3 * resize_attention[0], resize_attention[1]), interpolation=cv2.INTER_AREA)
+            image = TF.to_tensor(image)
+            data[camera_type] = image
         else:
             raise KeyError(f"The camera type is not yet defined: {camera_type}; define it in {__file__}")
 
@@ -116,6 +121,11 @@ def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (13, 8)):
             image = TF.to_tensor(image)
             if g_conf.ATTENTION_AS_NEW_CHANNEL:
                 image = TF.normalize(image, [0.5], [0.5])
+            data[camera_type] = image
+        elif 'gaze_pred' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = cv2.resize(np.array(image), (3 * resize_attention[0], resize_attention[1]), interpolation=cv2.INTER_AREA)
+            image = TF.to_tensor(image)
             data[camera_type] = image
     return data
 

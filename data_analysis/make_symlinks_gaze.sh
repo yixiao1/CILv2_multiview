@@ -4,9 +4,10 @@ ROOT1="/data-net/ted/extra_data_diego"
 ROOT2="/data-net/ted/dataset_ainoa/binary_masks_gaze_predictions"
 
 # Specify the datasets you want to process
-DATASETS=("ted_carla0914_additionalweathers" "ted_carla0914_fps10_dense_town01_3cam_rgb_depth_ss_960x540")
+DATASETS=("ted_carla0914_additionalweathers" "ted_carla0914_fps10_dense_town01_3cam_rgb_depth_ss_960x540" "ted_carla0914_valid_Town02_busy_clearnoon")
 # ted_carla0914_additionalweathers:                            258501 frames
 # ted_carla0914_fps10_dense_town01_3cam_rgb_depth_ss_960x540:  247514 frames
+# ted_carla0914_valid_Town02_busy_clearnoon:                     1259 frames
 
 echo "Processing datasets: ${DATASETS[@]}"
 
