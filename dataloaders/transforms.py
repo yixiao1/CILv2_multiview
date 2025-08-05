@@ -151,8 +151,33 @@ def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tupl
             pass
         elif 'ss' in camera_type:
             pass
-        elif 'virtual_attention' in camera_type:
-            pass
+        elif 'virtual_attention' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = np.array(image)
+            if g_conf.MASK_HOOD and 'central' in camera_type:
+                # Mask the hood of the car, very heuristic, much wow
+                D = 2/3 * image.shape[1]   # Around 2/3 of the image width
+                h = math.ceil(image.shape[0] * 0.085)  # The amount of hood we see; depends on sensor setup for data collection
+                r = (D ** 2 / 4 + h ** 2) / (2 * h)  # Radius of the circle of the mask
+                cx, cy = image.shape[1] // 2, image.shape[0] + r - h  # Center of the circle of the mask
+                # Mask the hood of the car
+                cv2.circle(image, (int(cx), int(cy)), int(r), (0, 0, 0), -1)
+
+            image = cv2.resize(np.array(image), resize_attention, interpolation=getattr(cv2, g_conf.VIRTUAL_ATTENTION_INTERPOLATION, cv2.INTER_LINEAR))
+            image = TF.to_tensor(image)
+            data[camera_type] = image
+        elif 'virtual_attention' in camera_type and g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = cv2.resize(np.array(image), (image_shape[2], image_shape[1]))
+            image = TF.to_tensor(image)
+            if g_conf.ATTENTION_AS_NEW_CHANNEL:
+                image = TF.normalize(image, [0.5], [0.5])
+            data[camera_type] = image
+        elif 'gaze_pred' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+            image = data[camera_type]
+            image = cv2.resize(np.array(image), (3 * resize_attention[0], resize_attention[1]), interpolation=cv2.INTER_AREA)
+            image = TF.to_tensor(image)
+            data[camera_type] = image
         else:
             raise KeyError(f"The camera type is not yet defined: {camera_type}; define it in {__file__}")
 
