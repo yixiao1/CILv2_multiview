@@ -130,12 +130,14 @@ def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (13, 8)):
     return data
 
 
-def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tuple[int]' = (13, 8)):
+def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tuple[int]' = (13, 8), sensors_used: 'list[str]' = None):
     """
         Apply transformations and augmentations. The
         output is from 0-1 float.
     """
-    for camera_type in g_conf.DATA_USED:
+    # Set the default sensors from the config if none is specified
+    sensors_used = g_conf.DATA_USED if sensors_used is None else sensors_used
+    for camera_type in sensors_used:
         if 'rgb' in camera_type:
             image = data[camera_type]
             image = image.resize((image_shape[2], image_shape[1]))  # Note: Bicubic interpolation by default

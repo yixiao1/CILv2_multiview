@@ -194,7 +194,8 @@ def load_single_datapoint(
         )
     
     # Transform data point
-    return ted_transform(data_point, image_shape)
+    sensors_used = ['ar_resized_rgb_central', 'ar_resized_rgb_left', 'ar_resized_rgb_right', 'cmd_fix_can_bus']
+    return ted_transform(data=data_point, image_shape=image_shape, sensors_used=sensors_used)
 
 def process_futures(futures: list, batch_size: int) -> Dict[str, torch.Tensor]:
     batch_data = {
