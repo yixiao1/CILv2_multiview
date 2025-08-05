@@ -181,7 +181,8 @@ def load_single_datapoint(
     data_point = {}
     
     # Load RGB images
-    for cam_type in ['ar_resized_rgb_central', 'ar_resized_rgb_left', 'ar_resized_rgb_right']:
+    sensors_used = ['ar_resized_rgb_central', 'ar_resized_rgb_left', 'ar_resized_rgb_right']
+    for cam_type in sensors_used:
         data_point[cam_type] = open_image(paths[cam_type])
     
     # Load CAN bus data
@@ -194,7 +195,6 @@ def load_single_datapoint(
         )
     
     # Transform data point
-    sensors_used = ['ar_resized_rgb_central', 'ar_resized_rgb_left', 'ar_resized_rgb_right', 'cmd_fix_can_bus']
     return ted_transform(data=data_point, image_shape=image_shape, sensors_used=sensors_used)
 
 def process_futures(futures: list, batch_size: int) -> Dict[str, torch.Tensor]:
