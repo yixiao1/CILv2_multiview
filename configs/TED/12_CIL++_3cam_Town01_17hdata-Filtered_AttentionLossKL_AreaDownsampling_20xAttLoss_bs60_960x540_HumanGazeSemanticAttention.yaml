@@ -20,7 +20,8 @@ IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
 IMAGE_SHAPE: [3, 540, 960]  # Input image shape
-DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right', 'gaze_pred']  # Multi-view cameras, it needs to be set in this order
+DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right', 'gaze_pred',
+            'virtual_attention_left_', 'virtual_attention_central_', 'virtual_attention_right_']  # Virtual attention maps per camera
 
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
@@ -35,7 +36,7 @@ BINARIZE_ATTENTION: False
 # Loss Parameters #
 LOSS: 'Action_nospeed_L1_Attention_KL'  # no speed L1 loss
 ATTENTION_LOSS: True  # 
-ATTENTION_TYPE: 'human_gaze'
+ATTENTION_TYPE: 'human_gaze_semantic'
 LOSS_WEIGHT:
   actions:
     steer: 0.5

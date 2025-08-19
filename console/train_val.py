@@ -243,6 +243,23 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_left = [torch.max(src_atts_left[0], vrt_atts_left[0])]
                         src_atts_central = [torch.max(src_atts_central[0], vrt_atts_central[0])]
                         src_atts_right = [torch.max(src_atts_right[0], vrt_atts_right[0])]
+                        
+                    elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
+                        src_atts = [data['current'][i]['gaze_pred'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                        # Split the attention into left, central, and right
+                        src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
+                        src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
+                        src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
+                        
+                        # Get the semantic masks
+                        vrt_atts_left = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                        vrt_atts_central = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                        vrt_atts_right = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
+
+                        # Now mix them by adding them element-wise
+                        src_atts_left = [torch.sum(torch.stack((src_atts_left[0], vrt_atts_left[0])), dim=0)]
+                        src_atts_central = [torch.sum(torch.stack((src_atts_central[0], vrt_atts_central[0])), dim=0)]
+                        src_atts_right = [torch.sum(torch.stack((src_atts_right[0], vrt_atts_right[0])), dim=0)]
 
                     else:
                         src_atts_left = [value.to(f'cuda:{model.device_ids[0]}') for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
@@ -420,6 +437,23 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_left = [torch.max(src_atts_left[0], vrt_atts_left[0])]
                         src_atts_central = [torch.max(src_atts_central[0], vrt_atts_central[0])]
                         src_atts_right = [torch.max(src_atts_right[0], vrt_atts_right[0])]
+                        
+                    elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
+                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                        # Split the attention into left, central, and right
+                        src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
+                        src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
+                        src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
+                        
+                        # Get the semantic masks
+                        vrt_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                        vrt_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                        vrt_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
+
+                        # Now mix them by adding them element-wise
+                        src_atts_left = [torch.sum(torch.stack((src_atts_left[0], vrt_atts_left[0])), dim=0)]
+                        src_atts_central = [torch.sum(torch.stack((src_atts_central[0], vrt_atts_central[0])), dim=0)]
+                        src_atts_right = [torch.sum(torch.stack((src_atts_right[0], vrt_atts_right[0])), dim=0)]
                     else:
                         src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
                         src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
@@ -643,7 +677,8 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     _logger.add_scalar('tau - Quantile Loss', tau_quantile, model._current_iteration)
 
             if utils.test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
-                print('\nTraining finished !!')
+                if rank == 0:
+                    print('\nTraining finished !!')
                 break
 
             local_iteration += 1

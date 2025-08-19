@@ -19,9 +19,9 @@ DECODER_OUTPUT_FRAMES_NUM: 1
 IMG_NORMALIZATION:     # ImageNet normalization
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
-IMAGE_SHAPE: [3, 540, 960]  # Input image shape
-DATA_USED: ['rgb_left', 'rgb_central', 'rgb_right', 'gaze_pred']  # Multi-view cameras, it needs to be set in this order
-
+IMAGE_SHAPE: [3, 225, 400]  # Input image shape
+DATA_USED: ['ar_resized_rgb_left', 'ar_resized_rgb_central', 'ar_resized_rgb_right', 'gaze_pred',  # Multi-view cameras, it needs to be set in this order
+            'ar_resized_virtual_attention_left_', 'ar_resized_virtual_attention_central_', 'ar_resized_virtual_attention_right_']  # Virtual attention maps per camera
 DATA_COMMAND_ONE_HOT: True   # encode high-level command to one-hot
 DATA_COMMAND_CLASS_NUM: 4    # 4 for single-lane small towns, 6 for multi-lane towns (lane change to right/left)
 # Data normalization: might be changed depending on datasets
@@ -35,7 +35,7 @@ BINARIZE_ATTENTION: False
 # Loss Parameters #
 LOSS: 'Action_nospeed_L1_Attention_KL'  # no speed L1 loss
 ATTENTION_LOSS: True  # 
-ATTENTION_TYPE: 'human_gaze'
+ATTENTION_TYPE: 'human_gaze_semantic_sum'
 LOSS_WEIGHT:
   actions:
     steer: 0.5
@@ -43,7 +43,7 @@ LOSS_WEIGHT:
   attention: 10.0  # Will be equaly divided between the h attention losses
 
 # Optimizer Parameters #
-LEARNING_RATE: 0.00005
+LEARNING_RATE: 0.0001
 LEARNING_RATE_MINIMUM: 0.00001
 LEARNING_RATE_DECAY_EPOCHES: [30, 50, 65]
 LEARNING_RATE_SCHEDULE: 'step'
@@ -53,7 +53,7 @@ LEARNING_RATE_POLICY:
 
 #### Validation Related Parameters ####
 EVAL_SAVE_LAST_Conv_ACTIVATIONS: True
-EVAL_BATCH_SIZE: 4
+EVAL_BATCH_SIZE: 30
 EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100

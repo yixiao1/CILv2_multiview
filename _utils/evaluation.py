@@ -78,7 +78,10 @@ def evaluation_on_model(model: nn.Module,
         evaluator.reset()
         logging_interval = 500
         start_time = time.time()
-
+        
+        # Clear cache before validation
+        torch.cuda.empty_cache()
+        
         with inference_context(model), torch.no_grad():
             for idx, data in enumerate(data_loader):
                 # Extract the inputs
@@ -203,6 +206,23 @@ def evaluation_on_model(model: nn.Module,
                         src_atts_left = [torch.max(src_atts_left[0], vrt_atts_left[0])]
                         src_atts_central = [torch.max(src_atts_central[0], vrt_atts_central[0])]
                         src_atts_right = [torch.max(src_atts_right[0], vrt_atts_right[0])]
+                    
+                    elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
+                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                        # Split the attention into left, central, and right
+                        src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
+                        src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
+                        src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
+                        
+                        # Get the semantic masks
+                        vrt_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                        vrt_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                        vrt_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
+
+                        # Now mix them
+                        src_atts_left = [torch.sum(torch.stack((src_atts_left[0], vrt_atts_left[0]), dim=0), dim=0)]
+                        src_atts_central = [torch.sum(torch.stack((src_atts_central[0], vrt_atts_central[0]), dim=0), dim=0)]
+                        src_atts_right = [torch.sum(torch.stack((src_atts_right[0], vrt_atts_right[0]), dim=0), dim=0)]
                     else:
                         src_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
                         src_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central' in key]
@@ -372,6 +392,23 @@ def evaluation_on_model(model: nn.Module,
                             eval_atts_left = [torch.max(eval_atts_left[0], vrt_atts_left[0])]
                             eval_atts_central = [torch.max(eval_atts_central[0], vrt_atts_central[0])]
                             eval_atts_right = [torch.max(eval_atts_right[0], vrt_atts_right[0])]
+                            
+                        elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
+                            src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                            # Split the attention into left, central, and right
+                            eval_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
+                            eval_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
+                            eval_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
+                            
+                            # Get the semantic masks
+                            vrt_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left_' in key]
+                            vrt_atts_central = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_central_' in key]
+                            vrt_atts_right = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_right_' in key]
+
+                            # Now mix them
+                            eval_atts_left = [torch.sum(torch.stack((eval_atts_left[0], vrt_atts_left[0]), dim=0), dim=0)]
+                            eval_atts_central = [torch.sum(torch.stack((eval_atts_central[0], vrt_atts_central[0]), dim=0), dim=0)]
+                            eval_atts_right = [torch.sum(torch.stack((eval_atts_right[0], vrt_atts_right[0]), dim=0), dim=0)]
                         
                         else:
                             eval_atts_left = [value.cuda() for current_data in data['current'] for key, value in current_data.items() if 'virtual_attention_left' in key]
