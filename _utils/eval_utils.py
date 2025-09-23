@@ -17,7 +17,8 @@ from dataloaders.transforms import canbus_normalization, train_transform
 
 def load_model_from_checkpoint(model: CIL_multiview, 
                                checkpoint_path: str, 
-                               checkpoint_number: int) -> CIL_multiview:
+                               checkpoint_number: int,
+                               remove_pos_enc: bool = True) -> CIL_multiview:
     """
     Load model from checkpoint, handling various prefix patterns from multi-GPU training.
     
@@ -63,9 +64,10 @@ def load_model_from_checkpoint(model: CIL_multiview,
     new_state_dict = OrderedDict(new_state_dict)
     
     # Remove PE
-    for k, v in new_state_dict.items():
-        if k.startswith('positional_encoding'):
-            new_state_dict[k] = torch.zeros(1, 0, 512)
+    if remove_pos_enc:
+        for k, v in new_state_dict.items():
+            if k.startswith('positional_encoding'):
+                new_state_dict[k] = torch.zeros(1, 0, 512)
 
     model.load_state_dict(new_state_dict)
     return model
@@ -146,9 +148,9 @@ def model_forward(model: CIL_multiview,
                   last_encoder_state: bool = False) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
     """
     Get the intermediate features of the CIL_multiview model.
-        return_attentions (bool): return the attention weights of the Transformer Encoder
     """
-    src_images = [data[camera_type] for camera_type in g_conf.DATA_USED if 'rgb' in camera_type]
+    src_images = [data[camera_type] for camera_type in g_conf.DATA_USED 
+                  if any(cam_type in camera_type for cam_type in ['rgb', 'sekonix', 'conti'])]
     src_directions = [torch.tensor([data['can_bus']['direction']]).float()]
     src_s = [torch.tensor([data['can_bus']['speed']]).float()]
 
@@ -160,18 +162,44 @@ def model_forward(model: CIL_multiview,
 
     e_p = rearrange(e_p, 'b dim h w -> 1 (b h w) dim')
 
+    # Add register tokens if present
     if model.num_register_tokens > 0:
         e_p = torch.cat([model.register_tokens, e_p], dim=1)
+
+    # Add action tokens if not disabled
+    if not g_conf.NO_ACT_TOKENS:
+        n = e_p.shape[0]  # Batch size
+        action_tokens = torch.cat([
+            model.tfx_steer_token.expand(n, -1, -1), 
+            model.tfx_accel_token.expand(n, -1, -1)
+        ], dim=1)
+        e_p = torch.cat([action_tokens, e_p], dim=1)
 
     e_d = model.command(d).unsqueeze(1)
     e_s = model.speed(s).unsqueeze(0).unsqueeze(0)
 
-    e_p = e_p + e_d + e_s
-    e_p = e_p + model.positional_encoding
+    # Handle command and speed embedding based on config
+    if g_conf.CMD_SPD_TOKENS:
+        e_p = torch.cat([e_d, e_s, e_p], dim=1)
+    else:
+        e_p = e_p + e_d + e_s
+
+    # Handle acceleration/rotation input if enabled
+    if g_conf.ACCEL_ROT_AS_INPUT:
+        acc_rot = torch.tensor([data['can_bus']['imu_acc'] + data['can_bus']['imu_gyroscope']]).float().to('cuda')
+        e_a = model.accrot(acc_rot).unsqueeze(1)
+        e_p += e_a
+
+    # Apply positional encoding based on model configuration
+    if model.params['TxEncoder']['learnable_pe']:
+        e_p = e_p + model.positional_encoding
+    else:
+        e_p = model.positional_encoding(e_p)
 
     in_memory, attn_weights = model.tx_encoder(e_p)
 
     action_output, _, _ = model.action_prediction(in_memory, cam=len(src_images))
+    
     if last_encoder_state:
         return action_output, resnet_inter, attn_weights, in_memory
     return action_output, resnet_inter, attn_weights

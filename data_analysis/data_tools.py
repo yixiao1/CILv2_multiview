@@ -16,17 +16,31 @@ from PIL import Image
 import math
 import cv2
 from multiprocessing import Pool
-from _utils import utils
+from _utils import utils, eval_utils
 import json
 import shutil
 import re
+from einops import rearrange
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import minmax_scale
+import torch.nn.functional as F
+from collections import deque
+from pathlib import Path
 
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 import torch
+import torchvision.transforms.functional as TF
 from torch.utils.data import DataLoader, Dataset
 from transformers.models.mask2former import modeling_mask2former, image_processing_mask2former
 from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
+
+from network.models.architectures.CIL_multiview.CIL_multiview import CIL_multiview
+from dataloaders.transforms import canbus_normalization, train_transform
+from configs import g_conf
 
 # ====================== Helper functions ======================
 
@@ -1342,6 +1356,552 @@ def average_virtual_attention(dataset_path, prefix, fps, sec, output_prefix, num
                 save_averaged_frames(route_path, averaged_frames, output_prefix, sec, camera, att_type)
 
     print("Averaging complete!")
+
+
+def extract_frame_number_flexible(filepath: str) -> int:
+    """
+    Extract frame number from filepath using multiple patterns.
+    Handles both simple (name_000123.ext) and timestamp (name_timestamp_000123.ext) formats.
+    """
+    # Try different patterns for frame number extraction
+    patterns = [
+        r'(\d{6})(?=\.\w+$)',  # 6 digits before extension
+        r'_(\d{6})(?=\.\w+$)', # underscore + 6 digits before extension
+        r'(\d+)(?=\.\w+$)',    # any digits before extension
+        r'_(\d+)_\d+\.', # frame number before timestamp
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, os.path.basename(filepath))
+        if match:
+            return int(match.group(1))
+    
+    return None
+
+def group_files_by_sorted_order(file_paths: List[str], sensors_used: List[str]) -> Dict[int, Dict[str, str]]:
+    """
+    Group files by sorting them and assigning sequential frame numbers.
+    Uses the sensors defined in config (e.g., g_conf.DATA_USED).
+    
+    Args:
+        file_paths: List of all file paths
+        sensors_used: List of sensor names from config (e.g., ['sekonix_60', 'sekonix_120', 'conti_front'])
+    
+    Returns: {frame_num: {'sekonix_60': path, 'sekonix_120': path, ...}}
+    """
+    # Group files by sensor type
+    sensor_files = {sensor: [] for sensor in sensors_used}
+    can_bus_files = []
+    
+    for filepath in file_paths:
+        basename = os.path.basename(filepath)
+        
+        # Check for CAN bus data
+        if 'can_bus' in basename or 'il_data' in basename:
+            can_bus_files.append(filepath)
+            continue
+            
+        # Check which sensor this file belongs to
+        for sensor in sensors_used:
+            if sensor in basename:
+                sensor_files[sensor].append(filepath)
+                break
+    
+    # Sort files for each sensor using natural sorting
+    for sensor in sensors_used:
+        utils.sort_nicely(sensor_files[sensor])  # This handles both numeric and timestamp sorting
+    
+    utils.sort_nicely(can_bus_files)
+    
+    # Find the minimum number of files across all sensors
+    min_files = min(len(sensor_files[sensor]) for sensor in sensors_used if sensor_files[sensor])
+    
+    if can_bus_files:
+        min_files = min(min_files, len(can_bus_files))
+    
+    # Group by frame number (index position after sorting)
+    frame_groups = {}
+    for frame_num in range(min_files):
+        frame_data = {}
+        
+        # Add sensor data
+        for sensor in sensors_used:
+            if frame_num < len(sensor_files[sensor]):
+                frame_data[sensor] = sensor_files[sensor][frame_num]
+        
+        # Add CAN bus data
+        if frame_num < len(can_bus_files):
+            frame_data['can_bus'] = can_bus_files[frame_num]
+        
+        # Only add frame if we have all required sensors
+        if len(frame_data) == len(sensors_used) + (1 if can_bus_files else 0):
+            frame_groups[frame_num] = frame_data
+    
+    return frame_groups
+
+def create_model_visualization_frame(model, data_dict: dict, frame_num: int, 
+                                   action_history: deque, prediction_history: deque,
+                                   config, resnet_inter, attn_weights, encoder_output) -> np.ndarray:
+    """
+    Create a comprehensive visualization frame for model inference.
+    Layout: 6 columns x 5 rows as specified.
+    """
+    # Create the visualization grid
+    fig = plt.figure(figsize=(24, 20))
+    
+    # Configure matplotlib for better video output
+    plt.rcParams.update({'font.size': 10})
+    
+    # Get source images for display
+    src_images = [data_dict[camera_type] for camera_type in config.DATA_USED 
+                  if any(cam_type in camera_type for cam_type in ['rgb', 'sekonix', 'conti'])]
+    
+    # ========== Row 1: RGB Images (3 cols) + Attention Layer 1 (3 cols) ==========
+    for i, img in enumerate(src_images[:3]):  # Ensure max 3 cameras
+        ax = plt.subplot2grid((5, 6), (0, i), colspan=1)
+        img_denorm = TF.normalize(img, 
+                             [-0.485/0.229, -0.456/0.224, -0.406/0.255], 
+                             [1/0.229, 1/0.224, 1/0.255])
+        img_np = torch.clamp(img_denorm, 0, 1).detach().cpu().numpy().transpose(1, 2, 0)
+        ax.imshow(img_np)
+        camera_name = config.DATA_USED[i] if i < len(config.DATA_USED) else f'Camera_{i+1}'
+        ax.set_title(f'{camera_name}\n(Frame {frame_num:06d})')
+        ax.axis('off')
+    
+    # Attention Layer 1 (spans 3 columns)
+    if len(attn_weights) > 0:
+        ax = plt.subplot2grid((5, 6), (0, 3), colspan=3)
+        img_cat = torch.cat(src_images[:3], dim=2)
+        img_cat_norm = TF.normalize(img_cat, [-0.485/0.229, -0.456/0.224, -0.406/0.255], 
+                              [1/0.229, 1/0.224, 1/0.255])
+        img_cat_np = torch.clamp(img_cat_norm, 0, 1).cpu().numpy().transpose(1, 2, 0)
+        ax.imshow(img_cat_np)
+        
+        attn = attn_weights[0]
+        attn_avg = attn.squeeze().mean(dim=0)
+        num_cameras = len(src_images[:3])
+        
+        # Remove register tokens and action tokens if present
+        start_idx = 0
+        if model.num_register_tokens > 0:
+            start_idx += model.num_register_tokens
+        if not config.NO_ACT_TOKENS:
+            start_idx += 2
+        if config.CMD_SPD_TOKENS:
+            start_idx += 2
+            
+        # Get only spatial tokens
+        spatial_tokens = attn_avg[start_idx:]
+        attn_reshaped = rearrange(spatial_tokens, 
+                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
+                                 cam=num_cameras, h=model.res_out_h)
+        
+        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
+        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
+                                interpolation=cv2.INTER_LINEAR)
+        
+        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
+        ax.set_title('Attention Layer 1')
+        ax.axis('off')
+    
+    # ========== Row 2: ResNet Features (3 cols) + Attention Layer 2 (3 cols) ==========
+    resnet_features = resnet_inter[-1]
+    reduction_type = 'max'
+    
+    for i in range(min(3, len(src_images))):
+        ax = plt.subplot2grid((5, 6), (1, i), colspan=1)
+        features = resnet_features[i]
+        feature_map = torch.max(features, dim=0)[0] if reduction_type == 'max' else torch.mean(features, dim=0)
+        
+        im = ax.imshow(feature_map.detach().cpu().numpy(), cmap='jet')
+        ax.set_title(f'ResNet {reduction_type.title()}')
+        ax.axis('off')
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    
+    # Attention Layer 2
+    if len(attn_weights) > 1:
+        ax = plt.subplot2grid((5, 6), (1, 3), colspan=3)
+        ax.imshow(img_cat_np)
+        
+        attn = attn_weights[1]
+        attn_avg = attn.squeeze().mean(dim=0)
+        # Get only spatial tokens
+        spatial_tokens = attn_avg[start_idx:]
+        attn_reshaped = rearrange(spatial_tokens, 
+                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
+                                 cam=num_cameras, h=model.res_out_h)
+        
+        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
+        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
+                                interpolation=cv2.INTER_LINEAR)
+        
+        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
+        ax.set_title('Attention Layer 2')
+        ax.axis('off')
+    
+    # ========== Row 3: L2 Norm (3 cols) + Attention Layer 3 (3 cols) ==========
+    ax = plt.subplot2grid((5, 6), (2, 0), colspan=3)
+    ax.imshow(img_cat_np)
+    
+    # Calculate L2 norm and entropy
+    spatial_features = encoder_output.squeeze()[start_idx:]  # Remove tokens
+    l2_norm = torch.norm(spatial_features, p=2, dim=1)
+    
+    # Calculate entropy
+    l2_np = l2_norm.detach().cpu().numpy()
+    counts, bins = np.histogram(l2_np, bins=50)
+    probs = counts / np.sum(counts)
+    entropy = -np.sum(probs * np.log(probs + 1e-8))
+    
+    l2_reshaped = rearrange(l2_norm, 
+                            '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
+                           cam=num_cameras, h=model.res_out_h)
+    l2_np_reshaped = l2_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
+    l2_resized = cv2.resize(l2_np_reshaped, (img_cat_np.shape[1], img_cat_np.shape[0]), 
+                           interpolation=cv2.INTER_LINEAR)
+    
+    ax.imshow(l2_resized, cmap='jet', alpha=0.6)
+    ax.set_title(f'L2 Norm (Range: [{l2_norm.min():.2f}, {l2_norm.max():.2f}], Entropy: {entropy:.3f})')
+    ax.axis('off')
+    
+    # Attention Layer 3
+    if len(attn_weights) > 2:
+        ax = plt.subplot2grid((5, 6), (2, 3), colspan=3)
+        ax.imshow(img_cat_np)
+        
+        attn = attn_weights[2]
+        attn_avg = attn.squeeze().mean(dim=0)
+        # Get only spatial tokens
+        spatial_tokens = attn_avg[start_idx:]
+        attn_reshaped = rearrange(spatial_tokens, 
+                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
+                                 cam=num_cameras, h=model.res_out_h)
+        
+        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
+        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
+                                interpolation=cv2.INTER_LINEAR)
+        
+        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
+        ax.set_title('Attention Layer 3')
+        ax.axis('off')
+    
+    # ========== Row 4: PCA (3 cols) + Attention Layer 4 (3 cols) ==========
+    ax = plt.subplot2grid((5, 6), (3, 0), colspan=3)
+    ax.imshow(img_cat_np)
+    
+    # Compute PCA with threshold
+    threshold = 0  # Can be made configurable
+    spatial_size, latent_dim = spatial_features.shape
+    features = spatial_features.reshape(-1, latent_dim).detach().cpu().numpy()
+    spatial_size = features.shape[0]
+    
+    pca = PCA(n_components=3)
+    pca.fit(features)
+    pca_features = pca.transform(features)
+    
+    bg_mask = pca_features[:, 0] < threshold
+    fg_mask = ~bg_mask
+    
+    # PCA for only foreground patches
+    pca_features_fg = pca.transform(features[fg_mask])
+    for i in range(3):
+        pca_features_fg[:, i] = minmax_scale(pca_features_fg[:, i])
+        
+    pca_features_rgb = pca_features.copy()
+    pca_features_rgb[bg_mask] = 0
+    pca_features_rgb[fg_mask] = pca_features_fg
+    
+    # Reshape for visualization
+    pca_reshaped = rearrange(pca_features_rgb, 
+                            '(h w cam) c -> c h (w cam) ' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) c -> c h (cam w)',
+                            cam=num_cameras, h=model.res_out_h, c=3)
+    pca_np = pca_reshaped.transpose(1, 2, 0)
+    pca_resized = cv2.resize(pca_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
+                            interpolation=cv2.INTER_LINEAR)
+    
+    # Clip to valid range to avoid matplotlib warnings
+    pca_resized = np.clip(pca_resized, 0, 1)
+    
+    ax.imshow(pca_resized, alpha=0.7)
+    ax.set_title(f'PCA (Red: PC1, Green: PC2, Blue: PC3, Threshold: {threshold})')
+    ax.axis('off')
+    
+    # Attention Layer 4 (or last layer)
+    if len(attn_weights) > 3:
+        ax = plt.subplot2grid((5, 6), (3, 3), colspan=3)
+        ax.imshow(img_cat_np)
+        
+        attn = attn_weights[3] if len(attn_weights) > 3 else attn_weights[-1]
+        attn_avg = attn.squeeze().mean(dim=0)
+        # Get only spatial tokens
+        spatial_tokens = attn_avg[start_idx:]
+        attn_reshaped = rearrange(spatial_tokens, 
+                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
+                                 cam=num_cameras, h=model.res_out_h)
+        
+        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
+        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
+                                interpolation=cv2.INTER_LINEAR)
+        
+        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
+        layer_name = 'Attention Layer 4'
+        ax.set_title(layer_name)
+        ax.axis('off')
+    
+    # ========== Row 5: Action Plots ==========
+    # Steering angle plot (3 cols)
+    ax = plt.subplot2grid((5, 6), (4, 0), colspan=3)
+    if len(action_history) > 1:
+        frames = list(range(len(action_history)))
+        gt_steers = [action[0] for action in action_history]
+        pred_steers = [pred[0] for pred in prediction_history]
+        
+        ax.plot(frames, gt_steers, 'b-', label='Ground Truth', linewidth=2)
+        ax.plot(frames, pred_steers, 'r--', label='Prediction', linewidth=2)
+        ax.axvline(x=len(frames)-1, color='k', linestyle=':', alpha=0.7, label='Current')
+        ax.legend()
+        
+        # Fix axis limits to prevent movement
+        ax.set_xlim(0, max(len(frames), 10))  # Ensure minimum width
+        ax.set_ylim(-1.1, 1.1)  # Fixed steering range
+        
+    ax.set_title('Steering Angle History')
+    ax.set_xlabel('Frames')
+    ax.set_ylabel('Steering')
+    ax.grid(True, alpha=0.3)
+    
+    # Acceleration plot (3 cols)
+    ax = plt.subplot2grid((5, 6), (4, 3), colspan=3)
+    if len(action_history) > 1:
+        gt_accels = [action[1] for action in action_history]
+        pred_accels = [pred[1] for pred in prediction_history]
+        
+        ax.plot(frames, gt_accels, 'b-', label='Ground Truth', linewidth=2)
+        ax.plot(frames, pred_accels, 'r--', label='Prediction', linewidth=2)
+        ax.axvline(x=len(frames)-1, color='k', linestyle=':', alpha=0.7, label='Current')
+        ax.legend()
+
+        # Fix axis limits
+        ax.set_xlim(0, max(len(frames), 10))
+        ax.set_ylim(-1.1, 1.1)  # Fixed acceleration range    
+
+    ax.set_title('Acceleration History')
+    ax.set_xlabel('Frames')
+    ax.set_ylabel('Acceleration')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Convert matplotlib figure to numpy array
+    fig.canvas.draw()
+    buf = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    buf = buf.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    
+    plt.close(fig)
+    return buf
+
+def process_single_inference_frame(args):
+    """Process a single frame for model inference visualization."""
+    (frame_num, frame_data, model, config, action_history, prediction_history, 
+     history_length, output_dir) = args
+    
+    try:
+        # Load data directly from the file paths
+        datapoint = {}
+        datapoint['can_bus'] = dict()
+
+        # Load CAN bus data
+        with open(frame_data['can_bus'], 'r') as f:
+            canbus_data = json.load(f)
+
+        for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
+            datapoint['can_bus'][value] = canbus_data[value]
+        datapoint['can_bus'] = canbus_normalization(datapoint['can_bus'], g_conf.DATA_NORMALIZATION)
+        
+        # Save ground-truth action
+        gt_action = [datapoint['can_bus']['steer'], datapoint['can_bus']['acceleration']]
+
+        # Load images for each sensor in DATA_USED
+        for sensor_type in g_conf.DATA_USED:
+            if sensor_type in frame_data:
+                img = eval_utils.open_image(os.path.dirname(frame_data[sensor_type]), 
+                                        os.path.basename(frame_data[sensor_type]))
+                datapoint[sensor_type] = img
+
+        data = train_transform(datapoint, tuple(g_conf.IMAGE_SHAPE))
+        
+        # Get model prediction with all intermediate outputs
+        with torch.no_grad():
+            action_output, resnet_inter, attn_weights, encoder_output = eval_utils.model_forward(
+                model, data, last_encoder_state=True
+            )
+        pred_action = action_output.squeeze().detach().cpu().numpy().tolist()
+
+        # Update history
+        action_history.append(gt_action)
+        prediction_history.append(pred_action)
+
+        # Keep only recent history
+        if len(action_history) > history_length:
+            action_history.popleft()
+            prediction_history.popleft()
+
+        # Create visualization with pre-computed model outputs
+        vis_frame = create_model_visualization_frame(
+            model, data, frame_num, action_history, prediction_history, config,
+            resnet_inter, attn_weights, encoder_output
+        )
+        
+        return frame_num, vis_frame, True
+        
+    except Exception as e:
+        print(f"Error processing frame {frame_num}: {e}")
+        return frame_num, None, False
+
+@main.command(name='visualize-model-inference')
+@click.option('--dataset-path', type=click.Path(exists=True), required=True,
+              help='Path to the dataset directory containing the route data')
+@click.option('--route-path', type=str, required=True,
+              help='Relative path to the specific route within dataset-path')
+@click.option('--exp-batch', type=str, required=True,
+              help='Experiment batch name for model configuration')
+@click.option('--exp-name', type=str, required=True,
+              help='Experiment name for model configuration')
+@click.option('--checkpoint-path', type=click.Path(exists=True), required=True,
+              help='Path to model checkpoints directory')
+@click.option('--checkpoint-number', type=int, default=None,
+              help='Specific checkpoint number to load (latest if not specified)')
+@click.option('--video-name', type=str, required=True,
+              help='Name for the output video (without extension)')
+@click.option('--fps', type=float, default=10.0, 
+              help='Frames per second for the output video')
+@click.option('--history-seconds', type=float, default=5.0,
+              help='Seconds of action history to show in plots')
+@click.option('--output-path', type=click.Path(), default=None,
+              help='Output directory for videos (default: dataset_path/videos)')
+@click.option('--frame-range', type=str, default=None,
+              help='Frame range to process (e.g., "100-200" or "150")')
+@click.option('--rgb-prefix', type=str, default='rgb',
+              help='Prefix for RGB image files')
+@click.option('--canbus-prefix', type=str, default='cmd_fix_can_bus',
+              help='Prefix for CAN bus data files')
+@click.option('--num-workers', type=int, default=4,
+              help='Number of parallel workers for processing')
+def visualize_model_inference(dataset_path, route_path, exp_batch, exp_name, 
+                            checkpoint_path, checkpoint_number, video_name, fps, 
+                            history_seconds, output_path, frame_range, rgb_prefix, 
+                            canbus_prefix, num_workers):
+    """
+    Create visualization videos for model inference showing ResNet features, 
+    attention maps, L2 norms, PCA, and action predictions vs ground truth.
+    """
+    import matplotlib as mpl
+    mpl.rcParams.update(mpl.rcParamsDefault)
+    # Setup paths
+    full_route_path = os.path.join(dataset_path, route_path)
+    print(f'Scanning data in {full_route_path}')
+    if output_path is None:
+        output_path = os.path.join(dataset_path, 'videos')
+    os.makedirs(output_path, exist_ok=True)
+    
+    print(f"Loading model configuration: {exp_batch}/{exp_name}")
+    
+    # Load model configuration and checkpoint
+    eval_utils.load_config(exp_batch, exp_name)
+    
+    model = CIL_multiview(g_conf.MODEL_CONFIGURATION)
+    checkpoint_path = os.path.join(checkpoint_path, '_results', exp_batch, exp_name, 'checkpoints')
+    eval_utils.load_model_from_checkpoint(model, checkpoint_path, checkpoint_number, remove_pos_enc=False)
+    model.eval()
+    model = model.to('cuda')
+    
+    print("Model loaded successfully")
+    
+    # Filter frames that have all required sensors
+    image_extensions = ['.png', '.jpg', '.jpeg']
+    json_files = get_files_with_prefix_and_suffix(full_route_path, ['il_data'], ['.json'])
+    image_files = get_files_with_prefix_and_suffix(full_route_path, g_conf.DATA_USED, image_extensions)
+    all_files = json_files + image_files
+    
+    frame_groups = group_files_by_sorted_order(all_files, g_conf.DATA_USED)
+    complete_frames = frame_groups  # Already filtered in the grouping function
+    
+    if not complete_frames:
+        print("No complete frames found with all required sensors")
+        return
+    
+    # Apply frame range filter if specified
+    if frame_range:
+        if '-' in frame_range:
+            start, end = map(int, frame_range.split('-'))
+            complete_frames = {f: d for f, d in complete_frames.items() if start <= f <= end}
+        else:
+            frame_num = int(frame_range)
+            complete_frames = {f: d for f, d in complete_frames.items() if f >= frame_num}
+    
+    sorted_frames = sorted(complete_frames.keys())
+    print(f"Found {len(sorted_frames)} complete frames to process")
+    
+    if not sorted_frames:
+        print("No frames to process")
+        return
+    
+    # Calculate history length in frames
+    history_length = int(fps * history_seconds)
+    
+    # Initialize history tracking
+    action_history = deque(maxlen=history_length)
+    prediction_history = deque(maxlen=history_length)
+    
+    # Prepare arguments for parallel processing
+    temp_dir = os.path.join(output_path, f'temp_{video_name}')
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    print("Processing frames...")
+    
+    # Process frames in order (sequential for history tracking)
+    processed_frames = []
+    
+    for frame_num in tqdm(sorted_frames, desc="Processing frames"):
+        args = (frame_num, complete_frames[frame_num], model, g_conf, 
+               action_history, prediction_history, history_length, temp_dir)
+
+        frame_num, vis_frame, success = process_single_inference_frame(args)
+                
+        if success and vis_frame is not None:
+            processed_frames.append((frame_num, vis_frame))
+    
+    if not processed_frames:
+        print("No frames were processed successfully")
+        return
+    
+    print(f"Creating video from {len(processed_frames)} processed frames...")
+    
+    # Create video from processed frames
+    video_filename = f"{video_name}_model_inference_fps{fps}.mp4"
+    video_path = os.path.join(output_path, video_filename)
+    
+    # Get frame dimensions from first processed frame
+    first_frame = processed_frames[0][1]
+    height, width = first_frame.shape[:2]
+    
+    # Initialize video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+    
+    for frame_num, vis_frame in tqdm(processed_frames, desc="Writing video"):
+        # Convert RGB to BGR for OpenCV
+        bgr_frame = cv2.cvtColor(vis_frame, cv2.COLOR_RGB2BGR)
+        video_writer.write(bgr_frame)
+    
+    video_writer.release()
+    
+    # Cleanup temp directory
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    print(f"Video saved to: {video_path}")
+    print(f"Video contains {len(processed_frames)} frames at {fps} FPS")
+    print(f"Duration: {len(processed_frames)/fps:.2f} seconds")
 
 
 # ====================== Entry point ======================
