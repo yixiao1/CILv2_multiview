@@ -222,13 +222,21 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_right = [uniform_mask]
 
                     elif g_conf.ATTENTION_TYPE == 'human_gaze':
-                        src_atts = [data['current'][i]['gaze_pred'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]  # [B, 1, h, 3*w]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
                     elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic':
-                        src_atts = [data['current'][i]['gaze_pred'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
@@ -245,7 +253,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_right = [torch.max(src_atts_right[0], vrt_atts_right[0])]
                         
                     elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
-                        src_atts = [data['current'][i]['gaze_pred'].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
@@ -416,13 +428,21 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_right = [uniform_mask]
 
                     elif g_conf.ATTENTION_TYPE == 'human_gaze':
-                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
                     elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic':
-                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
@@ -439,7 +459,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                         src_atts_right = [torch.max(src_atts_right[0], vrt_atts_right[0])]
                         
                     elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
-                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]

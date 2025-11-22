@@ -538,3 +538,25 @@ def create_other_sensors(sensor_types: List[str], ids: List[str]) -> List[Dict[s
     """
     return [{'type': sensor_type, 'id': id} for sensor_type, id in zip(sensor_types, ids)]
 
+
+
+def get_available_key(data_dict, possible_keys):
+    """
+    Find the first available key from a list of possible keys in a dictionary.
+    
+    Args:
+        data_dict: Dictionary to search in
+        possible_keys: List of possible key names to check
+        
+    Returns:
+        The first key found in the dictionary
+        
+    Raises:
+        KeyError: If none of the possible keys are found
+    """
+    for key in possible_keys:
+        if key in data_dict:
+            return key
+    
+    raise KeyError(f"No valid key found. Expected one of: {possible_keys}, "
+                   f"but got: {list(data_dict.keys())}")

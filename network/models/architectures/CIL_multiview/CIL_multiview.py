@@ -36,7 +36,7 @@ class CIL_multiview(nn.Module):
         else:
             self.resize_att_h, self.resize_att_w = self.res_out_h, self.res_out_w
         # Get the sequence length; TODO: this assumes all cameras have the same resolution!
-        self.sequence_length = len([c for c in g_conf.DATA_USED if 'rgb' in c]) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
+        self.sequence_length = len([c for c in g_conf.DATA_USED if any(cam_type in c for cam_type in ['rgb', 'sekonix', 'conti'])]) * g_conf.ENCODER_INPUT_FRAMES_NUM * self.res_out_h * self.res_out_w
 
         if not g_conf.NO_ACT_TOKENS:
             # Add the STR and ACC tokens as parameters
@@ -197,7 +197,7 @@ class CIL_multiview(nn.Module):
     def forward(self, s, s_d, s_s, s_a=None):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
-        cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
+        cam = len([c for c in g_conf.DATA_USED if any(cam_type in c for cam_type in ['rgb', 'sekonix', 'conti'])])  # Number of cameras
 
         encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s, s_a)  # [B, S*cam*h*w + K + R, D]
 
@@ -219,7 +219,7 @@ class CIL_multiview(nn.Module):
                      attn_refinement: bool = False, attn_p2p_affinity: bool = False):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
-        cam = len([c for c in g_conf.DATA_USED if 'rgb' in c])  # Number of cameras
+        cam = len([c for c in g_conf.DATA_USED if any(cam_type in c for cam_type in ['rgb', 'sekonix', 'conti'])])  # Number of cameras
 
         encoded_obs, resnet_inter = self.encode_observations(s, s_d, s_s, s_a)  # [B, S*cam*h*w + K, D]
 

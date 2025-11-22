@@ -185,13 +185,21 @@ def evaluation_on_model(model: nn.Module,
                         
                         
                     elif g_conf.ATTENTION_TYPE == 'human_gaze':
-                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
                     elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic':
-                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
@@ -208,7 +216,11 @@ def evaluation_on_model(model: nn.Module,
                         src_atts_right = [torch.max(src_atts_right[0], vrt_atts_right[0])]
                     
                     elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
-                        src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                        # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                        gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                        available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                        
+                        src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                         # Split the attention into left, central, and right
                         src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                         src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
@@ -256,7 +268,7 @@ def evaluation_on_model(model: nn.Module,
                             for j in range(len(src_images[i])):
                                 src_images[i][j] = src_images[i][j] * src_attn_masks[i][j]
 
-                action_outputs, resnet_inter, att_out = model.forward_eval(src_images, src_directions, src_speeds)
+                action_outputs, resnet_inter, att_out = model.forward(src_images, src_directions, src_speeds)
                 torch.cuda.synchronize()
                 if g_conf.EARLY_ATTENTION:
                     resnet_inter = resnet_inter[g_conf.RN_ATTENTION_LAYER]
@@ -371,13 +383,21 @@ def evaluation_on_model(model: nn.Module,
                             eval_atts_right = [uniform_mask]
                         
                         elif g_conf.ATTENTION_TYPE == 'human_gaze':
-                            src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
+                            # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                            gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                            available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                            
+                            src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                             # Split the attention into left, central, and right
                             eval_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                             eval_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
                             eval_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
                         elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic':
-                            src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                            # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                            gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                            available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                            
+                            src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                             # Split the attention into left, central, and right
                             eval_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                             eval_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
@@ -394,7 +414,11 @@ def evaluation_on_model(model: nn.Module,
                             eval_atts_right = [torch.max(eval_atts_right[0], vrt_atts_right[0])]
                             
                         elif g_conf.ATTENTION_TYPE == 'human_gaze_semantic_sum':
-                            src_atts = [data['current'][i]['gaze_pred'].cuda() for i in range(len(data['current']))]
+                            # Human gaze can be gaze_pred, scout14ep1, or scout15ep2
+                            gaze_keys = ['gaze_pred', 'scout14ep1', 'scout15ep2']
+                            available_key = utils.get_available_key(data['current'][0], gaze_keys)
+                            
+                            src_atts = [data['current'][i][available_key].cuda() for i in range(len(data['current']))]  # [B, 1, h, 3*w]
                             # Split the attention into left, central, and right
                             eval_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
                             eval_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]

@@ -8,7 +8,8 @@ import PIL
 from configs import g_conf
 
 
-def canbus_normalization(can_bus_dict, data_ranges, ted_normalization: bool = False):
+def canbus_normalization(can_bus_dict, data_ranges, ted_normalization: bool = False,
+                         shift_command: int = 0):
     for dtype in data_ranges.keys():
         # we normalize the steering in range of [-1.0, 1.0]
         if dtype in ['steer', 'acceleration']:
@@ -34,9 +35,9 @@ def canbus_normalization(can_bus_dict, data_ranges, ted_normalization: bool = Fa
         # we encode directions to one-hot vector
         if g_conf.DATA_COMMAND_ONE_HOT:
             if g_conf.DATA_COMMAND_CLASS_NUM == 4:
-                can_bus_dict['direction'] = encode_directions_4(can_bus_dict['direction'])
+                can_bus_dict['direction'] = encode_directions_4(can_bus_dict['direction'], shift_command=shift_command)
             elif g_conf.DATA_COMMAND_CLASS_NUM == 6:
-                can_bus_dict['direction'] = encode_directions_6(can_bus_dict['direction'])
+                can_bus_dict['direction'] = encode_directions_6(can_bus_dict['direction'], shift_command=shift_command)
         else:
             # we remark directions from 1-4 to 0-3 for torch.embedding layer
             can_bus_dict['direction'] = [can_bus_dict['direction']-1]
@@ -48,7 +49,7 @@ def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tu
         output is from 0-1 float.
     """
     for camera_type in g_conf.DATA_USED:
-        if 'rgb' in camera_type:
+        if any(cam_type in camera_type for cam_type in ['rgb', 'sekonix', 'conti']):
             image = data[camera_type]
             image = image.resize((image_shape[2], image_shape[1]))  # Note: Bicubic interpolation by default
             # Augmentations, if used
@@ -85,7 +86,7 @@ def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tu
             if g_conf.ATTENTION_AS_NEW_CHANNEL:
                 image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
-        elif 'gaze_pred' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+        elif any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']) and not g_conf.ATTENTION_AS_INPUT:
             image = data[camera_type]
             image = cv2.resize(np.array(image), (3 * resize_attention[0], resize_attention[1]), interpolation=cv2.INTER_AREA)
             image = TF.to_tensor(image)
@@ -97,7 +98,7 @@ def train_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tu
 
 def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (13, 8)):
     for camera_type in g_conf.DATA_USED:
-        if 'rgb' in camera_type:
+        if any(cam_type in camera_type for cam_type in ['rgb', 'sekonix', 'conti']):
             image = data[camera_type]
             ## WE ALREADY PRE-PROCESSED IMAGES TO DESIRED SIZE
             height = image_shape[1]
@@ -122,7 +123,7 @@ def val_transform(data, image_shape, resize_attention: 'tuple[int]' = (13, 8)):
             if g_conf.ATTENTION_AS_NEW_CHANNEL:
                 image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
-        elif 'gaze_pred' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+        elif any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']) and not g_conf.ATTENTION_AS_INPUT:
             image = data[camera_type]
             image = cv2.resize(np.array(image), (3 * resize_attention[0], resize_attention[1]), interpolation=cv2.INTER_AREA)
             image = TF.to_tensor(image)
@@ -138,7 +139,7 @@ def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tupl
     # Set the default sensors from the config if none is specified
     sensors_used = g_conf.DATA_USED if sensors_used is None else sensors_used
     for camera_type in sensors_used:
-        if 'rgb' in camera_type:
+        if any(cam_type in camera_type for cam_type in ['rgb', 'sekonix', 'conti']):
             image = data[camera_type]
             image = image.resize((image_shape[2], image_shape[1]))  # Note: Bicubic interpolation by default
             # Augmentations, if used
@@ -175,7 +176,7 @@ def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tupl
             if g_conf.ATTENTION_AS_NEW_CHANNEL:
                 image = TF.normalize(image, [0.5], [0.5])
             data[camera_type] = image
-        elif 'gaze_pred' in camera_type and not g_conf.ATTENTION_AS_INPUT:
+        elif any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']) and not g_conf.ATTENTION_AS_INPUT:
             image = data[camera_type]
             image = cv2.resize(np.array(image), (3 * resize_attention[0], resize_attention[1]), interpolation=cv2.INTER_AREA)
             image = TF.to_tensor(image)
@@ -186,7 +187,11 @@ def ted_transform(data: dict, image_shape: 'tuple[int]', resize_attention: 'tupl
     return data
 
 
-def encode_directions_6(directions):
+def encode_directions_6(directions, shift_command: int = None):
+    if shift_command is not None:
+        directions = float(directions) + shift_command
+        directions = directions % 6 + 1.0
+    
     # TURN_LEFT
     if float(directions) == 1.0:
         return [1, 0, 0, 0, 0, 0]
@@ -208,7 +213,11 @@ def encode_directions_6(directions):
     else:
         raise ValueError("Unexpcted direction identified %s" % str(directions))
 
-def encode_directions_4(directions):
+def encode_directions_4(directions, shift_command: int = None):
+    if shift_command is not None:
+        directions = float(directions) + shift_command
+        directions = directions % 4 + 1.0
+    
     # TURN_LEFT
     if float(directions) == 1.0:
         return [1, 0, 0, 0]

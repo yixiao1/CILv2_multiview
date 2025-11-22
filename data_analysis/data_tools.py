@@ -41,6 +41,7 @@ from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
 from network.models.architectures.CIL_multiview.CIL_multiview import CIL_multiview
 from dataloaders.transforms import canbus_normalization, train_transform
 from configs import g_conf
+from dataloaders.transforms import decode_onehot_directions_to_str
 
 # ====================== Helper functions ======================
 
@@ -1358,6 +1359,8 @@ def average_virtual_attention(dataset_path, prefix, fps, sec, output_prefix, num
     print("Averaging complete!")
 
 
+
+
 def extract_frame_number_flexible(filepath: str) -> int:
     """
     Extract frame number from filepath using multiple patterns.
@@ -1439,112 +1442,192 @@ def group_files_by_sorted_order(file_paths: List[str], sensors_used: List[str]) 
     
     return frame_groups
 
-def create_model_visualization_frame(model, data_dict: dict, frame_num: int, 
-                                   action_history: deque, prediction_history: deque,
-                                   config, resnet_inter, attn_weights, encoder_output) -> np.ndarray:
-    """
-    Create a comprehensive visualization frame for model inference.
-    Layout: 6 columns x 5 rows as specified.
-    """
-    # Create the visualization grid
-    fig = plt.figure(figsize=(24, 20))
+
+def batch_model_inference(frames_data, model, batch_size=8):
+    """Batch process model inference for multiple frames."""
+    all_results = []
     
-    # Configure matplotlib for better video output
-    plt.rcParams.update({'font.size': 10})
+    # Process in batches
+    for i in tqdm(range(0, len(frames_data), batch_size), desc="Batch inference"):
+        batch_frames = frames_data[i:i + batch_size]
+        batch_data = []
+        batch_gt_actions = []
+        
+        # Prepare batch data
+        for frame_data in batch_frames:
+            datapoint = {}
+            datapoint['can_bus'] = dict()
+
+            # Load CAN bus data
+            with open(frame_data['can_bus'], 'r') as f:
+                canbus_data = json.load(f)
+
+            for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
+                datapoint['can_bus'][value] = canbus_data[value]
+            datapoint['can_bus'] = canbus_normalization(datapoint['can_bus'], g_conf.DATA_NORMALIZATION)
+            
+            # Save ground-truth action
+            gt_action = [datapoint['can_bus']['steer'], datapoint['can_bus']['acceleration']]
+            batch_gt_actions.append(gt_action)
+
+            # Load images for each sensor in DATA_USED
+            for sensor_type in g_conf.DATA_USED:
+                if sensor_type in frame_data:
+                    img = eval_utils.open_image(os.path.dirname(frame_data[sensor_type]), 
+                                            os.path.basename(frame_data[sensor_type]))
+                    datapoint[sensor_type] = img
+
+            data = train_transform(datapoint, tuple(g_conf.IMAGE_SHAPE))
+            batch_data.append(data)
+        
+        # Batch model inference
+        with torch.no_grad():
+            batch_results = []
+            for data in batch_data:  # Still process individually due to model constraints
+                action_output, resnet_inter, attn_weights, encoder_output = eval_utils.model_forward(
+                    model, data, last_encoder_state=True
+                )
+                pred_action = action_output.squeeze().detach().cpu().numpy().tolist()
+                batch_results.append({
+                    'pred_action': pred_action,
+                    'resnet_inter': resnet_inter,
+                    'attn_weights': attn_weights,
+                    'encoder_output': encoder_output,
+                    'data': data
+                })
+        
+        # Store results with GT actions
+        for j, result in enumerate(batch_results):
+            result['gt_action'] = batch_gt_actions[j]
+            all_results.append(result)
     
-    # Get source images for display
-    src_images = [data_dict[camera_type] for camera_type in config.DATA_USED 
+    return all_results
+
+def batch_model_inference_with_precompute(frames_data, model, batch_size=16):
+    """Batch process with all visualization preprocessing."""
+    all_results = []
+    
+    for i in tqdm(range(0, len(frames_data), batch_size), desc="Batch inference + preprocessing", dynamic_ncols=True):
+        batch_frames = frames_data[i:i + batch_size]
+        batch_data = []
+        batch_gt_actions = []
+        batch_positions = []
+        
+        # Prepare batch data
+        for frame_data in batch_frames:
+            datapoint = {}
+            datapoint['can_bus'] = dict()
+
+            # Load CAN bus data
+            with open(frame_data['can_bus'], 'r') as f:
+                canbus_data = json.load(f)
+                                
+            for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
+                datapoint['can_bus'][value] = canbus_data[value]
+            datapoint['can_bus'] = canbus_normalization(datapoint['can_bus'], g_conf.DATA_NORMALIZATION, shift_command=2)
+            
+            # Save ground-truth action
+            gt_action = [datapoint['can_bus']['steer'], datapoint['can_bus']['acceleration']]
+            batch_gt_actions.append(gt_action)
+            
+            # Save the ego position
+            batch_positions.append(canbus_data.get('ego_position', None))
+
+            # Load images for each sensor in DATA_USED
+            for sensor_type in g_conf.DATA_USED:
+                if sensor_type in frame_data:
+                    img = eval_utils.open_image(os.path.dirname(frame_data[sensor_type]), 
+                                            os.path.basename(frame_data[sensor_type]))
+                    datapoint[sensor_type] = img
+
+            data = train_transform(datapoint, tuple(g_conf.IMAGE_SHAPE))
+            batch_data.append(data)
+        
+        
+        # Batch model inference
+        with torch.no_grad():
+            batch_results = []
+            for data in batch_data:
+                action_output, resnet_inter, attn_weights, encoder_output = eval_utils.model_forward(
+                    model, data, last_encoder_state=True
+                )
+                pred_action = action_output.squeeze().detach().cpu().numpy().tolist()
+                
+                # PRE-COMPUTE EXPENSIVE VISUALIZATIONS HERE
+                processed_viz = precompute_visualizations(
+                    data, resnet_inter, attn_weights, encoder_output, model, g_conf
+                )
+                
+                batch_results.append({
+                    'pred_action': pred_action,
+                    'data': data,
+                    'viz_data': processed_viz  # All expensive computations done
+                })
+        
+        # Store results with GT actions
+        for j, result in enumerate(batch_results):
+            result['gt_action'] = batch_gt_actions[j]
+            result['ego_position'] = batch_positions[j]
+            all_results.append(result)
+    
+    return all_results
+
+def precompute_visualizations(data, resnet_inter, attn_weights, encoder_output, model, config):
+    """Pre-compute all expensive visualization operations."""
+    src_images = [data[camera_type] for camera_type in config.DATA_USED 
                   if any(cam_type in camera_type for cam_type in ['rgb', 'sekonix', 'conti'])]
     
-    # ========== Row 1: RGB Images (3 cols) + Attention Layer 1 (3 cols) ==========
-    for i, img in enumerate(src_images[:3]):  # Ensure max 3 cameras
-        ax = plt.subplot2grid((5, 6), (0, i), colspan=1)
-        img_denorm = TF.normalize(img, 
-                             [-0.485/0.229, -0.456/0.224, -0.406/0.255], 
+    # Pre-compute image concatenation and normalization
+    img_cat = torch.cat(src_images[:3], dim=2)
+    img_cat_norm = TF.normalize(img_cat, [-0.485/0.229, -0.456/0.224, -0.406/0.255], 
+                          [1/0.229, 1/0.224, 1/0.255])
+    img_cat_np = torch.clamp(img_cat_norm, 0, 1).cpu().numpy().transpose(1, 2, 0)
+    # Change channels: RGB -> BGR for OpenCV compatibility if needed
+    img_cat_np = img_cat_np[..., ::-1]
+    
+    # Pre-compute individual camera images
+    camera_images = []
+    for img in src_images[:3]:
+        img_denorm = TF.normalize(img, [-0.485/0.229, -0.456/0.224, -0.406/0.255], 
                              [1/0.229, 1/0.224, 1/0.255])
         img_np = torch.clamp(img_denorm, 0, 1).detach().cpu().numpy().transpose(1, 2, 0)
-        ax.imshow(img_np)
-        camera_name = config.DATA_USED[i] if i < len(config.DATA_USED) else f'Camera_{i+1}'
-        ax.set_title(f'{camera_name}\n(Frame {frame_num:06d})')
-        ax.axis('off')
+        camera_images.append(img_np)
     
-    # Attention Layer 1 (spans 3 columns)
-    if len(attn_weights) > 0:
-        ax = plt.subplot2grid((5, 6), (0, 3), colspan=3)
-        img_cat = torch.cat(src_images[:3], dim=2)
-        img_cat_norm = TF.normalize(img_cat, [-0.485/0.229, -0.456/0.224, -0.406/0.255], 
-                              [1/0.229, 1/0.224, 1/0.255])
-        img_cat_np = torch.clamp(img_cat_norm, 0, 1).cpu().numpy().transpose(1, 2, 0)
-        ax.imshow(img_cat_np)
-        
-        attn = attn_weights[0]
-        attn_avg = attn.squeeze().mean(dim=0)
-        num_cameras = len(src_images[:3])
-        
-        # Remove register tokens and action tokens if present
-        start_idx = 0
-        if model.num_register_tokens > 0:
-            start_idx += model.num_register_tokens
-        if not config.NO_ACT_TOKENS:
-            start_idx += 2
-        if config.CMD_SPD_TOKENS:
-            start_idx += 2
-            
-        # Get only spatial tokens
-        spatial_tokens = attn_avg[start_idx:]
-        attn_reshaped = rearrange(spatial_tokens, 
-                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
-                                 cam=num_cameras, h=model.res_out_h)
-        
-        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
-        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
-                                interpolation=cv2.INTER_LINEAR)
-        
-        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
-        ax.set_title('Attention Layer 1')
-        ax.axis('off')
-    
-    # ========== Row 2: ResNet Features (3 cols) + Attention Layer 2 (3 cols) ==========
+    # Pre-compute ResNet features
     resnet_features = resnet_inter[-1]
-    reduction_type = 'max'
-    
+    resnet_maps = []
     for i in range(min(3, len(src_images))):
-        ax = plt.subplot2grid((5, 6), (1, i), colspan=1)
         features = resnet_features[i]
-        feature_map = torch.max(features, dim=0)[0] if reduction_type == 'max' else torch.mean(features, dim=0)
-        
-        im = ax.imshow(feature_map.detach().cpu().numpy(), cmap='jet')
-        ax.set_title(f'ResNet {reduction_type.title()}')
-        ax.axis('off')
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        feature_map = torch.max(features, dim=0)[0].detach().cpu().numpy()
+        resnet_maps.append(feature_map)
     
-    # Attention Layer 2
-    if len(attn_weights) > 1:
-        ax = plt.subplot2grid((5, 6), (1, 3), colspan=3)
-        ax.imshow(img_cat_np)
-        
-        attn = attn_weights[1]
+    # Pre-compute attention maps
+    num_cameras = len(src_images[:3])
+    start_idx = 0
+    if model.num_register_tokens > 0:
+        start_idx += model.num_register_tokens
+    if not config.NO_ACT_TOKENS:
+        start_idx += 2
+    if config.CMD_SPD_TOKENS:
+        start_idx += 2
+    
+    attention_maps = []
+    target_size = (img_cat_np.shape[1], img_cat_np.shape[0])
+    
+    for attn in attn_weights:
         attn_avg = attn.squeeze().mean(dim=0)
-        # Get only spatial tokens
         spatial_tokens = attn_avg[start_idx:]
-        attn_reshaped = rearrange(spatial_tokens, 
-                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
-                                 cam=num_cameras, h=model.res_out_h)
+        attn_reshaped = rearrange(
+            spatial_tokens, 
+            '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)',
+            cam=num_cameras, h=model.res_out_h)
         
         attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
-        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
-                                interpolation=cv2.INTER_LINEAR)
-        
-        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
-        ax.set_title('Attention Layer 2')
-        ax.axis('off')
+        attn_resized = cv2.resize(attn_np, target_size, interpolation=cv2.INTER_LINEAR)
+        attention_maps.append(attn_resized)
     
-    # ========== Row 3: L2 Norm (3 cols) + Attention Layer 3 (3 cols) ==========
-    ax = plt.subplot2grid((5, 6), (2, 0), colspan=3)
-    ax.imshow(img_cat_np)
-    
-    # Calculate L2 norm and entropy
-    spatial_features = encoder_output.squeeze()[start_idx:]  # Remove tokens
+    # Pre-compute L2 norm
+    spatial_features = encoder_output.squeeze()[start_idx:]
     l2_norm = torch.norm(spatial_features, p=2, dim=1)
     
     # Calculate entropy
@@ -1557,43 +1640,12 @@ def create_model_visualization_frame(model, data_dict: dict, frame_num: int,
                             '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
                            cam=num_cameras, h=model.res_out_h)
     l2_np_reshaped = l2_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
-    l2_resized = cv2.resize(l2_np_reshaped, (img_cat_np.shape[1], img_cat_np.shape[0]), 
-                           interpolation=cv2.INTER_LINEAR)
+    l2_resized = cv2.resize(l2_np_reshaped, target_size, interpolation=cv2.INTER_LINEAR)
     
-    ax.imshow(l2_resized, cmap='jet', alpha=0.6)
-    ax.set_title(f'L2 Norm (Range: [{l2_norm.min():.2f}, {l2_norm.max():.2f}], Entropy: {entropy:.3f})')
-    ax.axis('off')
-    
-    # Attention Layer 3
-    if len(attn_weights) > 2:
-        ax = plt.subplot2grid((5, 6), (2, 3), colspan=3)
-        ax.imshow(img_cat_np)
-        
-        attn = attn_weights[2]
-        attn_avg = attn.squeeze().mean(dim=0)
-        # Get only spatial tokens
-        spatial_tokens = attn_avg[start_idx:]
-        attn_reshaped = rearrange(spatial_tokens, 
-                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
-                                 cam=num_cameras, h=model.res_out_h)
-        
-        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
-        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
-                                interpolation=cv2.INTER_LINEAR)
-        
-        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
-        ax.set_title('Attention Layer 3')
-        ax.axis('off')
-    
-    # ========== Row 4: PCA (3 cols) + Attention Layer 4 (3 cols) ==========
-    ax = plt.subplot2grid((5, 6), (3, 0), colspan=3)
-    ax.imshow(img_cat_np)
-    
-    # Compute PCA with threshold
-    threshold = 0  # Can be made configurable
+    # Pre-compute PCA (most expensive operation)
+    threshold = 0
     spatial_size, latent_dim = spatial_features.shape
     features = spatial_features.reshape(-1, latent_dim).detach().cpu().numpy()
-    spatial_size = features.shape[0]
     
     pca = PCA(n_components=3)
     pca.fit(features)
@@ -1602,7 +1654,6 @@ def create_model_visualization_frame(model, data_dict: dict, frame_num: int,
     bg_mask = pca_features[:, 0] < threshold
     fg_mask = ~bg_mask
     
-    # PCA for only foreground patches
     pca_features_fg = pca.transform(features[fg_mask])
     for i in range(3):
         pca_features_fg[:, i] = minmax_scale(pca_features_fg[:, i])
@@ -1611,202 +1662,535 @@ def create_model_visualization_frame(model, data_dict: dict, frame_num: int,
     pca_features_rgb[bg_mask] = 0
     pca_features_rgb[fg_mask] = pca_features_fg
     
-    # Reshape for visualization
     pca_reshaped = rearrange(pca_features_rgb, 
                             '(h w cam) c -> c h (w cam) ' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) c -> c h (cam w)',
                             cam=num_cameras, h=model.res_out_h, c=3)
     pca_np = pca_reshaped.transpose(1, 2, 0)
-    pca_resized = cv2.resize(pca_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
-                            interpolation=cv2.INTER_LINEAR)
-    
-    # Clip to valid range to avoid matplotlib warnings
+    pca_resized = cv2.resize(pca_np, target_size, interpolation=cv2.INTER_LINEAR)
     pca_resized = np.clip(pca_resized, 0, 1)
     
-    ax.imshow(pca_resized, alpha=0.7)
-    ax.set_title(f'PCA (Red: PC1, Green: PC2, Blue: PC3, Threshold: {threshold})')
-    ax.axis('off')
+    # Add the direction command if available
+    direction_onehot = data['can_bus']['direction']
+    direction_str = decode_onehot_directions_to_str(direction_onehot)
     
-    # Attention Layer 4 (or last layer)
-    if len(attn_weights) > 3:
-        ax = plt.subplot2grid((5, 6), (3, 3), colspan=3)
-        ax.imshow(img_cat_np)
-        
-        attn = attn_weights[3] if len(attn_weights) > 3 else attn_weights[-1]
-        attn_avg = attn.squeeze().mean(dim=0)
-        # Get only spatial tokens
-        spatial_tokens = attn_avg[start_idx:]
-        attn_reshaped = rearrange(spatial_tokens, 
-                                 '(h w cam) -> 1 h (w cam)' if (g_conf.ATTENTION_LOSS or g_conf.MHA_ATTENTION_COSSIM_LOSS or g_conf.MHA_ATTENTION_LOSS) else '(cam h w) -> 1 h (cam w)', 
-                                 cam=num_cameras, h=model.res_out_h)
-        
-        attn_np = attn_reshaped.detach().cpu().numpy().transpose(1, 2, 0)
-        attn_resized = cv2.resize(attn_np, (img_cat_np.shape[1], img_cat_np.shape[0]), 
-                                interpolation=cv2.INTER_LINEAR)
-        
-        ax.imshow(attn_resized, cmap='jet', alpha=0.6)
-        layer_name = 'Attention Layer 4'
-        ax.set_title(layer_name)
-        ax.axis('off')
+    return {
+        'camera_images': camera_images,
+        'img_cat_np': img_cat_np,
+        'resnet_maps': resnet_maps,
+        'attention_maps': attention_maps,
+        'l2_resized': l2_resized,
+        'l2_range': (l2_norm.min().item(), l2_norm.max().item()),
+        'l2_entropy': entropy,
+        'pca_resized': pca_resized,
+        'threshold': threshold,
+        'direction_command': direction_str,
+        'speed': data['can_bus']['speed'], # Normalized; need to denormalize if needed
+    }
+
+
+def create_opencv_visualization_frame(frame_num, action_history, prediction_history, position_history,
+                                    config, viz_data) -> np.ndarray:
+    """Create visualization using OpenCV - with proper colors and normalization."""
     
-    # ========== Row 5: Action Plots ==========
-    # Steering angle plot (3 cols)
-    ax = plt.subplot2grid((5, 6), (4, 0), colspan=3)
-    if len(action_history) > 1:
-        frames = list(range(len(action_history)))
-        gt_steers = [action[0] for action in action_history]
-        pred_steers = [pred[0] for pred in prediction_history]
-        
-        ax.plot(frames, gt_steers, 'b-', label='Ground Truth', linewidth=2)
-        ax.plot(frames, pred_steers, 'r--', label='Prediction', linewidth=2)
-        ax.axvline(x=len(frames)-1, color='k', linestyle=':', alpha=0.7, label='Current')
-        ax.legend()
-        
-        # Fix axis limits to prevent movement
-        ax.set_xlim(0, max(len(frames), 10))  # Ensure minimum width
-        ax.set_ylim(-1.1, 1.1)  # Fixed steering range
-        
-    ax.set_title('Steering Angle History')
-    ax.set_xlabel('Frames')
-    ax.set_ylabel('Steering')
-    ax.grid(True, alpha=0.3)
+    # Define layout dimensions
+    img_h, img_w = 252, 400  # Size for each "cell"
+    rows, cols = 5, 6
+    canvas_h, canvas_w = rows * img_h, cols * img_w
     
-    # Acceleration plot (3 cols)
-    ax = plt.subplot2grid((5, 6), (4, 3), colspan=3)
-    if len(action_history) > 1:
-        gt_accels = [action[1] for action in action_history]
-        pred_accels = [pred[1] for pred in prediction_history]
-        
-        ax.plot(frames, gt_accels, 'b-', label='Ground Truth', linewidth=2)
-        ax.plot(frames, pred_accels, 'r--', label='Prediction', linewidth=2)
-        ax.axvline(x=len(frames)-1, color='k', linestyle=':', alpha=0.7, label='Current')
-        ax.legend()
-
-        # Fix axis limits
-        ax.set_xlim(0, max(len(frames), 10))
-        ax.set_ylim(-1.1, 1.1)  # Fixed acceleration range    
-
-    ax.set_title('Acceleration History')
-    ax.set_xlabel('Frames')
-    ax.set_ylabel('Acceleration')
-    ax.grid(True, alpha=0.3)
+    # Create WHITE canvas (instead of black)
+    canvas = np.ones((canvas_h, canvas_w, 3), dtype=np.uint8) * 255
     
-    plt.tight_layout()
+    # Helper function to ensure uint8 and proper format
+    def ensure_uint8_bgr(image, is_resnet=False):
+        """Ensure image is uint8 and in BGR format for OpenCV."""
+        if len(image.shape) == 3:
+            # RGB image
+            if image.dtype != np.uint8:
+                if image.max() <= 1.0:  # Normalized float image
+                    image = (image * 255).astype(np.uint8)
+                else:  # Float image in 0-255 range
+                    image = image.astype(np.uint8)
+            # DON'T convert RGB to BGR here for camera images - they're already RGB
+            # Only convert if this is a fresh RGB image
+            if image.shape[2] == 3:  # Check if it needs conversion
+                image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        else:
+            # Grayscale - apply proper normalization and colormap
+            img_min, img_max = image.min(), image.max()
+            if img_max > img_min:
+                normalized = ((image - img_min) / (img_max - img_min) * 255).astype(np.uint8)
+            else:
+                normalized = np.zeros_like(image, dtype=np.uint8)
+            
+            # Apply colormap - invert for attention/L2 norm, but NOT for ResNet
+            if is_resnet:
+                colored = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)  # No inversion
+            else:
+                colored = cv2.applyColorMap(255 - normalized, cv2.COLORMAP_JET)  # Invert
+            image = colored
+        
+        return image
     
-    # Convert matplotlib figure to numpy array
-    fig.canvas.draw()
-    buf = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    buf = buf.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    # Helper function to apply proper colormap to heatmaps
+    def apply_heatmap_colormap(image, invert=True):
+        """Apply colormap to heatmap data with proper normalization."""
+        # Normalize to 0-255 range per frame
+        if image.dtype != np.uint8:
+            img_min, img_max = image.min(), image.max()
+            if img_max > img_min:
+                normalized = ((image - img_min) / (img_max - img_min) * 255).astype(np.uint8)
+            else:
+                normalized = np.zeros_like(image, dtype=np.uint8)
+        else:
+            normalized = image
+            
+        # Apply colormap with optional inversion to match matplotlib
+        if invert:
+            colored = cv2.applyColorMap(255 - normalized, cv2.COLORMAP_JET)
+        else:
+            colored = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
+            
+        return colored
     
-    plt.close(fig)
-    return buf
-
-def process_single_inference_frame(args):
-    """Process a single frame for model inference visualization."""
-    (frame_num, frame_data, model, config, action_history, prediction_history, 
-     history_length, output_dir) = args
+    # Helper function to place image in grid
+    def place_image(image, row, col, row_span=1, col_span=1, resize_mode=cv2.INTER_LINEAR, is_resnet=False):
+        start_y, start_x = row * img_h, col * img_w
+        end_y, end_x = start_y + row_span * img_h, start_x + col_span * img_w
+        
+        # Resize image to fit the cell(s)
+        target_h, target_w = end_y - start_y, end_x - start_x
+        
+        # Ensure proper format and resize
+        image_bgr = ensure_uint8_bgr(image, is_resnet)
+        resized = cv2.resize(image_bgr, (target_w, target_h), resize_mode)
+        
+        canvas[start_y:end_y, start_x:end_x] = resized
+        return start_y, start_x, end_y, end_x
     
-    try:
-        # Load data directly from the file paths
-        datapoint = {}
-        datapoint['can_bus'] = dict()
-
-        # Load CAN bus data
-        with open(frame_data['can_bus'], 'r') as f:
-            canbus_data = json.load(f)
-
-        for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
-            datapoint['can_bus'][value] = canbus_data[value]
-        datapoint['can_bus'] = canbus_normalization(datapoint['can_bus'], g_conf.DATA_NORMALIZATION)
+    # Helper function to create overlay (with type safety)
+    def create_overlay(base_img, overlay_img, base_alpha=0.4, overlay_alpha=0.6, invert_overlay=True):
+        """Create overlay with proper type handling."""
+        # Ensure base is uint8 BGR
+        base_bgr = ensure_uint8_bgr(base_img)
         
-        # Save ground-truth action
-        gt_action = [datapoint['can_bus']['steer'], datapoint['can_bus']['acceleration']]
-
-        # Load images for each sensor in DATA_USED
-        for sensor_type in g_conf.DATA_USED:
-            if sensor_type in frame_data:
-                img = eval_utils.open_image(os.path.dirname(frame_data[sensor_type]), 
-                                        os.path.basename(frame_data[sensor_type]))
-                datapoint[sensor_type] = img
-
-        data = train_transform(datapoint, tuple(g_conf.IMAGE_SHAPE))
+        # Handle overlay with proper colormap
+        if len(overlay_img.shape) == 2:  # Grayscale overlay
+            overlay_colored = apply_heatmap_colormap(overlay_img, invert=invert_overlay)
+        else:  # Already colored
+            overlay_colored = ensure_uint8_bgr(overlay_img)
         
-        # Get model prediction with all intermediate outputs
-        with torch.no_grad():
-            action_output, resnet_inter, attn_weights, encoder_output = eval_utils.model_forward(
-                model, data, last_encoder_state=True
-            )
-        pred_action = action_output.squeeze().detach().cpu().numpy().tolist()
-
-        # Update history
-        action_history.append(gt_action)
-        prediction_history.append(pred_action)
-
-        # Keep only recent history
-        if len(action_history) > history_length:
-            action_history.popleft()
-            prediction_history.popleft()
-
-        # Create visualization with pre-computed model outputs
-        vis_frame = create_model_visualization_frame(
-            model, data, frame_num, action_history, prediction_history, config,
-            resnet_inter, attn_weights, encoder_output
-        )
+        # Ensure same dimensions
+        if base_bgr.shape != overlay_colored.shape:
+            overlay_colored = cv2.resize(overlay_colored, (base_bgr.shape[1], base_bgr.shape[0]))
         
-        return frame_num, vis_frame, True
+        # Create weighted overlay
+        result = cv2.addWeighted(base_bgr, base_alpha, overlay_colored, overlay_alpha, 0)
+        return result
+    
+    # Helper function to add text (black text on white background)
+    def add_text(text, x, y, scale=0.7, color=(0, 0, 0), thickness=2):  # Black text
+        cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
+    
+    # Row 1: RGB Images (3 cols) + Attention Layer 1 (3 cols)
+    for i, img_np in enumerate(viz_data['camera_images'][:3]):
+        y1, x1, y2, x2 = place_image(img_np, 0, i)
+        camera_name = config.DATA_USED[i] if i < len(config.DATA_USED) else f'Camera_{i+1}'
+        add_text(f'{camera_name}', x1 + 10, y1 + 30, color=(255, 255, 255))
+        if i == 1:  # Central camera
+            add_text(f'{viz_data["direction_command"]}', x1 + 10, y1 + 60)
+            # Denormalize speed [-1, 1] -> [min, max] from config
+            speed_normalized = viz_data['speed']
+            speed_range = g_conf.DATA_NORMALIZATION['speed'][1] - g_conf.DATA_NORMALIZATION['speed'][0]
+            speed_denorm = speed_normalized * speed_range + g_conf.DATA_NORMALIZATION['speed'][0]
+            # Add text
+            add_text(f'Speed: {speed_denorm:.2f} m/s', x1 + 10, y1 + 90)
+    
+    # Attention Layer 1 (spans 3 columns)
+    if len(viz_data['attention_maps']) > 0:
+        overlay = create_overlay(viz_data['img_cat_np'], viz_data['attention_maps'][0])
+        y1, x1, y2, x2 = place_image(overlay, 0, 3, col_span=3)
+        add_text('Attention Layer 1', x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    # Row 2: ResNet Features (3 cols) + Attention Layer 2 (3 cols)
+    for i, feature_map in enumerate(viz_data['resnet_maps'][:3][::-1]):
+        y1, x1, y2, x2 = place_image(feature_map, 1, i, resize_mode=cv2.INTER_NEAREST, is_resnet=True)
+        add_text('ResNet Block 4 - Reduction: "Max"', x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    if len(viz_data['attention_maps']) > 1:
+        overlay = create_overlay(viz_data['img_cat_np'], viz_data['attention_maps'][1])
+        y1, x1, y2, x2 = place_image(overlay, 1, 3, col_span=3)
+        add_text('Attention Layer 2', x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    # Row 3: L2 Norm (3 cols) + Attention Layer 3 (3 cols)
+    overlay = create_overlay(viz_data['img_cat_np'], viz_data['l2_resized'])
+    y1, x1, y2, x2 = place_image(overlay, 2, 0, col_span=3)
+    l2_min, l2_max = viz_data['l2_range']
+    entropy = viz_data['l2_entropy']
+    add_text(f'L2 Norm (Range: [{l2_min:.2f}, {l2_max:.2f}], Entropy: {entropy:.3f})', 
+             x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    if len(viz_data['attention_maps']) > 2:
+        overlay = create_overlay(viz_data['img_cat_np'], viz_data['attention_maps'][2])
+        y1, x1, y2, x2 = place_image(overlay, 2, 3, col_span=3)
+        add_text('Attention Layer 3', x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    # Row 4: PCA (3 cols) + Attention Layer 4 (3 cols)
+    # PCA is special - it's already RGB, so handle differently
+    pca_img = viz_data['pca_resized']
+    if pca_img.dtype != np.uint8:
+        pca_img = (pca_img * 255).astype(np.uint8)
+    
+    base_img = ensure_uint8_bgr(viz_data['img_cat_np'])
+    pca_bgr = cv2.cvtColor(pca_img, cv2.COLOR_RGB2BGR)
+    
+    if base_img.shape != pca_bgr.shape:
+        pca_bgr = cv2.resize(pca_bgr, (base_img.shape[1], base_img.shape[0]))
+    
+    overlay = cv2.addWeighted(base_img, 0.3, pca_bgr, 0.7, 0)
+    
+    y1, x1, y2, x2 = place_image(overlay, 3, 0, col_span=3)
+    threshold = viz_data['threshold']
+    add_text(f'PCA (Red: PC1, Green: PC2, Blue: PC3, Threshold: {threshold})', 
+             x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    if len(viz_data['attention_maps']) > 3:
+        overlay = create_overlay(viz_data['img_cat_np'], viz_data['attention_maps'][3])
+        y1, x1, y2, x2 = place_image(overlay, 3, 3, col_span=3)
+        add_text('Attention Layer 4', x1 + 10, y1 + 30, color=(255, 255, 255))
+    
+    # Row 5: Action Plots (steering: 2 cols, acceleration: 2 cols, trajectory: 2 cols)
+    draw_action_plots_and_trajectory(canvas, 4, action_history, prediction_history, position_history, img_h, img_w, frame_num)
+    
+    return canvas
+
+
+def draw_action_plots_and_trajectory(canvas, row, action_history, prediction_history, position_history, img_h, img_w, frame_num):
+    """Draw action plots and 2D trajectory using OpenCV."""
+    if len(action_history) < 2:
+        return
+    
+    # Steering plot (left 2 cols)
+    plot_x1, plot_y1 = 0, row * img_h
+    plot_x2, plot_y2 = 2 * img_w, (row + 1) * img_h
+    cv2.rectangle(canvas, (plot_x1, plot_y1), (plot_x2, plot_y2), (255, 255, 255), -1)
+    
+    margin = 50
+    plot_area_x1, plot_area_y1 = plot_x1 + margin, plot_y1 + margin
+    plot_area_x2, plot_area_y2 = plot_x2 - margin, plot_y2 - margin
+    plot_area_w, plot_area_h = plot_area_x2 - plot_area_x1, plot_area_y2 - plot_area_y1
+    
+    draw_line_plot(canvas, action_history, prediction_history, 0,
+                   plot_area_x1, plot_area_y1, plot_area_w, plot_area_h,
+                   title="Steering History", frame_num=frame_num)
+    
+    # Acceleration plot (middle 2 cols)
+    plot_x1, plot_y1 = 2 * img_w, row * img_h
+    plot_x2, plot_y2 = 4 * img_w, (row + 1) * img_h
+    cv2.rectangle(canvas, (plot_x1, plot_y1), (plot_x2, plot_y2), (255, 255, 255), -1)
+    
+    plot_area_x1, plot_area_y1 = plot_x1 + margin, plot_y1 + margin
+    plot_area_x2, plot_area_y2 = plot_x2 - margin, plot_y2 - margin
+    plot_area_w, plot_area_h = plot_area_x2 - plot_area_x1, plot_area_y2 - plot_area_y1
+    
+    draw_line_plot(canvas, action_history, prediction_history, 1,
+                   plot_area_x1, plot_area_y1, plot_area_w, plot_area_h,
+                   title="Acceleration History", frame_num=frame_num)
+    
+    # Trajectory plot (right 2 cols)
+    plot_x1, plot_y1 = 4 * img_w, row * img_h
+    plot_x2, plot_y2 = 6 * img_w, (row + 1) * img_h
+    cv2.rectangle(canvas, (plot_x1, plot_y1), (plot_x2, plot_y2), (255, 255, 255), -1)
+    
+    plot_area_x1, plot_area_y1 = plot_x1 + margin, plot_y1 + margin
+    plot_area_x2, plot_area_y2 = plot_x2 - margin, plot_y2 - margin
+    plot_area_w, plot_area_h = plot_area_x2 - plot_area_x1, plot_area_y2 - plot_area_y1
+    
+    draw_trajectory_plot(canvas, position_history, 
+                        plot_area_x1, plot_area_y1, plot_area_w, plot_area_h,
+                        title="Vehicle Trajectory")
+
+def draw_trajectory_plot(canvas, position_history, x, y, w, h, title, max_points: int = 1000, grid_spacing: float = 50.0):
+    """Draw 2D trajectory plot with auto-centering and zoom."""
+    if len(position_history) < 2:
+        return
+    
+    # Intelligent sampling for very long trajectories
+    if len(position_history) > max_points:
+        # Keep recent points dense, older points sparse
+        recent_dense = position_history[-max_points//2:]  # Last 500 points full density
+        older_sparse = position_history[:-max_points//2:len(position_history)//max_points]  # Sample older points
+        recent_positions = older_sparse + recent_dense
+    else:
+        recent_positions = position_history
+    
+    # Extract X and Y coordinates (assuming ego_position is [x, y, z])
+    x_coords = [pos[0] for pos in recent_positions]
+    y_coords = [pos[1] for pos in recent_positions]
+    
+    # Calculate bounds with padding
+    x_min, x_max = min(x_coords), max(x_coords)
+    y_min, y_max = min(y_coords), max(y_coords)
+    
+    # Add padding (20% on each side)
+    x_range = x_max - x_min if x_max != x_min else 1
+    y_range = y_max - y_min if y_max != y_min else 1
+    x_padding = x_range * 0.2
+    y_padding = y_range * 0.2
+    
+    x_bounds = (x_min - x_padding, x_max + x_padding)
+    y_bounds = (y_min - y_padding, y_max + y_padding)
+    
+    def calculate_spatial_grid_step(spatial_range, base_spacing=50.0):
+        """Calculate appropriate grid spacing based on the spatial range."""
+        # Similar logic to calculate_horizontal_grid_step but for spatial coordinates
+        magnitude = 10 ** int(np.floor(np.log10(spatial_range)))
+        normalized_range = spatial_range / magnitude
         
-    except Exception as e:
-        print(f"Error processing frame {frame_num}: {e}")
-        return frame_num, None, False
+        if normalized_range <= 2:
+            step = 0.5 * magnitude
+        elif normalized_range <= 5:
+            step = 1 * magnitude
+        elif normalized_range <= 10:
+            step = 2 * magnitude
+        else:
+            step = 5 * magnitude
+    
+        return max(step, base_spacing)  # Never go below base_spacing
+    
+    # Normalize coordinates to plot space
+    def normalize_coords(pos_x, pos_y):
+        norm_x = (pos_x - x_bounds[0]) / (x_bounds[1] - x_bounds[0])
+        norm_y = (pos_y - y_bounds[0]) / (y_bounds[1] - y_bounds[0])
+        
+        plot_x = int(x + norm_x * w)
+        plot_y = int(y + h - norm_y * h)  # Flip Y axis
+        return plot_x, plot_y
+    
+    # Calculate dynamic grid spacing based on the view range
+    dynamic_x_spacing = calculate_spatial_grid_step(x_bounds[1] - x_bounds[0])
+    dynamic_y_spacing = calculate_spatial_grid_step(y_bounds[1] - y_bounds[0])
+    
+    # Draw fixed grid lines every dynamic_{x,y}_spacing meters
+    # Vertical grid lines (X coordinates)
+    x_grid_start = (int(x_bounds[0] / dynamic_x_spacing) - 1) * dynamic_x_spacing
+    x_grid_pos = x_grid_start
+    while x_grid_pos <= x_bounds[1]:
+        if x_bounds[0] <= x_grid_pos <= x_bounds[1]:
+            grid_x, _ = normalize_coords(x_grid_pos, y_bounds[0])
+            cv2.line(canvas, (grid_x, y), (grid_x, y + h), (200, 200, 200), 1)
+            
+            # Add grid label
+            cv2.putText(canvas, f'{int(x_grid_pos)}m', (grid_x - 15, y + h + 15), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150, 150, 150), 1)
+        x_grid_pos += dynamic_x_spacing
+    
+    # Horizontal grid lines (Y coordinates)
+    y_grid_start = (int(y_bounds[0] / dynamic_x_spacing) - 1) * dynamic_x_spacing
+    y_grid_pos = y_grid_start
+    while y_grid_pos <= y_bounds[1]:
+        if y_bounds[0] <= y_grid_pos <= y_bounds[1]:
+            _, grid_y = normalize_coords(x_bounds[0], y_grid_pos)
+            cv2.line(canvas, (x, grid_y), (x + w, grid_y), (200, 200, 200), 1)
+            
+            # Add grid label
+            cv2.putText(canvas, f'{int(y_grid_pos)}m', (x - 40, grid_y + 5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150, 150, 150), 1)
+        y_grid_pos += dynamic_x_spacing
+    
+    # Draw trajectory path
+    for i in range(len(recent_positions) - 1):
+        pt1 = normalize_coords(x_coords[i], y_coords[i])
+        pt2 = normalize_coords(x_coords[i + 1], y_coords[i + 1])
+        
+        # Color gradient: older points are more transparent/blue, newer are red
+        color_ratio = i / (len(recent_positions) - 1)
+        color = (int(255 * (1 - color_ratio)), 0, int(255 * color_ratio))  # Blue to Red
+        
+        cv2.line(canvas, pt1, pt2, color, 2)
+    
+    # Draw current position (larger circle)
+    if recent_positions:
+        current_pos = normalize_coords(x_coords[-1], y_coords[-1])
+        cv2.circle(canvas, current_pos, 5, (0, 255, 0), -1)  # Green circle
+        
+        # Add current position coordinates as text
+        curr_x, curr_y = x_coords[-1], y_coords[-1]
+        cv2.putText(canvas, f'({curr_x:.1f}, {curr_y:.1f})', 
+                   (current_pos[0] + 10, current_pos[1] - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 150, 0), 2)
+    
+    # Draw border
+    cv2.rectangle(canvas, (x, y), (x + w, y + h), (0, 0, 0), 2)
+    
+    # Add title
+    cv2.putText(canvas, title, (x + 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+    
+    # Add scale info
+    cv2.putText(canvas, f'Range: {x_range:.1f}m x {y_range:.1f}m', 
+                (x + 10, y + h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 100, 100), 1)
+
+
+def draw_line_plot(canvas, gt_data, pred_data, data_idx, x, y, w, h, title, frame_num):
+    """Draw a line plot using OpenCV with dynamic grid and moving reference lines."""
+    # Extract data
+    gt_values = [action[data_idx] for action in gt_data]
+    pred_values = [pred[data_idx] for pred in pred_data]
+    
+    # Calculate dynamic y-range from the data
+    all_values = gt_values + pred_values
+    y_min, y_max = min(all_values), max(all_values)
+    
+    # Add some padding (10% on each side)
+    y_range_size = y_max - y_min
+    if y_range_size == 0:
+        y_range_size = 1  # Avoid division by zero
+    y_padding = y_range_size * 0.1
+    y_range = (y_min - y_padding, y_max + y_padding)
+    
+    # Normalize to plot coordinates
+    def normalize_y(val):
+        normalized = (val - y_range[0]) / (y_range[1] - y_range[0])
+        return int(y + h - (normalized * h))  # Flip y-axis
+    
+    def normalize_x(idx):
+        if len(gt_values) <= 1:
+            return x + w // 2
+        return int(x + (idx / (len(gt_values) - 1)) * w)
+    
+    # Calculate dynamic horizontal grid lines based on data range
+    def calculate_horizontal_grid_step(data_range):
+        """Calculate appropriate step size for horizontal grid lines."""
+        range_size = data_range[1] - data_range[0]
+        
+        # Find appropriate step size (nice round numbers)
+        magnitude = 10 ** int(np.floor(np.log10(range_size)))
+        normalized_range = range_size / magnitude
+        
+        if normalized_range <= 1:
+            step = 0.2 * magnitude
+        elif normalized_range <= 2:
+            step = 0.5 * magnitude
+        elif normalized_range <= 5:
+            step = 1 * magnitude
+        else:
+            step = 2 * magnitude
+            
+        return step
+    
+    # Draw dynamic horizontal grid lines
+    h_step = calculate_horizontal_grid_step(y_range)
+    grid_start = np.ceil(y_range[0] / h_step) * h_step
+    
+    grid_val = grid_start
+    while grid_val <= y_range[1]:
+        grid_y = normalize_y(grid_val)
+        cv2.line(canvas, (x, grid_y), (x + w, grid_y), (200, 200, 200), 1)
+        
+        # Add value label
+        cv2.putText(canvas, f'{grid_val:.3f}', (x - 45, grid_y + 5), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 1)
+        
+        grid_val += h_step
+    
+    # Draw dynamic vertical grid lines (every 100 frames)
+    tick_interval = 100
+    current_frame = len(gt_values) - 1  # Current frame index
+    
+    # Calculate which tick marks should be visible
+    start_tick = (current_frame // tick_interval) * tick_interval
+    
+    for tick in range(start_tick - tick_interval * 5, current_frame + tick_interval, tick_interval):
+        if tick < 0:
+            continue
+            
+        # Find the corresponding x position for this tick
+        if tick <= current_frame:
+            # Calculate position relative to the data we have
+            relative_pos = tick - (current_frame - len(gt_values) + 1)
+            if 0 <= relative_pos < len(gt_values):
+                grid_x = normalize_x(relative_pos)
+                cv2.line(canvas, (grid_x, y), (grid_x, y + h), (200, 200, 200), 1)
+                
+                # Add tick label
+                cv2.putText(canvas, f'{tick}', (grid_x - 15, y + h + 15), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 1)
+    
+    # Draw horizontal axis (y=0) if it's in range
+    if y_range[0] <= 0 <= y_range[1]:
+        zero_y = normalize_y(0)
+        cv2.line(canvas, (x, zero_y), (x + w, zero_y), (80, 80, 80), 2)
+    
+    # Draw border
+    cv2.rectangle(canvas, (x, y), (x + w, y + h), (0, 0, 0), 2)
+    
+    # Draw data lines
+    if len(gt_values) > 1:
+        # Ground truth (blue)
+        for i in range(len(gt_values) - 1):
+            pt1 = (normalize_x(i), normalize_y(gt_values[i]))
+            pt2 = (normalize_x(i + 1), normalize_y(gt_values[i + 1]))
+            cv2.line(canvas, pt1, pt2, (255, 0, 0), 3)  # Blue in BGR
+        
+        # Predictions (red)
+        for i in range(len(pred_values) - 1):
+            pt1 = (normalize_x(i), normalize_y(pred_values[i]))
+            pt2 = (normalize_x(i + 1), normalize_y(pred_values[i + 1]))
+            cv2.line(canvas, pt1, pt2, (0, 0, 255), 2)  # Red in BGR
+    
+    # Calculate the actual frame numbers
+    history_length = len(gt_values)
+    # current_actual_frame = frame_num  # Pass this as a parameter
+    start_frame = frame_num - history_length + 1
+
+    # Draw vertical grid lines every 50 frames
+    for tick_frame in range((start_frame // 50) * 50, frame_num + 50, 50):
+        if start_frame <= tick_frame <= frame_num:
+            # Calculate position in the plot
+            relative_pos = tick_frame - start_frame
+            grid_x = normalize_x(relative_pos)
+            cv2.line(canvas, (grid_x, y), (grid_x, y + h), (200, 200, 200), 1)
+            cv2.putText(canvas, f'{tick_frame}', (grid_x - 15, y + h + 15), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 2)
+    
+    # Add title (black text)
+    cv2.putText(canvas, title, (x + 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+    
+    # Add labels
+    cv2.putText(canvas, "GT", (x + w - 100, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+    cv2.putText(canvas, "Pred", (x + w - 100, y + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
 @main.command(name='visualize-model-inference')
-@click.option('--dataset-path', type=click.Path(exists=True), required=True,
-              help='Path to the dataset directory containing the route data')
-@click.option('--route-path', type=str, required=True,
-              help='Relative path to the specific route within dataset-path')
-@click.option('--exp-batch', type=str, required=True,
-              help='Experiment batch name for model configuration')
-@click.option('--exp-name', type=str, required=True,
-              help='Experiment name for model configuration')
-@click.option('--checkpoint-path', type=click.Path(exists=True), required=True,
-              help='Path to model checkpoints directory')
-@click.option('--checkpoint-number', type=int, default=None,
-              help='Specific checkpoint number to load (latest if not specified)')
-@click.option('--video-name', type=str, required=True,
-              help='Name for the output video (without extension)')
-@click.option('--fps', type=float, default=10.0, 
-              help='Frames per second for the output video')
-@click.option('--history-seconds', type=float, default=5.0,
-              help='Seconds of action history to show in plots')
-@click.option('--output-path', type=click.Path(), default=None,
-              help='Output directory for videos (default: dataset_path/videos)')
-@click.option('--frame-range', type=str, default=None,
-              help='Frame range to process (e.g., "100-200" or "150")')
-@click.option('--rgb-prefix', type=str, default='rgb',
-              help='Prefix for RGB image files')
-@click.option('--canbus-prefix', type=str, default='cmd_fix_can_bus',
-              help='Prefix for CAN bus data files')
-@click.option('--num-workers', type=int, default=4,
-              help='Number of parallel workers for processing')
+@click.option('--dataset-path', type=click.Path(exists=True), required=True, help='Path to the dataset directory containing the route data')
+@click.option('--route-path', type=str, required=True, help='Relative path to the specific route within dataset-path')
+@click.option('--exp-batch', type=str, required=True, help='Experiment batch name for model configuration')
+@click.option('--exp-name', type=str, required=True, help='Experiment name for model configuration')
+@click.option('--checkpoint-path', type=click.Path(exists=True), required=True, help='Path to model checkpoints directory')
+@click.option('--checkpoint-number', type=int, default=None, help='Specific checkpoint number to load (latest if not specified)')
+@click.option('--video-name', type=str, required=True, help='Name for the output video (without extension)')
+@click.option('--fps', type=float, default=10.0, help='Frames per second for the output video')
+@click.option('--history-seconds', type=float, default=5.0, help='Seconds of action history to show in plots')
+@click.option('--output-path', type=click.Path(), default=None, help='Output directory for videos (default: dataset_path/videos)')
+@click.option('--frame-range', type=str, default=None, help='Frame range to process (e.g., "100-200" or "150")')
+@click.option('--rgb-prefix', type=str, default='rgb', help='Prefix for RGB image files')
+@click.option('--canbus-prefix', type=str, default='il_data_rosbag2', help='Prefix for CAN bus data files')
+@click.option('--num-workers', type=int, default=4, help='Number of parallel workers for processing')
 def visualize_model_inference(dataset_path, route_path, exp_batch, exp_name, 
                             checkpoint_path, checkpoint_number, video_name, fps, 
                             history_seconds, output_path, frame_range, rgb_prefix, 
                             canbus_prefix, num_workers):
     """
-    Create visualization videos for model inference showing ResNet features, 
-    attention maps, L2 norms, PCA, and action predictions vs ground truth.
+    Create visualization videos for model inference using OpenCV (much faster).
     """
-    import matplotlib as mpl
-    mpl.rcParams.update(mpl.rcParamsDefault)
-    # Setup paths
+    
+    # Setup paths (existing code)
     full_route_path = os.path.join(dataset_path, route_path)
     print(f'Scanning data in {full_route_path}')
     if output_path is None:
         output_path = os.path.join(dataset_path, 'videos')
     os.makedirs(output_path, exist_ok=True)
     
+    # Load model configuration and checkpoint (existing code)
     print(f"Loading model configuration: {exp_batch}/{exp_name}")
-    
-    # Load model configuration and checkpoint
     eval_utils.load_config(exp_batch, exp_name)
     
     model = CIL_multiview(g_conf.MODEL_CONFIGURATION)
@@ -1814,23 +2198,22 @@ def visualize_model_inference(dataset_path, route_path, exp_batch, exp_name,
     eval_utils.load_model_from_checkpoint(model, checkpoint_path, checkpoint_number, remove_pos_enc=False)
     model.eval()
     model = model.to('cuda')
-    
     print("Model loaded successfully")
     
-    # Filter frames that have all required sensors
+    # Get files and frame groups (existing code)
     image_extensions = ['.png', '.jpg', '.jpeg']
-    json_files = get_files_with_prefix_and_suffix(full_route_path, ['il_data'], ['.json'])
+    json_files = get_files_with_prefix_and_suffix(full_route_path, [canbus_prefix], ['.json'])
     image_files = get_files_with_prefix_and_suffix(full_route_path, g_conf.DATA_USED, image_extensions)
     all_files = json_files + image_files
     
     frame_groups = group_files_by_sorted_order(all_files, g_conf.DATA_USED)
-    complete_frames = frame_groups  # Already filtered in the grouping function
+    complete_frames = frame_groups
     
     if not complete_frames:
         print("No complete frames found with all required sensors")
         return
     
-    # Apply frame range filter if specified
+    # Apply frame range filter (existing code)
     if frame_range:
         if '-' in frame_range:
             start, end = map(int, frame_range.split('-'))
@@ -1846,38 +2229,78 @@ def visualize_model_inference(dataset_path, route_path, exp_batch, exp_name,
         print("No frames to process")
         return
     
-    # Calculate history length in frames
+    # Calculate history length
     history_length = int(fps * history_seconds)
     
-    # Initialize history tracking
+    # ========== NEW: Batch inference with precomputation ==========
+    print("Batch processing model inference and precomputing visualizations...")
+    
+    frames_data = [complete_frames[frame_num] for frame_num in sorted_frames]
+    inference_results = batch_model_inference_with_precompute(frames_data, model, batch_size=16)
+    
+    # ========== NEW: Fast OpenCV-based visualization creation ==========
+    print("Creating visualizations with OpenCV...")
+    processed_frames = []
     action_history = deque(maxlen=history_length)
     prediction_history = deque(maxlen=history_length)
+    position_history = deque(maxlen=history_length)
     
-    # Prepare arguments for parallel processing
-    temp_dir = os.path.join(output_path, f'temp_{video_name}')
-    os.makedirs(temp_dir, exist_ok=True)
+    # Build all action histories first
+    all_action_histories = []
+    all_prediction_histories = []
+    all_position_histories = []
+    action_history = deque(maxlen=history_length)
+    prediction_history = deque(maxlen=history_length)
+    position_history = []
     
-    print("Processing frames...")
+    for result in inference_results:
+        action_history.append(result['gt_action'])
+        prediction_history.append(result['pred_action'])
+        position_history.append(result['ego_position'])
+        all_action_histories.append(list(action_history))
+        all_prediction_histories.append(list(prediction_history))
+        all_position_histories.append(list(position_history))
     
-    # Process frames in order (sequential for history tracking)
+    # Parallel OpenCV visualization (OpenCV is thread-safe for this)
+    def create_single_opencv_viz(args):
+        frame_num, viz_data, action_hist, pred_hist, position_history = args
+        try:
+            return frame_num, create_opencv_visualization_frame(
+                frame_num, action_hist, pred_hist, position_history, g_conf, viz_data
+            ), True
+        except Exception as e:
+            print(f"Error creating visualization for frame {frame_num}: {e}")
+            return frame_num, None, False
+    
+    print(f'Sorted frames: {len(sorted_frames)}, Inference results: {len(inference_results)}')
+    print(f'Action histories: {len(all_action_histories)}, Prediction histories: {len(all_prediction_histories)}')
+    print(f'Position histories: {len(all_position_histories)}')
+    viz_args = [
+        (sorted_frames[i], inference_results[i]['viz_data'], 
+         all_action_histories[i], all_prediction_histories[i], all_position_histories[i])
+        for i in range(len(sorted_frames))
+    ]
+    
     processed_frames = []
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(create_single_opencv_viz, args) for args in viz_args]
+        
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Creating visualizations", dynamic_ncols=True):
+            frame_num, vis_frame, success = future.result()
+            if success and vis_frame is not None:
+                processed_frames.append((frame_num, vis_frame))
     
-    for frame_num in tqdm(sorted_frames, desc="Processing frames"):
-        args = (frame_num, complete_frames[frame_num], model, g_conf, 
-               action_history, prediction_history, history_length, temp_dir)
-
-        frame_num, vis_frame, success = process_single_inference_frame(args)
-                
-        if success and vis_frame is not None:
-            processed_frames.append((frame_num, vis_frame))
+    # Sort by frame number to maintain order
+    processed_frames.sort(key=lambda x: x[0])
+    
     
     if not processed_frames:
         print("No frames were processed successfully")
         return
     
+    # ========== Video creation (unchanged) ==========
     print(f"Creating video from {len(processed_frames)} processed frames...")
     
-    # Create video from processed frames
     video_filename = f"{video_name}_model_inference_fps{fps}.mp4"
     video_path = os.path.join(output_path, video_filename)
     
@@ -1889,15 +2312,11 @@ def visualize_model_inference(dataset_path, route_path, exp_batch, exp_name,
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
     
-    for frame_num, vis_frame in tqdm(processed_frames, desc="Writing video"):
-        # Convert RGB to BGR for OpenCV
-        bgr_frame = cv2.cvtColor(vis_frame, cv2.COLOR_RGB2BGR)
-        video_writer.write(bgr_frame)
+    for frame_num, vis_frame in tqdm(processed_frames, desc="Writing video", dynamic_ncols=True):
+        # vis_frame is already in BGR format from OpenCV
+        video_writer.write(vis_frame)
     
     video_writer.release()
-    
-    # Cleanup temp directory
-    shutil.rmtree(temp_dir, ignore_errors=True)
     
     print(f"Video saved to: {video_path}")
     print(f"Video contains {len(processed_frames)} frames at {fps} FPS")

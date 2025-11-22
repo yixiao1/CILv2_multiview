@@ -26,7 +26,15 @@ import importlib
 import os
 import pkg_resources
 import sys
-import carla
+import glob
+try:
+    sys.path.append(os.environ['CARLAROOT'])
+except IndexError:
+    pass
+try:
+    import carla
+except ImportError:
+    pass
 import signal
 import time
 import json
@@ -50,8 +58,10 @@ sensors_to_icons = {
     'sensor.camera.rgb':                    'carla_camera',
     'sensor.camera.depth':                  'carla_depth',
     'sensor.camera.semantic_segmentation':  'carla_ss',
+    'sensor.camera.instance_segmentation':  'carla_is',
     'sensor.camera.optical_flow':           'carla_optical_flow',
     'sensor.lidar.ray_cast':                'carla_lidar',
+    'sensor.lidar.ray_cast_semantic':       'carla_slidar',
     'sensor.other.radar':                   'carla_radar',
     'sensor.other.gnss':                    'carla_gnss',
     'sensor.other.imu':                     'carla_imu',

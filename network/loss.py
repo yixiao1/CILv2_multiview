@@ -155,9 +155,11 @@ def Action_nospeed_L1_Attention_KL(params):
 
     # Attention loss
     eps = 1e-12  # For numerical stability
-    att_loss = params['variable_weights']['attention'] * F.kl_div((params['attention_output']+eps).log(),  # Transf. Encoder attention map (GAPn)
-                                                                  params['targets_attention'], # Ground truth attention map (virtual or human)
-                                                                  reduction='batchmean')
+    att_loss = params['variable_weights']['attention'] * F.kl_div(
+        (params['attention_output'] + eps).log(),  # Transf. Encoder attention map (GAPn)
+        params['targets_attention'], # Ground truth attention map (virtual or human)
+        reduction='batchmean'
+    )
 
     if g_conf.ACCELERATION_AS_ACTION:
         acceleration_loss = actions_loss_mat[:, 1] * params['variable_weights']['actions']['acceleration']
