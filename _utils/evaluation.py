@@ -275,6 +275,7 @@ def evaluation_on_model(model: nn.Module,
                     resnet_inter = reduce(resnet_inter, '(b cam) c h w -> b cam h w', reduction='mean', cam=len([c for c in g_conf.DATA_USED if 'attention' in c]))
                     evaluator.process(action_outputs, tgt_a, resnet_inter, tgt_att)
                 else:
+                    att_out = att_out[g_conf.TFX_ENC_ATTENTION_LAYER].mean(dim=1)[:, model._model.num_register_tokens:]
                     evaluator.process(action_outputs, tgt_a, att_out, tgt_att)
 
                 """

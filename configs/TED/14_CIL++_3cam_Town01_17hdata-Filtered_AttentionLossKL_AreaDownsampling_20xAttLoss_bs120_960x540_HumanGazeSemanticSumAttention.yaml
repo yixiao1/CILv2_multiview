@@ -36,7 +36,7 @@ BINARIZE_ATTENTION: False
 # Loss Parameters #
 LOSS: 'Action_nospeed_L1_Attention_KL'  # no speed L1 loss
 ATTENTION_LOSS: True  # 
-ATTENTION_TYPE: 'human_gaze_semantic'
+ATTENTION_TYPE: 'human_gaze_semantic_sum'
 LOSS_WEIGHT:
   actions:
     steer: 0.5
@@ -54,7 +54,7 @@ LEARNING_RATE_POLICY:
 
 #### Validation Related Parameters ####
 EVAL_SAVE_LAST_Conv_ACTIVATIONS: True
-EVAL_BATCH_SIZE: 4
+EVAL_BATCH_SIZE: 30
 EVAL_SAVE_EPOCHES: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
 EARLY_STOPPING: False
 EVAL_IMAGE_WRITING_NUMBER: 100
