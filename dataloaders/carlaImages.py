@@ -5,8 +5,48 @@ import numpy as np
 from PIL import Image
 from torch.utils import data
 from dataloaders.transforms import train_transform, val_transform, canbus_normalization
+from collections import defaultdict
+from typing import List, Dict
 
 from configs import g_conf
+
+
+def collect_files_single_pass(dataset_path: str, camera_types: List[str]) -> Dict[str, List[str]]:
+    """
+    Single-pass directory walk to collect all files.
+    
+    Args:
+        dataset_path: Path to dataset directory
+        camera_types: List of camera/sensor types to search for
+        
+    Returns:
+        Dictionary mapping file types to sorted file paths
+    """
+    all_files = defaultdict(list)
+    
+    # Define search patterns
+    search_patterns = {'il_data': {'prefix': g_conf.GT_DATA_USED, 'suffix': '.json'}}
+    
+    for camera_type in camera_types:
+        if any(cam in camera_type for cam in ['virtual_attention', 'att_mask']):
+            search_patterns[camera_type] = {'prefix': camera_type, 'suffix': '.jpg'}
+        elif any(cam in camera_type for cam in ['rgb', 'sekonix', 'conti']):
+            search_patterns[camera_type] = {'prefix': camera_type, 'suffix': '.png'}
+    
+    # Single directory walk
+    for looproot, _, filenames in sorted(os.walk(dataset_path)):
+        for filename in sorted(filenames):
+            for file_type, pattern in search_patterns.items():
+                if filename.startswith(pattern['prefix']) and filename.endswith(pattern['suffix']):
+                    # Additional validation for attention masks
+                    if any(cam in file_type for cam in ['virtual_attention', 'att_mask']):
+                        if re.match(f'{file_type}\d{{6}}.jpg', filename):
+                            all_files[file_type].append(os.path.join(looproot, filename))
+                    else:
+                        all_files[file_type].append(os.path.join(looproot, filename))
+    
+    return dict(all_files)
+
 
 class carlaImages(data.Dataset):
 
@@ -24,13 +64,18 @@ class carlaImages(data.Dataset):
 
         for dataset_name in dataset_list:
             self.images_base = os.path.join(self.root, dataset_name)
+
+            all_cam_paths_dict = collect_files_single_pass(self.images_base, g_conf.DATA_USED)
+            
             #### For different models, we set different strategy for loading data, and we save the npy file for next time better loading
             canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix=g_conf.GT_DATA_USED, suffix='.json')
             # canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
+            '''
             all_cam_paths_dict = {}
             for camera_type in g_conf.DATA_USED:
-                img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
+                img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix=g_conf.IMAGES_TERMINATION)
                 all_cam_paths_dict.update({camera_type: img_paths})
+            '''
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 
             # with multiple frames input we also need to ensure the frames are from the same episode
@@ -137,6 +182,8 @@ class carlaImages(data.Dataset):
             """
         for camera_type, img_paths in img_paths_dict.items():
             if len(img_paths) != len(canbus_paths):
+                print('img_paths: ', img_paths)
+                print('canbus_paths: ', canbus_paths)
                 print(camera_type, len(img_paths), len(canbus_paths))
                 raise RuntimeError('The nubmers of images and canbus data are not mathced!!')
 
