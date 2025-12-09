@@ -2,6 +2,8 @@
 import os
 from configs._global import create_exp_path
 from . import train_val, val
+import torch.distributed as dist
+
 
 def execute_train_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
@@ -17,6 +19,7 @@ def execute_train_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
     if rank == 0:
         create_exp_path(os.environ['TRAINING_RESULTS_ROOT'], exp_batch, exp_alias)
+    dist.barrier()
     train_val.execute(gpus_list, exp_batch, exp_alias, rank=rank)
 
 
@@ -34,6 +37,7 @@ def execute_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
     if rank == 0:
         create_exp_path(os.environ['TRAINING_RESULTS_ROOT'],exp_batch, exp_alias)
+    dist.barrier()
     val.execute(gpus_list, exp_batch, exp_alias, rank=rank)
 
 
