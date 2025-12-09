@@ -2,7 +2,8 @@
 
 # Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
 import tensorflow as tf
-import scipy.misc
+from PIL import Image
+import numpy as np
 
 try:
     from StringIO import StringIO  # Python 2.7
@@ -31,6 +32,7 @@ class Logger(object):
     def image_summary(self, tag, images, step):
         """Log a list of images."""
 
+        '''
         img_summaries = []
         for i, img in enumerate(images):
             # Write the image to a string
@@ -38,7 +40,8 @@ class Logger(object):
                 s = StringIO()
             except:
                 s = BytesIO()
-            scipy.misc.toimage(img).save(s, format="png")
+            # scipy.misc.toimage(img).save(s, format="png")
+            Image.fromarray((img * 255).astype(np.uint8)).save(s, format="PNG")
 
             # Create an Image object
             img_sum = tf.compat.v1.Summary.Image(encoded_image_string=s.getvalue(),
@@ -50,3 +53,18 @@ class Logger(object):
         # Create and write Summary
         summary = tf.compat.v1.Summary(value=img_summaries)
         self.writer.add_summary(summary, step)
+        '''
+        images = np.array(images)
+        if images.ndim == 3:  # (H, W, C)
+            images = np.expand_dims(images, 0)  # (1, H, W, C)
+        elif images.ndim == 2:  # (H, W)
+            images = np.expand_dims(images, (0, -1))  # (1, H, W, 1)
+
+        # Convert to float32 [0,1] range
+        images = images.astype(np.float32)
+        if images.max() > 1.0:
+            images /= 255.0
+
+        with self.writer.as_default():
+            tf.summary.image(tag, images, step=step)
+            self.writer.flush()
