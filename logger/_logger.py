@@ -42,6 +42,20 @@ def add_scalar(tag, value, iteration=None):
     else:
         raise ValueError('iteration is not supposed to be None')
 
+
+def add_image(tag, value, iteration=None):
+
+    """
+        For raw outputs logging on tensorboard.
+    """
+
+    if iteration is not None:
+        if iteration % TRAIN_LOG_FREQUENCY == 0:
+            tl.image_summary(tag, value, iteration)
+    else:
+        raise ValueError('iteration is not supposed to be None')
+
+
 def add_gradCAM_attentions_to_disk(process_type, model, source_input, input_rgb_frames,
                                             epoch, save_path=None, batch_id=None):
 
