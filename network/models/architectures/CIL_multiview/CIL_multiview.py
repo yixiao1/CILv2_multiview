@@ -19,6 +19,7 @@ class CIL_multiview(nn.Module):
         self.encoder_embedding_perception = resnet_module(pretrained=g_conf.IMAGENET_PRE_TRAINED,
                                                           layer_id = params['encoder_embedding']['perception']['res'][ 'layer_id'])
         _, self.res_out_dim, self.res_out_h, self.res_out_w = self.encoder_embedding_perception.get_backbone_output_shape([g_conf.BATCH_SIZE] + g_conf.IMAGE_SHAPE)[params['encoder_embedding']['perception']['res'][ 'layer_id']]
+        self.tfx_seq_length = len(g_conf.DATA_USED)*g_conf.ENCODER_INPUT_FRAMES_NUM*self.res_out_h*self.res_out_w
 
         if params['TxEncoder']['learnable_pe']:
             self.positional_encoding = nn.Parameter(torch.zeros(1, len(g_conf.DATA_USED)*g_conf.ENCODER_INPUT_FRAMES_NUM*self.res_out_h*self.res_out_w, params['TxEncoder']['d_model']))
@@ -40,6 +41,10 @@ class CIL_multiview(nn.Module):
                                             [len(g_conf.TARGETS)],
                                  'dropouts': params['action_output']['fc']['dropouts'] + [0.0],
                                  'end_layer': True})
+
+        if g_conf.SENSOR_EMBED:
+            print('Using a sensor embedding...')
+            self.sensor_embedding = nn.Parameter(torch.empty(1, self.tfx_seq_length, self.res_out_dim).normal_(std=0.02))  # from BERT
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -71,6 +76,9 @@ class CIL_multiview(nn.Module):
             pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w, 512]
         else:
             pe = self.positional_encoding(encoded_obs)
+
+        if g_conf.SENSOR_EMBED:
+            pe = pe + self.sensor_embedding  # [B, S*cam*H*W/P^2 + K, D]
 
         # Transformer encoder multi-head self-attention layers
         in_memory, _ = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
@@ -104,6 +112,9 @@ class CIL_multiview(nn.Module):
             pe = encoded_obs + self.positional_encoding    # [B, S*cam*h*w, 512]
         else:
             pe = self.positional_encoding(encoded_obs)
+
+        if g_conf.SENSOR_EMBED:
+            pe = pe + self.sensor_embedding  # [B, S*cam*H*W/P^2 + K, D]
 
         # Transformer encoder multi-head self-attention layers
         in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]

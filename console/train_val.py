@@ -7,9 +7,10 @@ import numpy as np
 from configs import g_conf, set_type_of_process, merge_with_yaml
 from network.models_console import Models
 from _utils.training_utils import seed_everything, DataParallelWrapper, DataParallelDPPWrapper, check_saved_checkpoints, update_learning_rate
-from _utils.utils import extract_targets, extract_other_inputs, extract_commands, print_train_info, test_stop
+from _utils.utils import extract_targets, extract_other_inputs, extract_commands, print_train_info, test_stop, add_wp_to_image, build_pose_matrix
 from _utils.evaluation import evaluation_saving
 from logger import _logger
+from dataloaders.transforms import inverse_normalize
 
 
 def update_early_stopping(flags, rank, world_size):
@@ -82,44 +83,40 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
             # src_directions = src_directions.to(f'cuda:{model.device_ids[0]}')
             # src_s = src_s.to(f'cuda:{model.device_ids[0]}')
             # model.to(f'cuda:{model.device_ids[0]}')
-            if g_conf.USE_AUTOCAST:
-                with torch.cuda.amp.autocast():
-                    action_outputs = model.forward(src_images, src_directions, src_s)
-
-                    loss_params = {
-                        'action_output': action_outputs,
-                        'targets_action': tgt_a,
-                        'variable_weights': g_conf.LOSS_WEIGHT
-                    }
-
-                    if g_conf.ACCELERATION_AS_ACTION:
-                        loss, steer_loss, acceleration_loss = model.loss(loss_params)
-                        if rank == 0:
-                            acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                        acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
-                    else:
-                        loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
-                        if rank == 0:
-                            acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                        acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
+            if g_conf.MODEL_TYPE == 'CILv2_multiview_TD_Diffusion_attention':
+                inp_tgt = tgt_a[0].unsqueeze(1)
+                outputs_diffusion = model.forward(src_images, src_directions, src_s, targets=inp_tgt)
+                action_outputs = outputs_diffusion["denoise_pred"]
+                loss = outputs_diffusion["action_loss"]
+                acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                                                    acc_time, loss.item(), loss.item(), loss.item())
             else:
                 action_outputs = model.forward(src_images, src_directions, src_s)
                 loss_params = {
                     'action_output': action_outputs,
                     'targets_action': tgt_a,
-                    'variable_weights': g_conf.LOSS_WEIGHT
+                    'variable_weights': g_conf.LOSS_WEIGHT,
+                    'input_speed': src_s
                 }
 
                 if g_conf.ACCELERATION_AS_ACTION:
-                    loss, steer_loss, acceleration_loss = model.loss(loss_params)
+                    if g_conf.LOSS == 'Action2WP_L1':
+                        loss, steer_loss, acceleration_loss, wp_loss = model.loss(loss_params)
+                    else:
+                        loss, steer_loss, acceleration_loss = model.loss(loss_params)
                     if rank == 0:
-                        acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                        if g_conf.LOSS == 'Action2WP_L1':
+                            acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
+                                                    acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), wp_loss_data=wp_loss.item())
+                        else:
+                            acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
                                                     acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
                 else:
                     loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
                     if rank == 0:
                         acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
                                                     acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
+
 
             time_start = time.time()
 
@@ -136,12 +133,45 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 _logger.add_scalar('Loss', loss.item(), model._current_iteration)
 
                 ## Adding loss to tensorboard
-                _logger.add_scalar('Loss_steer', steer_loss.item(), model._current_iteration)
-                if g_conf.ACCELERATION_AS_ACTION:
-                    _logger.add_scalar('Loss_acceleration', acceleration_loss.item(), model._current_iteration)
+                if g_conf.MODEL_TYPE == 'CILv2_multiview_TD_Diffusion_attention':
+                    _logger.add_scalar('Loss_diffusion', loss.item(), model._current_iteration)
                 else:
-                    _logger.add_scalar('Loss_throttle', throttle_loss.item(), model._current_iteration)
-                    _logger.add_scalar('Loss_brake', brake_loss.item(), model._current_iteration)
+                    if g_conf.LOSS == 'Action2WP_L1':
+                        _logger.add_scalar('Loss_wp', wp_loss.item(), model._current_iteration)
+                        _logger.add_scalar('Weighted Loss_wp', g_conf.LOSS_WEIGHT['actions']['wp'] * wp_loss.item(), model._current_iteration)
+                    _logger.add_scalar('Loss_steer', steer_loss.item(), model._current_iteration)
+                    _logger.add_scalar('Weighted Loss_steer', g_conf.LOSS_WEIGHT['actions']['steer'] * steer_loss.item(), model._current_iteration)
+                    if g_conf.ACCELERATION_AS_ACTION:
+                        _logger.add_scalar('Loss_acceleration', acceleration_loss.item(), model._current_iteration)
+                        _logger.add_scalar('Weighted Loss_acceleration', g_conf.LOSS_WEIGHT['actions']['acceleration'] * acceleration_loss.item(), model._current_iteration)
+                    else:
+                        _logger.add_scalar('Loss_throttle', throttle_loss.item(), model._current_iteration)
+                        _logger.add_scalar('Loss_brake', brake_loss.item(), model._current_iteration)
+
+                if (g_conf.ADD_WP_PREDICTIOS_LOG and model._current_iteration % 1000 == 0):
+                    # src_iamges0 = [255. * np.swapaxes(np.swapaxes(img[0, :, :, :].cpu().numpy(), 0, 2), 0, 1) for img in src_images[0]]
+                    # src_iamges0 = [g_conf.IMG_NORMALIZATION['mean'] + g_conf.IMG_NORMALIZATION['std'] * np.swapaxes(np.swapaxes(img[0, :, :, :].cpu().numpy(), 0, 2), 0, 1) for img in src_images[0]]
+
+                    src_images0 = [inverse_normalize(img, g_conf.IMG_NORMALIZATION['mean'], g_conf.IMG_NORMALIZATION['std']) for img in src_images[0]]
+                    src_iamges0 = [255. * np.swapaxes(np.swapaxes(img[0, :, :, :].cpu().numpy(), 0, 2), 0, 1) for img in src_images0]
+                    cam_K = [np.array([[g_conf.CAM_FOCAL[indx][0], 0, g_conf.CAM_CENTER_POINT[indx][0], 0], [0, g_conf.CAM_FOCAL[indx][1], g_conf.CAM_CENTER_POINT[indx][1], 0], [0, 0, 1, 0]]) for indx in range(len(g_conf.CAM_FOCAL))]
+                    cam_T = [build_pose_matrix(g_conf.CAM_ROTATION[indx], g_conf.CAM_TRANSLATION[indx]) for indx in range(len(g_conf.CAM_ROTATION))]
+                    speed_denorm = src_s[0][0].cpu().numpy()[0] * (g_conf.DATA_NORMALIZATION['speed'][1] - g_conf.DATA_NORMALIZATION['speed'][0]) + g_conf.DATA_NORMALIZATION['speed'][0]
+                    accel_denorm_gt = tgt_a[0][0, 1].cpu().numpy() * 6.0
+                    steer_denorm_gt = tgt_a[0][0, 0].cpu().numpy() * 3.14159265359
+                    accel_denorm = action_outputs[0,: , 1].detach().cpu().numpy()[0] * 6.0
+                    steer_denorm = action_outputs[0, :, 0].detach().cpu().numpy()[0] * 3.14159265359
+
+                    # wp_image = add_wp_to_image(src_iamges0, action_outputs[0, :, 0].detach().cpu().numpy(), action_outputs[0,: , 1].detach().cpu().numpy(), src_s[0][0].cpu().numpy(), cam_T, cam_K, cam_size=g_conf.CAM_IM_SIZE, xi=g_conf.CAM_XI)
+                    wp_image_gt = add_wp_to_image(src_iamges0, steering_rad=steer_denorm_gt, acceleration=accel_denorm_gt, speed=speed_denorm, cam_T=cam_T, cam_K=cam_K, cam_size=g_conf.CAM_IM_SIZE, xi=g_conf.CAM_XI)
+                    wp_image_predictions = add_wp_to_image(src_iamges0, steering_rad=steer_denorm, acceleration=accel_denorm, speed=speed_denorm, cam_T=cam_T, cam_K=cam_K, cam_size=g_conf.CAM_IM_SIZE, xi=g_conf.CAM_XI)
+                    _logger.add_image('WP GT', wp_image_gt, model._current_iteration)
+                    _logger.add_image('WP Predictions', wp_image_predictions, model._current_iteration)
+                    _logger.add_scalar('Steering GT', steer_denorm_gt, model._current_iteration)
+                    _logger.add_scalar('Acceleration GT', accel_denorm_gt, model._current_iteration)
+                    _logger.add_scalar('Speed', speed_denorm, model._current_iteration)
+                    _logger.add_scalar('Steering Predictions', steer_denorm, model._current_iteration)
+                    _logger.add_scalar('Acceleration Predictions', accel_denorm, model._current_iteration)
 
             if test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
                 print('')
@@ -237,10 +267,21 @@ def execute(gpus_list, exp_batch, exp_name, rank=0):
         finetune_checkpoint = torch.load(g_conf.FINETUNE_MODEL)
         pretrained_dict = finetune_checkpoint['model']
 
+        '''
         if isinstance(model, torch.nn.DataParallel):
             model.module.load_state_dict(pretrained_dict)
         else:
             model.load_state_dict(pretrained_dict)
+        '''
+
+        # yi model
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in pretrained_dict.items():
+            name = 'module.' + k # remove `module.`
+            new_state_dict[name] = v
+        # load params
+        model.load_state_dict(new_state_dict)
 
         print('')
         print('    Finetunning model from -> ', g_conf.FINETUNE_MODEL)

@@ -30,12 +30,14 @@ _g_conf.NUMBER_EPOCH = 100     # Total number of training iteration
 _g_conf.TRAIN_DATASET_NAME = []
 _g_conf.VALID_DATASET_NAME = []      # More than one datasets could be evaluated, thus a list
 _g_conf.GT_DATA_USED = 'il_data'
+_g_conf.IMAGES_TERMINATION = '.png'
 _g_conf.DATA_USED = ['rgb_left', 'rgb_central', 'rgb_right']
 _g_conf.IMAGE_SHAPE = [3, 88, 200]
 _g_conf.ENCODER_INPUT_FRAMES_NUM = 1
 _g_conf.ENCODER_STEP_INTERVAL = 1     # the pace step of frame you want to use. For example, if you want to have 5 sequential input images taking pre 20-frames as a step, you should set INPUT_FRAMES_NUM =5 and INPUT_FRAME_INTERVAL=20
 _g_conf.ENCODER_OUTPUT_STEP_DELAY = 0  # whether we want to predict the future data points or just the current point
 _g_conf.DECODER_OUTPUT_FRAMES_NUM= 1
+_g_conf.SENSOR_EMBED = False
 _g_conf.AUGMENTATION = False
 _g_conf.DATA_FPS = 10
 _g_conf.DATA_COMMAND_CLASS_NUM = 4
@@ -87,12 +89,21 @@ _g_conf.TRAIN_IMAGE_WRITING_NUMBER = 2
 _g_conf.TRAIN_IMAGE_LOG_FREQUENCY = 1000
 _g_conf.TRAIN_PRINT_LOG_FREQUENCY = 100
 
+"""#### Logger WP visualization Parameters"""
+_g_conf.ADD_WP_PREDICTIOS_LOG = False
+_g_conf.CAM_FOCAL = None
+_g_conf.CAM_CENTER_POINT = None
+_g_conf.CAM_XI = None
+_g_conf.CAM_IM_SIZE = None
+_g_conf.CAM_ROTATION = None
+_g_conf.CAM_TRANSLATION = None
+
 def merge_with_yaml(yaml_filename, process_type='train_val'):
     """Load a yaml config file and merge it into the global config object"""
     global _g_conf
     with open(yaml_filename, 'r') as f:
 
-        yaml_file = yaml.load(f)
+        yaml_file = yaml.safe_load(f)
 
         yaml_cfg = AttributeDict(yaml_file)
 
