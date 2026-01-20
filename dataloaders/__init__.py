@@ -30,10 +30,10 @@ def make_data_loader(model_name: str = 'CIL_multiview',
     if num_process > 1:
         sampler = DistributedSampler(train_set, num_replicas=num_process, rank=rank, shuffle=True, drop_last=True)
         train_loader = DataLoader(train_set, batch_size=batch_size // num_process, num_workers=g_conf.NUM_WORKER,
-                                  drop_last=True, sampler=sampler)
+                                  drop_last=True, sampler=sampler, pin_memory=True)
     else:
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                  num_workers=g_conf.NUM_WORKER, drop_last=True)
+                                  num_workers=g_conf.NUM_WORKER, drop_last=True, pin_memory=True)
 
     if len(valid_dataset_names) == 0:
         return train_loader, []

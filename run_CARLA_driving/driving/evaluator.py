@@ -29,7 +29,7 @@ import sys
 import glob
 try:
     sys.path.append(os.environ['CARLAROOT'])
-except IndexError:
+except (IndexError, KeyError):
     pass
 try:
     import carla

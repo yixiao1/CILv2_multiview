@@ -139,5 +139,3 @@ run_CARLA_driving/results
 videos/
 DatasetYi_Town06/
 test/
-
-*.ipynb

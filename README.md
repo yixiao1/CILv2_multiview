@@ -62,11 +62,11 @@ export DRIVING_TEST_ROOT=/datafast/experiments/dporres/CILv2_multiview/run_CARLA
 
 In the ICREA server, except now we are using a new dataset root
 ```bash
-export PYTHONPATH=/home/dporres/CARLA_0.9.13/PythonAPI/carla/:/home/dporres/CARLA_0.9.13/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg:/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/experiments/dporres/CILv2_multiview/scenario_runner:/datafast/experiments/dporres/CILv2_multiview
-export TRAINING_RESULTS_ROOT=/datafast/experiments/dporres/VisionTFM/
-export DATASET_PATH=/datafast/Datasets/dporres/CARLA
-export SENSOR_SAVE_PATH=/datafast/Datasets/dporres/CARLA/driving_record/
-export DRIVING_TEST_ROOT=/datafast/experiments/dporres/CILv2_multiview/run_CARLA_driving/
+export PYTHONPATH=/home/dporres/CARLA_0.9.14/PythonAPI/carla/:/home/dporres/CARLA_0.9.14/PythonAPI/carla/dist/carla-0.9.14-py3.7-linux-x86_64.egg:/datafast/141-2/experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/141-2/experiments/dporres/CILv2_multiview/scenario_runner:/datafast/141-2/experiments/dporres/CILv2_multiview
+export TRAINING_RESULTS_ROOT=/datafast/141-2/experiments/dporres/VisionTFM/
+export DATASET_PATH=/datafast/141-1/Datasets/dporres/CARLA
+export SENSOR_SAVE_PATH=/datafast/141-1/Datasets/dporres/CARLA/driving_record/
+export DRIVING_TEST_ROOT=/datafast/141-2/experiments/dporres/CILv2_multiview/run_CARLA_driving/
 ```
 
 In the TDA1 server:
@@ -125,7 +125,7 @@ export DRIVING_TEST_ROOT=/datafast/121-2/Experiments/dporres/CILv2_multiview/run
 
 Same in 143, for testing CARLA 0.9.15:
 ```bash
-export PYTHONPATH=/home-tda/dporres/CARLA_0.9.15/PythonAPI/carla/:/home-tda/dporres/CARLA_0.9.15/PythonAPI/carla/dist/carla-0.9.15-py3.7-linux-x86_64.egg:/datafast/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/121-2/Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/121-2/Experiments/dporres/CILv2_multiview
+export PYTHONPATH=/home/dporres/CARLA_0.9.15/PythonAPI/carla/:/home/dporres/CARLA_0.9.15/PythonAPI/carla/dist/carla-0.9.15-py3.7-linux-x86_64.egg:/datafast/121-2/Experiments/dporres/CILv2_multiview/run_CARLA_driving:/datafast/121-2/Experiments/dporres/CILv2_multiview/scenario_runner:/datafast/121-2/Experiments/dporres/CILv2_multiview
 export TRAINING_RESULTS_ROOT=/datafast/121-2/Experiments/dporres/VisionTFM/
 export DATASET_PATH=/data-net/ted/extra_data_diego/
 export SENSOR_SAVE_PATH=/datafast/121-2/Experiments/dporres/CARLA/driving_record/

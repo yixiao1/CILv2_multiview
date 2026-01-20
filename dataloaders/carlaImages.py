@@ -32,18 +32,18 @@ class carlaImages(data.Dataset):
             canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
             all_cam_paths_dict = {}
             for camera_type in g_conf.DATA_USED:
-                img_paths = self.get_data_paths_with_fallback(
-                    rootdir=self.images_base,
-                    prefix=camera_type,
-                    suffixes=['.png', '.jpg'] if any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']) else ['.jpg', '.png'],
-                    avoid='noise' if ('virtual_attention' in camera_type and g_conf.ATTENTION_NOISE_CATEGORY == 0) else None
-                )
                 if 'virtual_attention' in camera_type:
-                    # Filter out data, as double safety for the avoid parameter above
-                    ext = os.path.splitext(img_paths[0])[1] if img_paths else '.jpg'
-                    img_paths = [path for path in img_paths if re.match(f'{camera_type}\d{{6}}{re.escape(ext)}', os.path.basename(path))]
+                    # Ignore noisy virtual attention cameras if we're using the GT ones
+                    avoid = 'noise' if g_conf.ATTENTION_NOISE_CATEGORY == 0 else None
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, 
+                                                    suffix='.jpg', avoid=avoid)
+                    img_paths = [path for path in img_paths if re.match(f'{camera_type}\d{{6}}.jpg', os.path.basename(path))]
+                elif any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']):
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.png')
+                else:
+                    # Generally, RGB cameras are saved as .jpg
+                    img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix='.jpg')
                 all_cam_paths_dict.update({camera_type: img_paths})
-
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 
             # with multiple frames input we also need to ensure the frames are from the same episode
@@ -78,32 +78,6 @@ class carlaImages(data.Dataset):
     def __len__(self):
         return len(self.data)
 
-    def get_data_paths_with_fallback(self, rootdir, prefix, suffixes, avoid=None):
-        """
-        Try to find files with given suffixes in order, returning the first non-empty result.
-        
-        Args:
-            rootdir: Root directory to search
-            prefix: File prefix to match
-            suffixes: List of file suffixes to try in order (e.g., ['.jpg', '.png', '.npy'])
-            avoid: Optional string to avoid in filenames
-            
-        Returns:
-            List of file paths
-            
-        Raises:
-            RuntimeError: If no files found with any of the provided suffixes
-        """
-        for suffix in suffixes:
-            paths = self.recursive_glob(rootdir=rootdir, prefix=prefix, suffix=suffix, avoid=avoid)
-            if len(paths) > 0:
-                return paths
-        
-        # If no files found with any suffix, raise an error
-        raise RuntimeError(
-            f"No files found for prefix '{prefix}' with any of the suffixes {suffixes} in {rootdir}"
-        )
-
     def analyze_index(self, index):
         if index in self.block_index_start:
             index += (g_conf.ENCODER_INPUT_FRAMES_NUM - 1) * g_conf.ENCODER_STEP_INTERVAL
@@ -125,8 +99,7 @@ class carlaImages(data.Dataset):
             for camera_type in g_conf.DATA_USED:
                 if 'virtual_attention' in camera_type:
                     img = Image.open(datapoint[camera_type]).convert('L')
-                elif any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']):
-                    img = Image.open(datapoint[camera_type]).convert('L')
+                elif any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']):                    img = Image.open(datapoint[camera_type]).convert('L')
                 # TODO: sensor type, not always rgb
                 else:
                     img = Image.open(datapoint[camera_type]).convert('RGB')
@@ -170,139 +143,31 @@ class carlaImages(data.Dataset):
 
         return data_vec
 
-    def get_valid_ticks_for_episode(self, episode_path, camera_types, canbus_prefix='cmd_fix'):
-        """
-        Find all ticks where ALL required sensors and canbus data exist.
-        
-        Args:
-            episode_path: Path to the episode folder (e.g., root/weather/Route00001)
-            camera_types: List of required camera/sensor types from g_conf.DATA_USED
-            canbus_prefix: Prefix for canbus files
-            
-        Returns:
-            List of valid tick numbers (sorted)
-        """
-        # Extract tick numbers for each sensor type
-        tick_sets = {}
-        
-        # Get canbus ticks
-        canbus_files = [f for f in os.listdir(episode_path) 
-                        if f.startswith(canbus_prefix) and f.endswith('.json')]
-        canbus_ticks = set()
-        for f in canbus_files:
-            # Extract tick from filename like "cmd_fix_canbus_000016.json"
-            match = re.search(r'(\d{6})', f)  # TODO: this assumes specific naming of the files, must be general
-            if match:
-                canbus_ticks.add(int(match.group(1)))
-        tick_sets['canbus'] = canbus_ticks
-        
-        # Get ticks for each camera/sensor type
-        for camera_type in camera_types:
-            # Determine file extension
-            if any(gaze_type in camera_type for gaze_type in ['gaze_pred', 'scout']):
-                suffix = '.png'
-            elif 'virtual_attention' in camera_type:
-                suffix = '.jpg'
-            else:
-                suffix = '.jpg'
-            
-            sensor_files = [f for f in os.listdir(episode_path) 
-                        if f.startswith(camera_type) and f.endswith(suffix)]
-            sensor_ticks = set()
-            for f in sensor_files:
-                # Extract tick from filename like "scout14ep1_000016.png"
-                match = re.search(r'(\d{6})', f)
-                if match:
-                    sensor_ticks.add(int(match.group(1)))
-            tick_sets[camera_type] = sensor_ticks
-        
-        # Find intersection of all tick sets (only ticks where ALL sensors exist)
-        valid_ticks = set.intersection(*tick_sets.values()) if tick_sets else set()
-        
-        return sorted(list(valid_ticks))
-
-
     def _add_canbus_data_point(self, full_dataset, img_paths_dict, canbus_paths):
         """
-        Add data points to the dataset, ensuring all sensors exist for each tick.
-        """
-        # Group paths by episode
-        episodes = {}
-        for canbus_path in canbus_paths:
-            episode_dir = os.path.dirname(canbus_path)
-            if episode_dir not in episodes:
-                episodes[episode_dir] = {
-                    'canbus': [],
-                    'sensors': {cam_type: [] for cam_type in img_paths_dict.keys()}
-                }
-            episodes[episode_dir]['canbus'].append(canbus_path)
-        
-        # Group sensor paths by episode
+            Add a data point to the vector of full dataset
+            :param full_dataset:
+            :param img_paths:
+            :param canbus_paths:
+            :param camera_type: the augmentation camera type to be applyed to the steering.
+            :return:
+            """
         for camera_type, img_paths in img_paths_dict.items():
-            for img_path in img_paths:
-                episode_dir = os.path.dirname(img_path)
-                if episode_dir in episodes:
-                    episodes[episode_dir]['sensors'][camera_type].append(img_path)
-        
-        # Process each episode
-        for episode_dir, episode_data in episodes.items():
-            # Get valid ticks for this episode
-            valid_ticks = self.get_valid_ticks_for_episode(
-                episode_dir, 
-                list(img_paths_dict.keys())
-            )
-            
-            # Create a mapping of tick -> paths
-            tick_to_paths = {}
-            
-            # Map canbus files
-            for canbus_path in episode_data['canbus']:
-                match = re.search(r'(\d{6})', os.path.basename(canbus_path))
-                if match:
-                    tick = int(match.group(1))
-                    if tick in valid_ticks:
-                        if tick not in tick_to_paths:
-                            tick_to_paths[tick] = {'canbus': None, 'sensors': {}}
-                        tick_to_paths[tick]['canbus'] = canbus_path
-            
-            # Map sensor files
-            for camera_type, sensor_paths in episode_data['sensors'].items():
-                for sensor_path in sensor_paths:
-                    match = re.search(r'(\d{6})', os.path.basename(sensor_path))
-                    if match:
-                        tick = int(match.group(1))
-                        if tick in valid_ticks:
-                            tick_to_paths[tick]['sensors'][camera_type] = sensor_path
-            
-            # Create datapoints only for valid ticks
-            for tick in sorted(tick_to_paths.keys()):
-                paths = tick_to_paths[tick]
-                
-                # Verify all required data exists
-                if paths['canbus'] is None:
-                    continue
-                if not all(cam_type in paths['sensors'] for cam_type in img_paths_dict.keys()):
-                    continue
-                
-                # Create datapoint
-                datapoint = {'can_bus': {}}
-                
-                # Load canbus data
-                with open(paths['canbus'], 'r') as f:
-                    canbus_data = json.loads(f.read())
-                for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
-                    datapoint['can_bus'][value] = canbus_data[value]
-                datapoint['can_bus'] = canbus_normalization(
-                    datapoint['can_bus'], 
-                    g_conf.DATA_NORMALIZATION
-                )
-                
-                # Add sensor paths
-                for camera_type in img_paths_dict.keys():
-                    datapoint[camera_type] = paths['sensors'][camera_type]
-                
-                full_dataset.append(datapoint)
-        
+            if len(img_paths) != len(canbus_paths):
+                raise RuntimeError(f'The number of images and canbus data are not matched! Num {camera_type} images: {len(img_paths)}, Num canbus data: {len(canbus_paths)}')
+
+        for i in range(len(canbus_paths)):
+            datapoint = dict()
+            datapoint['can_bus'] = dict()
+            f = open(canbus_paths[i], 'r')
+            canbus_data = json.loads(f.read())
+            for value in g_conf.TARGETS + g_conf.OTHER_INPUTS:
+                datapoint['can_bus'][value] = canbus_data[value]
+            datapoint['can_bus'] = canbus_normalization(datapoint['can_bus'], g_conf.DATA_NORMALIZATION)
+            for camera_type, img_paths in img_paths_dict.items():
+                datapoint[camera_type] = img_paths[i]
+            full_dataset.append(datapoint)
+
         return full_dataset
 
     def recursive_glob(self, rootdir: Union[str, os.PathLike] = os.getcwd(), 
@@ -336,86 +201,3 @@ class carlaImages(data.Dataset):
 
     def transform_val(self, sample, resize_attention: 'tuple[int]'):
         return val_transform(sample, g_conf.IMAGE_SHAPE, resize_attention)
-
-class FlexibleCarlaDataset(data.Dataset):
-    def __init__(self, model_name: str, base_dir: str, dataset_names: List[str], 
-                 dataset_structure: str = 'carla_cil', split: str = "train", 
-                 rank: int = 0):
-        self.root = Path(base_dir)
-        self.split = split
-        self.data = []
-        self.model_name = model_name
-        
-        # Get dataset structure
-        self.structure = DATASET_STRUCTURES.get(dataset_structure)
-        if not self.structure:
-            raise ValueError(f"Unknown dataset structure: {dataset_structure}")
-        
-        # Load data from all datasets
-        for dataset_name in dataset_names:
-            dataset_path = self.root / dataset_name
-            sequences = self.structure.get_data_paths(dataset_path)
-            
-            for seq in sequences:
-                # Create data points from each sequence
-                self._process_sequence(seq)
-        
-        # Handle temporal sequences
-        self._create_chunks()
-        
-        if rank == 0:
-            print(f"Loaded {len(self.data)} samples from {len(dataset_names)} datasets")
-    
-    def _process_sequence(self, sequence_data: Dict):
-        """Process a single sequence and add to dataset"""
-        num_frames = len(sequence_data['metadata'])
-        
-        for i in range(num_frames):
-            datapoint = {
-                'sequence_path': sequence_data['path'],
-                'frame_idx': i,
-                'metadata_file': sequence_data['metadata'][i],
-                'sensors': {}
-            }
-            
-            # Add sensor files
-            for sensor_name, sensor_files in sequence_data['sensors'].items():
-                if i < len(sensor_files):
-                    datapoint['sensors'][sensor_name] = sensor_files[i]
-            
-            self.data.append(datapoint)
-    
-    def __getitem__(self, index):
-        # Handle temporal indexing
-        index = self.analyze_index(index)
-        
-        # Load current frame data
-        datapoint = self.data[index]
-        
-        # Load metadata
-        with open(datapoint['metadata_file']) as f:
-            metadata = json.load(f)
-        
-        # Prepare sample
-        sample = {
-            'can_bus': self._process_canbus(metadata),
-            'frame_idx': datapoint['frame_idx']
-        }
-        
-        # Load sensor data
-        for sensor_name, sensor_path in datapoint['sensors'].items():
-            if sensor_path.exists():
-                if 'rgb' in sensor_name:
-                    img = Image.open(sensor_path).convert('RGB')
-                elif 'depth' in sensor_name:
-                    img = Image.open(sensor_path).convert('L')
-                else:
-                    img = Image.open(sensor_path)
-                
-                sample[sensor_name] = img
-        
-        # Apply transforms
-        if self.split == 'train':
-            return self.transform_tr(sample)
-        else:
-            return self.transform_val(sample)

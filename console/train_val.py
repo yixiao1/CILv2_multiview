@@ -292,21 +292,31 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     tgt_atts = {}
 
                     for name in virtual_camera_names:
-                        src_atts_left = []
-                        src_atts_central = []
-                        src_atts_right = []
+                        # If 'scout' or 'gaze' in the name, we do something different
+                        if any(substr in name for substr in ['scout', 'gaze']):
+                            if g_conf.ATTENTION_TYPE == 'human_gaze':
+                                available_key = utils.get_available_key(data['current'][0], ['gaze_pred', 'scout14ep1', 'scout15ep2'])
+                                src_atts = [data['current'][i][available_key].to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]  # [B, 1, h, 3*w]
+                                # Split the attention into left, central, and right
+                                src_atts_left = [src_atts[i][:, :, :, :model.resize_att_w] for i in range(len(src_atts))]
+                                src_atts_central = [src_atts[i][:, :, :, model.resize_att_w:2*model.resize_att_w] for i in range(len(src_atts))]
+                                src_atts_right = [src_atts[i][:, :, :, 2*model.resize_att_w:] for i in range(len(src_atts))]
+                        else:
+                            src_atts_left = []
+                            src_atts_central = []
+                            src_atts_right = []
 
-                        for current_data in data['current']:
-                            for key, value in current_data.items():
-                                noise_present, noise_category = utils.extract_noise_category(key)
-                                noise_str = f'noise_{noise_category}_' if noise_present else ''
+                            for current_data in data['current']:
+                                for key, value in current_data.items():
+                                    noise_present, noise_category = utils.extract_noise_category(key)
+                                    noise_str = f'noise_{noise_category}_' if noise_present else ''
 
-                                if f'virtual_attention_left_{noise_str}{name}' in key:
-                                    src_atts_left.append(value.to(f'cuda:{model.device_ids[0]}'))
-                                elif f'virtual_attention_central_{noise_str}{name}' in key:
-                                    src_atts_central.append(value.to(f'cuda:{model.device_ids[0]}'))
-                                elif f'virtual_attention_right_{noise_str}{name}' in key:
-                                    src_atts_right.append(value.to(f'cuda:{model.device_ids[0]}'))
+                                    if f'virtual_attention_left_{noise_str}{name}' in key:
+                                        src_atts_left.append(value.to(f'cuda:{model.device_ids[0]}'))
+                                    elif f'virtual_attention_central_{noise_str}{name}' in key:
+                                        src_atts_central.append(value.to(f'cuda:{model.device_ids[0]}'))
+                                    elif f'virtual_attention_right_{noise_str}{name}' in key:
+                                        src_atts_right.append(value.to(f'cuda:{model.device_ids[0]}'))
                                     
                         tgt_att = utils.prepare_target_attentions(src_atts_left[0], src_atts_central[0], src_atts_right[0], binarize=g_conf.BINARIZE_ATTENTION)
 

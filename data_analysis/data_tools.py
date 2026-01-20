@@ -800,14 +800,12 @@ def get_files_with_prefix_and_suffix(directory: str, prefixes: List[str], suffix
     """Get all files in a directory and its subdirectories that start with given prefixes and end with given suffixes."""
     all_dirs = get_all_directories(directory)
     all_dirs.append(directory)  # Include the root directory itself
-
     file_paths = []
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         future_to_dir = {executor.submit(get_files_in_directory, dir_path, prefixes): dir_path for dir_path in all_dirs}
         for future in tqdm(as_completed(future_to_dir), total=len(future_to_dir), desc="Scanning directories", dynamic_ncols=True):
             dir_files = future.result()
             file_paths.extend([f for f in dir_files if any(f.endswith(suffix) for suffix in suffixes)])
-
     return file_paths
 
 
@@ -1358,9 +1356,7 @@ def average_virtual_attention(dataset_path, prefix, fps, sec, output_prefix, num
 
     print("Averaging complete!")
 
-
-
-
+# TODO: why don't we use this function?
 def extract_frame_number_flexible(filepath: str) -> int:
     """
     Extract frame number from filepath using multiple patterns.
@@ -2202,6 +2198,10 @@ def visualize_model_inference(dataset_path, route_path, exp_batch, exp_name,
     
     # Get files and frame groups (existing code)
     image_extensions = ['.png', '.jpg', '.jpeg']
+    # Filter out real () or synthetic attention prefixes
+    # TODO: finish this!
+    image_prefixes = [prefix for prefix in g_conf.DATA_USED if prefix != canbus_prefix]
+    
     json_files = get_files_with_prefix_and_suffix(full_route_path, [canbus_prefix], ['.json'])
     image_files = get_files_with_prefix_and_suffix(full_route_path, g_conf.DATA_USED, image_extensions)
     all_files = json_files + image_files
