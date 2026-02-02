@@ -11,6 +11,7 @@ from _utils.utils import extract_targets, extract_other_inputs, extract_commands
 from _utils.evaluation import evaluation_saving
 from logger import _logger
 from dataloaders.transforms import inverse_normalize
+import torch.profiler as profiler
 
 
 def update_early_stopping(flags, rank, world_size):
@@ -25,7 +26,7 @@ def update_early_stopping(flags, rank, world_size):
     flags = [el['flags'] for el in outputs_dpp if el['rank'] == 0][0]
 
 
-def train_upstream_task(model, optimizer, rank=0, world_size=1):
+def train_upstream_task(model, optimizer, rank=0, world_size=1, stop_iter=-1, prof_obj=None):
     """
     Upstream task is for training your model
 
@@ -36,6 +37,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
     local_iteration = 0
     init_iteration = model._current_iteration
     init_epoch = (model._current_iteration * g_conf.BATCH_SIZE // len(model))
+    steering_hook = None
 
     while True:
         # we get dataloader of the model
@@ -58,7 +60,9 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     update_learning_rate(optimizer, minimumlr=g_conf.LEARNING_RATE_MINIMUM)
 
             if world_size > 1:
-                src_images = [[data['current'][i][camera_type].to(f'cuda:{model.device_ids[0]}') for camera_type in g_conf.DATA_USED] for i in range(len(data['current']))]
+                # src_images = [[data['current'][i][camera_type] for camera_type in g_conf.DATA_USED] for i in range(len(data['current']))]
+                src_images = torch.stack([torch.stack([data['current'][i][camera_type] for camera_type in g_conf.DATA_USED], dim=1) for i in range(len(data['current']))], dim=1)  # [B, S, cam, 3, H, W]
+                src_images = src_images.cuda(non_blocking=True).to(f'cuda:{model.device_ids[0]}')
                 src_directions = [extract_commands(data['current'][i]['can_bus']['direction']).to(f'cuda:{model.device_ids[0]}') for i in
                                   range(len(data['current']))]
                 src_s = [extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
@@ -68,15 +72,17 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 else:
                     tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).to(f'cuda:{model.device_ids[0]}') for i in range(len(data['current']))]
             else:
-                src_images = [[data['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED] for i in range(len(data['current']))]
-                src_directions = [extract_commands(data['current'][i]['can_bus']['direction']).cuda() for i in
+                src_images = torch.stack([torch.stack([data['current'][i][camera_type] for camera_type in g_conf.DATA_USED], dim=1) for i in range(len(data['current']))], dim=1)  # [B, S, cam, 3, H, W]
+                src_images = src_images.cuda(non_blocking=True)
+                src_directions = [extract_commands(data['current'][i]['can_bus']['direction']).cuda(non_blocking=True) for i in
                                   range(len(data['current']))]
                 src_s = [extract_other_inputs(data['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
-                                         ignore=['direction']).cuda() for i in range(len(data['current']))]
+                                         ignore=['direction']).cuda(non_blocking=True) for i in range(len(data['current']))]
                 if g_conf.ENCODER_OUTPUT_STEP_DELAY > 0 or g_conf.DECODER_OUTPUT_FRAMES_NUM != g_conf.ENCODER_INPUT_FRAMES_NUM:
-                    tgt_a = [extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda() for i in range(len(data['future']))]
+                    tgt_a = [extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda(non_blocking=True) for i in range(len(data['future']))]
                 else:
-                    tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda() for i in range(len(data['current']))]
+                    tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda(non_blocking=True) for i in range(len(data['current']))]
+            tgt_a[0][:, 0] = tgt_a[0][:, 0] * 2.
 
 
             # src_images = src_images.to(f'cuda:{model.device_ids[0]}')
@@ -89,7 +95,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                 action_outputs = outputs_diffusion["denoise_pred"]
                 loss = outputs_diffusion["action_loss"]
                 acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                    acc_time, loss.item(), loss.item(), loss.item())
+                                                    acc_time, loss, loss, loss)
             else:
                 action_outputs = model.forward(src_images, src_directions, src_s)
                 loss_params = {
@@ -107,29 +113,39 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     if rank == 0:
                         if g_conf.LOSS == 'Action2WP_L1':
                             acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                    acc_time, loss.item(), steer_loss.item(), acceleration_loss.item(), wp_loss_data=wp_loss.item())
+                                                    acc_time, loss, steer_loss, acceleration_loss, wp_loss_data=wp_loss)
                         else:
                             acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                    acc_time, loss.item(), steer_loss.item(), acceleration_loss.item())
+                                                    acc_time, loss, steer_loss, acceleration_loss)
                 else:
                     loss, steer_loss, throttle_loss, brake_loss = model.loss(loss_params)
                     if rank == 0:
                         acc_time = print_train_info(g_conf.TRAIN_PRINT_LOG_FREQUENCY, g_conf.NUMBER_EPOCH, g_conf.BATCH_SIZE, model, time_start,
-                                                    acc_time, loss.item(), steer_loss.item(), throttle_loss.item(), brake_loss.item)
+                                                    acc_time, loss, steer_loss, throttle_loss, brake_loss)
 
 
             time_start = time.time()
 
             optimizer.zero_grad()
+
+            if g_conf.SPEED_AUGMENTATION:
+                mask_steer = (tgt_a[0][:, 0] != -1000.0).detach()
+                steering_hook = model._model.register_steering_mask(mask_steer)
+
             loss.backward()
             optimizer.step()
+
+            if g_conf.SPEED_AUGMENTATION and steering_hook is not None:
+                steering_hook.remove()
+
+
 
             """
             ################################################
                 Adding tensorboard logs
             #################################################
             """
-            if rank == 0:
+            if rank == 0 and model._current_iteration % 100 == 0 :
                 _logger.add_scalar('Loss', loss.item(), model._current_iteration)
 
                 ## Adding loss to tensorboard
@@ -158,9 +174,9 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     cam_T = [build_pose_matrix(g_conf.CAM_ROTATION[indx], g_conf.CAM_TRANSLATION[indx]) for indx in range(len(g_conf.CAM_ROTATION))]
                     speed_denorm = src_s[0][0].cpu().numpy()[0] * (g_conf.DATA_NORMALIZATION['speed'][1] - g_conf.DATA_NORMALIZATION['speed'][0]) + g_conf.DATA_NORMALIZATION['speed'][0]
                     accel_denorm_gt = tgt_a[0][0, 1].cpu().numpy() * 6.0
-                    steer_denorm_gt = tgt_a[0][0, 0].cpu().numpy() * 3.14159265359
+                    steer_denorm_gt = tgt_a[0][0, 0].cpu().numpy() * 3.14159265359 if tgt_a[0][0, 0].cpu().numpy() != -1000.0 else 0.0
                     accel_denorm = action_outputs[0,: , 1].detach().cpu().numpy()[0] * 6.0
-                    steer_denorm = action_outputs[0, :, 0].detach().cpu().numpy()[0] * 3.14159265359
+                    steer_denorm = action_outputs[0, :, 0].detach().cpu().numpy()[0] * 3.14159265359 / 2.
 
                     # wp_image = add_wp_to_image(src_iamges0, action_outputs[0, :, 0].detach().cpu().numpy(), action_outputs[0,: , 1].detach().cpu().numpy(), src_s[0][0].cpu().numpy(), cam_T, cam_K, cam_size=g_conf.CAM_IM_SIZE, xi=g_conf.CAM_XI)
                     wp_image_gt = add_wp_to_image(src_iamges0, steering_rad=steer_denorm_gt, acceleration=accel_denorm_gt, speed=speed_denorm, cam_T=cam_T, cam_K=cam_K, cam_size=g_conf.CAM_IM_SIZE, xi=g_conf.CAM_XI)
@@ -173,7 +189,10 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
                     _logger.add_scalar('Steering Predictions', steer_denorm, model._current_iteration)
                     _logger.add_scalar('Acceleration Predictions', accel_denorm, model._current_iteration)
 
-            if test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE):
+            if prof_obj is not None and rank==0:
+                prof_obj.step()
+
+            if test_stop(g_conf.NUMBER_EPOCH * len(model), model._current_iteration * g_conf.BATCH_SIZE) or (model._current_iteration > stop_iter and stop_iter > 0):
                 print('')
                 print('Training finished !!')
                 break
@@ -186,11 +205,11 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1):
             if world_size > 1:
                 dataloader.sampler.set_epoch(model._done_epoch - 1)
 
-            del src_images
-            del src_directions
-            del tgt_a
-            del src_s
-            del action_outputs
+            # del src_images
+            # del src_directions
+            # del tgt_a
+            # del src_s
+            # del action_outputs
         else:
             continue
         break
@@ -251,7 +270,7 @@ def execute(gpus_list, exp_batch, exp_name, rank=0):
         # model = DataParallelWrapper(model)
         # gpus_list_int = [int(el) for el in gpus_list]
         model.to(device_id)
-        model = DataParallelDPPWrapper(model, device_ids=[device_id], find_unused_parameters=True)
+        model = DataParallelDPPWrapper(model, device_ids=[device_id], find_unused_parameters=False)
 
     # To load a specific checkpoint
     if g_conf.LOAD_CHECKPOINT:
@@ -336,5 +355,31 @@ def execute(gpus_list, exp_batch, exp_name, rank=0):
         model.cuda()
         # optimizer.cuda()
     model.train()
-    train_upstream_task(model, optimizer, rank=rank, world_size=len(gpus_list))
+
+    profile_code = False
+    if profile_code:
+        prof = None
+        warmup_prof = 20
+        active_prof = 50
+        skip_prof = 20
+        stop_iter_prof = warmup_prof + active_prof + skip_prof
+        if rank == 0:
+            prof = profiler.profile(
+                activities=[profiler.ProfilerActivity.CPU, profiler.ProfilerActivity.CUDA],
+                record_shapes=True,
+                profile_memory=True,
+                schedule=profiler.schedule(
+                    wait=skip_prof,   # skip first 20 iterations (no profiling)
+                    warmup=warmup_prof,  # collect but discard (helps stabilize)
+                    active=active_prof  # profile next 10 iterations
+                    )
+                )
+            prof.start()
+        train_upstream_task(model, optimizer, rank=rank, world_size=len(gpus_list), stop_iter=stop_iter_prof, prof_obj=prof)
+        if rank == 0 and prof is not None:
+            prof.stop()
+            print(prof.key_averages().table(sort_by="cuda_time_total"))
+
+    else:
+        train_upstream_task(model, optimizer, rank=rank, world_size=len(gpus_list))
 
