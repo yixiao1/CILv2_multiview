@@ -90,13 +90,13 @@ def print_train_info(log_frequency, final_epoch, batch_size, model,
 
         if brake_loss_data is not None:
             print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Throttle Loss {:.3f}, , Brake Loss {:.3f}, {:.2f} steps/s, ETA: {:0>2d}H:{:0>2d}M:{:0>2d}S".format(
-                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, brake_loss_data, (log_frequency / acc_time), hours, minutes, seconds))
+                epoch, model._current_iteration, loss_data.item(), steer_loss_data.item(), acc_loss_data.item(), brake_loss_data.item(), (log_frequency / acc_time), hours, minutes, seconds))
         elif wp_loss_data is not None:
             print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, WP Loss {:.3f}, {:.2f} steps/s, ETA: {:0>2d}H:{:0>2d}M:{:0>2d}S".format(
-                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data, wp_loss_data,(log_frequency / acc_time), hours, minutes, seconds))
+                epoch, model._current_iteration, loss_data.item(), steer_loss_data.item(), acc_loss_data.item(), wp_loss_data.item(),(log_frequency / acc_time), hours, minutes, seconds))
         else:
             print ("Training epoch {:.2f}, iteration {}, Loss {:.3f}, Steer Loss {:.3f}, Acc Loss {:.3f}, {:.2f} steps/s, ETA: {:0>2d}H:{:0>2d}M:{:0>2d}S".format(
-                epoch, model._current_iteration, loss_data, steer_loss_data, acc_loss_data,(log_frequency / acc_time), hours, minutes, seconds))
+                epoch, model._current_iteration, loss_data.item(), steer_loss_data.item(), acc_loss_data.item(),(log_frequency / acc_time), hours, minutes, seconds))
         acc_time = 0.0
 
     return acc_time
@@ -412,7 +412,7 @@ def draw_vehicle_path_on_image(
     cam_T,               # camera extrinsic: vehicle_frame -> camera_frame (4x4) or (3x4)
     cam_K,               # camera extrinsic: vehicle_frame -> camera_frame (4x4) or (3x4)
     width,               # vehicle track width (meters) distance between left and right wheels
-    wheelbase=2.7,       # meters, distance between axle centers (default typical car)
+    wheelbase=1.4,       # meters, distance between axle centers (default typical car)
     initial_speed=0.0,   # m/s
     horizon=5.0,         # seconds to simulate forward
     dt=1.0,              # simulation timestep (s)
@@ -452,17 +452,20 @@ def draw_vehicle_path_on_image(
 
     # storage for world points (vehicle frame)
     pts_cam3d = []
+    pts_cam3d_center = []
 
     # center_path_bev = np.array([x, y, 0.0, 1.0])
     # compute wheel positions in vehicle frame (before rotation/translation)
     # left is +y, right is -y (we defined +Y left)
     pts_local = np.array([[front_axle_x, width / 2.0, 0.0, 1.0], [front_axle_x, -width / 2.0, 0.0, 1.0]])
+    pts_local_center = np.array([[front_axle_x, 0, 0.0, 1.0]])
 
     for i in range(steps):
         cam_T_plus = build_pose_matrix(rotation=[0, 0, theta], translation=[x, y, 0.0])
 
         # # transform wheels to world (vehicle frame positioned at x,y,theta)
         pts_cam3d.append(transform_3d(pts_local, cam_T, cam_T_plus))
+        pts_cam3d_center.append(transform_3d(pts_local_center, cam_T, cam_T_plus))
 
         # integrate kinematic bicycle model (simple Euler)
         # theta_dot = v / L * tan(delta)
@@ -482,7 +485,9 @@ def draw_vehicle_path_on_image(
         v += a * dt
 
     pts_cam3d = np.array(pts_cam3d, dtype=float).reshape(-1, 3)
+    pts_cam3d_center = np.array(pts_cam3d_center, dtype=float).reshape(-1, 3)
     pts_cam2d = project_points(pts_cam3d, cam_K, xi)
+    pts_cam2d_center = project_points(pts_cam3d_center, cam_K, xi)
 
     # draw polygon
     # pts_cam2d = np.array(pts_cam2d, dtype=int).reshape(-1, 2)
@@ -491,6 +496,24 @@ def draw_vehicle_path_on_image(
     pts_cam2d = pts_cam2d.swapaxes(0, 1)
     pts_cam2d = np.array(pts_cam2d, dtype=int).reshape(-1, 3)
     img = draw_poly(img, pts_cam2d, color_bgr=(255, 222, 33), w_img=w_img, h_img=h_img, transperency=0.2)
+
+    # draw line
+    pts_cam2d_center = np.array(pts_cam2d_center, dtype=int).reshape(-1, 2, 3)
+    pts_cam2d_center[:, 1, :] = np.flip(pts_cam2d_center[:, 1, :], axis=0)
+    pts_cam2d_center = pts_cam2d_center.swapaxes(0, 1)
+    pts_cam2d_center = np.array(pts_cam2d_center, dtype=int).reshape(-1, 3)
+    for (u, v, _) in pts_cam2d_center:
+        if 0 <= u < w_img and 0 <= v < h_img:
+            cv2.drawMarker(
+                img,
+                (u, v),
+                color=(0, 0, 255),           # red cross
+                markerType=cv2.MARKER_CROSS, # or cv2.MARKER_TILTED_CROSS
+                markerSize=6,
+                thickness=1,
+                line_type=cv2.LINE_AA,
+            )
+
 
     if w_img != w_img_i or h_img != h_img_i:
         img = cv2.resize(img, (w_img_i, h_img_i))
@@ -503,7 +526,7 @@ def add_wp_to_image(src_images, acceleration, steering_rad, speed, cam_T, cam_K,
     ret_images = []
     for indx, img in enumerate(src_images):
         img_wp = draw_vehicle_path_on_image(img, acceleration, steering_rad, cam_T=cam_T[indx], cam_K=cam_K[indx], 
-            width=1.7, wheelbase=2.7, initial_speed=speed, horizon=5.0, dt=0.05,
+            width=1.7, wheelbase=1.45, initial_speed=speed, horizon=8.0, dt=0.5,
             xi=xi[indx], w_img=cam_size[indx][0], h_img=cam_size[indx][1])
         ret_images.append(img_wp)
     return ret_images
