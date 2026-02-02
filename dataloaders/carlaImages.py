@@ -1,6 +1,7 @@
 import os
 import json
 import math
+
 import numpy as np
 from PIL import Image
 from torch.utils import data
@@ -23,16 +24,16 @@ def collect_files_single_pass(dataset_path: str, camera_types: List[str]) -> Dic
         Dictionary mapping file types to sorted file paths
     """
     all_files = defaultdict(list)
-    
+
     # Define search patterns
     search_patterns = {'il_data': {'prefix': g_conf.GT_DATA_USED, 'suffix': '.json'}}
-    
+
     for camera_type in camera_types:
         if any(cam in camera_type for cam in ['virtual_attention', 'att_mask']):
             search_patterns[camera_type] = {'prefix': camera_type, 'suffix': '.jpg'}
         elif any(cam in camera_type for cam in ['rgb', 'sekonix', 'conti']):
             search_patterns[camera_type] = {'prefix': camera_type, 'suffix': '.png'}
-    
+
     # Single directory walk
     for looproot, _, filenames in sorted(os.walk(dataset_path)):
         for filename in sorted(filenames):
@@ -44,7 +45,7 @@ def collect_files_single_pass(dataset_path: str, camera_types: List[str]) -> Dic
                             all_files[file_type].append(os.path.join(looproot, filename))
                     else:
                         all_files[file_type].append(os.path.join(looproot, filename))
-    
+
     return dict(all_files)
 
 
@@ -66,9 +67,14 @@ class carlaImages(data.Dataset):
             self.images_base = os.path.join(self.root, dataset_name)
 
             all_cam_paths_dict = collect_files_single_pass(self.images_base, g_conf.DATA_USED)
+            # print(all_cam_paths_dict.keys())
             
             #### For different models, we set different strategy for loading data, and we save the npy file for next time better loading
-            canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix=g_conf.GT_DATA_USED, suffix='.json')
+            if 'il_data' in all_cam_paths_dict.keys():
+                canbus_paths =  all_cam_paths_dict['il_data'] # self.recursive_glob(rootdir=self.images_base, prefix=g_conf.GT_DATA_USED, suffix='.json')
+            else:
+                canbus_paths = []
+
             # canbus_paths = self.recursive_glob(rootdir=self.images_base, prefix='cmd_fix', suffix='.json')
             '''
             all_cam_paths_dict = {}
@@ -76,6 +82,7 @@ class carlaImages(data.Dataset):
                 img_paths = self.recursive_glob(rootdir=self.images_base, prefix=camera_type, suffix=g_conf.IMAGES_TERMINATION)
                 all_cam_paths_dict.update({camera_type: img_paths})
             '''
+
             self.data = self._add_canbus_data_point(self.data, all_cam_paths_dict, canbus_paths)
 
             # with multiple frames input we also need to ensure the frames are from the same episode
@@ -161,13 +168,13 @@ class carlaImages(data.Dataset):
                 sample_future = {'can_bus_future': datapoint_future['can_bus']}
                 data_vec['future'].append(sample_future)
 
-            del sample_future
-            del datapoint_future
+            # del sample_future
+            # del datapoint_future
 
-        del one_frame_data
-        del sample
-        del datapoint
-        del img
+        # del one_frame_data
+        # del sample
+        # del datapoint
+        # del img
 
         return data_vec
 
