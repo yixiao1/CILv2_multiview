@@ -5,7 +5,7 @@ from . import train_val, val
 import torch.distributed as dist
 
 
-def execute_train_val(gpus_list, exp_batch, exp_alias, rank=0):
+def execute_train_val(gpus_list, exp_batch, exp_alias, rank=0, world_size=1):
     """
 
     Args:
@@ -19,11 +19,13 @@ def execute_train_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
     if rank == 0:
         create_exp_path(os.environ['TRAINING_RESULTS_ROOT'], exp_batch, exp_alias)
-    dist.barrier()
+
+    if world_size > 1:
+        dist.barrier()
     train_val.execute(gpus_list, exp_batch, exp_alias, rank=rank)
 
 
-def execute_val(gpus_list, exp_batch, exp_alias, rank=0):
+def execute_val(gpus_list, exp_batch, exp_alias, rank=0, world_size=1):
     """
 
     Args:
@@ -37,7 +39,8 @@ def execute_val(gpus_list, exp_batch, exp_alias, rank=0):
     """
     if rank == 0:
         create_exp_path(os.environ['TRAINING_RESULTS_ROOT'],exp_batch, exp_alias)
-    dist.barrier()
+    if world_size > 1:
+        dist.barrier()
     val.execute(gpus_list, exp_batch, exp_alias, rank=rank)
 
 
