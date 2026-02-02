@@ -47,27 +47,41 @@ def train_transform(data, image_shape, augmentation=False):
         pass
 
     else:
+        img_mean = np.expand_dims(np.expand_dims(np.asarray(g_conf.IMG_NORMALIZATION['mean'], dtype=np.float32), -1), -1)
+        img_std = np.expand_dims(np.expand_dims(np.asarray(g_conf.IMG_NORMALIZATION['std'], dtype=np.float32), -1), -1)
         for camera_type in g_conf.DATA_USED:
             image = data[camera_type]
             ## WE ALREADY PRE-PROCESSED IMAGES TO DESIRED SIZE
             # height = image_shape[1]
             # width = image_shape[2]
             # image = image.resize((width, height))
-            image = TF.to_tensor(image)
-            image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
+            # print(len(image))
+            image = np.array(image)
+            image = torch.from_numpy(image).float().permute(2, 0, 1)
+            image = image / 255.0
+
+            image = (image - img_mean) / img_std
+            # image = TF.to_tensor(image)
+            # image = TF.normalize(image, mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
             data[camera_type] = image
 
     return data
 
 def val_transform(data, image_shape):
+    img_mean = np.expand_dims(np.expand_dims(np.asarray(g_conf.IMG_NORMALIZATION['mean'], dtype=np.float32), -1), -1)
+    img_std = np.expand_dims(np.expand_dims(np.asarray(g_conf.IMG_NORMALIZATION['std'], dtype=np.float32), -1), -1)
     for camera_type in g_conf.DATA_USED:
         image = data[camera_type]
         ## WE ALREADY PRE-PROCESSED IMAGES TO DESIRED SIZE
         # height = image_shape[1]
         # width = image_shape[2]
         # image = image.resize((width, height))
-        image = TF.to_tensor(image)
-        image = TF.normalize(image,  mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
+        image = np.array(image)
+        image = torch.from_numpy(image).float().permute(2, 0, 1)
+        image = image / 255.0
+
+        image = (image - img_mean) / img_std
+        # image = TF.normalize(image,  mean=g_conf.IMG_NORMALIZATION['mean'], std=g_conf.IMG_NORMALIZATION['std'])
         data[camera_type] = image
     return data
 
