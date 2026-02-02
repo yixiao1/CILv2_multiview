@@ -82,7 +82,7 @@ def train_upstream_task(model, optimizer, rank=0, world_size=1, stop_iter=-1, pr
                     tgt_a = [extract_targets(data['future'][i]['can_bus_future'], g_conf.TARGETS).cuda(non_blocking=True) for i in range(len(data['future']))]
                 else:
                     tgt_a = [extract_targets(data['current'][i]['can_bus'], g_conf.TARGETS).cuda(non_blocking=True) for i in range(len(data['current']))]
-            tgt_a[0][:, 0] = tgt_a[0][:, 0] * 2.
+            # tgt_a[0][:, 0] = tgt_a[0][:, 0] * 2.
 
 
             # src_images = src_images.to(f'cuda:{model.device_ids[0]}')
