@@ -62,12 +62,12 @@ if __name__ == "__main__":
         if args.process_type == 'train_val':
             if args.exp is None:
                 raise ValueError("You should set the exp alias")
-            execute_train_val(gpus_list=args.gpus, exp_batch=args.folder, exp_alias=args.exp, rank=rank)
+            execute_train_val(gpus_list=args.gpus, exp_batch=args.folder, exp_alias=args.exp, rank=rank, world_size=len(args.gpus))
 
         elif args.process_type == 'val_only':
             if args.exp is None:
                 raise ValueError("You should set the exp alias")
-            execute_val(gpus_list=args.gpus, exp_batch=args.folder, exp_alias=args.exp)
+            execute_val(gpus_list=args.gpus, exp_batch=args.folder, exp_alias=args.exp, world_size=len(args.gpus))
 
         else:
             raise Exception("Invalid name for --process-type, chose from (train_val, train_only, val_only)")
