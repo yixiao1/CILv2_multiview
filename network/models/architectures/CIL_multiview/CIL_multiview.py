@@ -53,11 +53,11 @@ class CIL_multiview(nn.Module):
 
         self.train()
 
-    def forward(self, s, s_d, s_s):
+    def forward(self, x, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
 
-        x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1) # [B, S, cam, 3, H, W]
+        # x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1) # [B, S, cam, 3, H, W]
         x = x.view(B*S*len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[0], g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2])  # [B*S*cam, 3, H, W]
         d = s_d[-1]  # [B, 4]
         s = s_s[-1]  # [B, 1]
@@ -85,15 +85,31 @@ class CIL_multiview(nn.Module):
 
         in_memory = torch.mean(in_memory, dim=1)  # [B, 512]
 
-        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        # action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        action_output = self.action_output(in_memory)  # (B, 512) -> (B, 1, len(TARGETS))
+
+        action_output = torch.tanh(action_output).unsqueeze(1)
 
         return action_output         # (B, 1, 1), (B, 1, len(TARGETS))
 
-    def foward_eval(self, s, s_d, s_s):
+    def register_steering_mask(self, mask):
+        def hook_factory(batch_mask):
+            def hook(module, grad_input, grad_output):
+                g = grad_output[0]          # (B, 2)
+                g_mod = g.clone()
+                # Ejemplo 1: matar grad de toda la muestra si mask[b] == 0
+                m = batch_mask.view(-1, 1)  # (B, 1)
+                g_mod[:, 1] = g_mod[:, 1] * m.squeeze(-1)
+                return (g_mod,)
+            return hook
+        steering_hook_gd = self.action_output.register_full_backward_hook(hook_factory(mask))
+        return steering_hook_gd
+
+    def foward_eval(self, x, s_d, s_s):
         S = int(g_conf.ENCODER_INPUT_FRAMES_NUM)
         B = s_d[0].shape[0]
 
-        x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1)  # [B, S, cam, 3, H, W]
+        # x = torch.stack([torch.stack(s[i], dim=1) for i in range(S)], dim=1)  # [B, S, cam, 3, H, W]
         x = x.view(B * S * len(g_conf.DATA_USED), g_conf.IMAGE_SHAPE[0], g_conf.IMAGE_SHAPE[1], g_conf.IMAGE_SHAPE[2])  # [B*S*cam, 3, H, W]
         d = s_d[-1]  # [B, 4]
         s = s_s[-1]  # [B, 1]
@@ -120,7 +136,10 @@ class CIL_multiview(nn.Module):
         in_memory, attn_weights = self.tx_encoder(pe)  # [B, S*cam*h*w, 512]
         in_memory = torch.mean(in_memory, dim=1)  # [B, 512]
 
-        action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        # action_output = self.action_output(in_memory).unsqueeze(1)  # (B, 512) -> (B, 1, len(TARGETS))
+        action_output = self.action_output(in_memory)  # (B, 512) -> (B, 1, len(TARGETS))
+
+        action_output = torch.tanh(action_output).unsqueeze(1)
 
         return action_output, resnet_inter, attn_weights
 
