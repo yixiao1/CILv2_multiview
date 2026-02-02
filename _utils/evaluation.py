@@ -41,7 +41,8 @@ def evaluation_on_model(model, data_loaders, model_name, evaluator, eval_iterati
 
         with inference_context(model), torch.no_grad():
             for idx, x in enumerate(data_loader):
-                src_images = [[x['current'][i][camera_type].cuda() for camera_type in g_conf.DATA_USED] for i in range(len(x['current']))]
+                src_images = torch.stack([torch.stack([x['current'][i][camera_type] for camera_type in g_conf.DATA_USED], dim=1) for i in range(len(x['current']))], dim=1)  # [B, S, cam, 3, H, W]
+                src_images = src_images.cuda(non_blocking=True).cuda()
                 src_directions = [extract_commands(x['current'][i]['can_bus']['direction']).cuda() for i in
                                       range(len(x['current']))]
                 src_speeds = [extract_other_inputs(x['current'][i]['can_bus'], g_conf.OTHER_INPUTS,
