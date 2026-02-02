@@ -5,8 +5,6 @@ from configs import g_conf
 
 
 def Action_nospeed_L1(params):
-    print(params.keys())
-    print(params['action_output'])
     B = params['action_output'].shape[0]  # batch_size
 
     # SingleFrame model - we only take into account the last frame's action
